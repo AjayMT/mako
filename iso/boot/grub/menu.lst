@@ -1,0 +1,5 @@
+default=0
+timeout=0
+
+title mako
+kernel /boot/kernel.elf
