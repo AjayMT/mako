@@ -1,4 +1,10 @@
 
+// io.h
+//
+// Serial port I/O interface for Mako.
+//
+// Author: Ajay Tatachar <ajaymt2@illinois.edu>
+
 #ifndef _IO_H_
 #define _IO_H_
 

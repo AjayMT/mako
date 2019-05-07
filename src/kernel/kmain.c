@@ -1,9 +1,10 @@
 
+#include <common/stdint.h>
 #include <drivers/framebuffer/framebuffer.h>
 #include <drivers/serial/serial.h>
+#include <gdt/gdt.h>
 
 void kmain()
 {
-  serial_init(SERIAL_COM1_BASE);
-  serial_write(SERIAL_COM1_BASE, "hello", 5);
+  gdt_init();
 }

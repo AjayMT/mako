@@ -8,6 +8,8 @@
 global outb
 global inb
 
+section .text
+
     ; outb -- send a byte to an I/O port
     ; stack: [esp + 8] the byte
     ;        [esp + 4] the I/O port

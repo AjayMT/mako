@@ -28,7 +28,7 @@ const unsigned short FB_LIGHT_BROWN   = 0xE;
 const unsigned short FB_WHITE         = 0xF;
 
 // Buffer constants.
-static volatile short *const VGA_BUFFER = (short *)0xb8000;
+static volatile short *const VGA_BUFFER = (short *)0xB8000;
 static const unsigned int VGA_HEIGHT = 25;
 static const unsigned int VGA_WIDTH  = 80;
 
@@ -90,7 +90,7 @@ void fb_write(const char *data, const unsigned int len)
 }
 
 // Set colors.
-inline void fb_set_fg_color(const unsigned short color)
+void fb_set_fg_color(const unsigned short color)
 { fg_color = color; }
-inline void fb_set_bg_color(const unsigned short color)
+void fb_set_bg_color(const unsigned short color)
 { bg_color = color; }
