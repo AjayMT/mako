@@ -3,15 +3,15 @@
 
 CC = i386-elf-gcc
 CFLAGS = -m32 -nostdlib -nostdinc -fno-builtin -fno-stack-protector \
-         -nostartfiles -nodefaultlibs -Wno-unused-function -Wall -Wextra -Werror -I${PWD}/src/ -c
+         -nostartfiles -nodefaultlibs -Wno-unused -Wall -Wextra -Werror -I${PWD}/src/ -c
 LD = i386-elf-ld
 LDFLAGS = -T link.ld -melf_i386
 AS = nasm
 ASFLAGS = -f elf
 
 DRIVER_OBJECTS = io.o framebuffer.o serial.o
-ASM_OBJECTS = gdt.s.o
-C_OBJECTS = gdt.o
+ASM_OBJECTS = gdt.s.o idt.s.o
+C_OBJECTS = gdt.o idt.o
 export
 
 all: kernel.elf

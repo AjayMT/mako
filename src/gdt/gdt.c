@@ -21,12 +21,12 @@
 
 // GDT Entry struct.
 struct gdt_entry_s {
-  uint16_t limit_low;   // Lower 16 bits of the limit.
-  uint16_t base_low;    // Lower 16 bits of the base.
-  uint8_t base_mid;     // Next 8 bits of the base.
-  uint8_t access;       // Access flags.
-  uint8_t granularity;  // Size of segment unit, 4 highest bits of limit.
-  uint8_t base_high;    // Last 8 bits of the base,
+  uint16_t limit_1;  // Lower 16 bits of the limit.
+  uint16_t base_1;   // Lower 16 bits of the base.
+  uint8_t base_2;    // Next 8 bits of the base.
+  uint8_t access;    // Access flags.
+  uint8_t limit_2;   // 4 highest bits of limit and some other stuff.
+  uint8_t base_3;    // Last 8 bits of the base,
 } __attribute__((packed));
 typedef struct gdt_entry_s gdt_entry_t;
 
@@ -50,20 +50,20 @@ static const uint8_t PL3            = 0x3;
 static gdt_entry_t gdt_entries[GDT_NUM_ENTRIES];
 
 // Load the global descriptor table. Implemented in gdt.s.
-void gdt_load(uint32_t table_ptr);
+void gdt_load(uint32_t);
 
 // Create an entry in the table.
 static void gdt_create_entry(
   uint32_t index, uint8_t privilege_level, uint8_t type
   )
 {
-  gdt_entries[index].base_low  = SEGMENT_BASE & 0xFFFF;
-  gdt_entries[index].base_mid  = (SEGMENT_BASE >> 16) & 0xFF;
-  gdt_entries[index].base_high = (SEGMENT_BASE >> 24) & 0xFF;
-  gdt_entries[index].limit_low = (SEGMENT_LIMIT & 0xFFFF);
+  gdt_entries[index].base_1  = SEGMENT_BASE & 0xFFFF;
+  gdt_entries[index].base_2  = (SEGMENT_BASE >> 16) & 0xFF;
+  gdt_entries[index].base_3  = (SEGMENT_BASE >> 24) & 0xFF;
+  gdt_entries[index].limit_1 = (SEGMENT_LIMIT & 0xFFFF);
 
-  // 4kB segments
-  gdt_entries[index].granularity |= (0x01 << 7) | (0x01 << 6) | 0x0F;
+  // 4kB segments, 4 highest bits of limit, other things.
+  gdt_entries[index].limit_2 |= (0x01 << 7) | (0x01 << 6) | 0x0F;
 
   // set type and privilege level
   gdt_entries[index].access |=
