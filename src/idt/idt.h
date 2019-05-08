@@ -8,6 +8,9 @@
 #ifndef _IDT_H_
 #define _IDT_H_
 
+// Number of entries in the IDT.
+#define IDT_NUM_ENTRIES 256
+
 // Initialize the IDT.
 void idt_init();
 

@@ -7,11 +7,11 @@ CFLAGS = -m32 -nostdlib -nostdinc -fno-builtin -fno-stack-protector \
 LD = i386-elf-ld
 LDFLAGS = -T link.ld -melf_i386
 AS = nasm
-ASFLAGS = -f elf
+ASFLAGS = -I${PWD}/src/ -f elf
 
 DRIVER_OBJECTS = io.o framebuffer.o serial.o
-ASM_OBJECTS = gdt.s.o idt.s.o
-C_OBJECTS = gdt.o idt.o
+ASM_OBJECTS = gdt.s.o idt.s.o interrupt.s.o
+C_OBJECTS = gdt.o idt.o pic.o interrupt.o
 export
 
 all: kernel.elf
@@ -51,4 +51,4 @@ run: mako.iso
 	bochs -f bochsrc.txt -q
 
 clean:
-	rm -rf *.o kernel.elf iso/boot/kernel.elf mako.iso bochslog.txt
+	rm -rf *.o kernel.elf iso/boot/kernel.elf mako.iso bochslog.txt com1.out

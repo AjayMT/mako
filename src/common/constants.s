@@ -1,0 +1,2 @@
+
+    KERNEL_STACK_SIZE equ 4096

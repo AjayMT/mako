@@ -9,4 +9,6 @@ void kmain()
 {
   gdt_init();
   idt_init();
+
+  asm volatile ("int $0x3");
 }

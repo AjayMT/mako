@@ -42,8 +42,6 @@ static const uint16_t SEGMENT_BASE  = 0;
 static const uint32_t SEGMENT_LIMIT = 0xFFFFF;
 static const uint8_t CODE_RX_TYPE   = 0xA;
 static const uint8_t DATA_RW_TYPE   = 0x2;
-static const uint8_t PL0            = 0x0;
-static const uint8_t PL3            = 0x3;
 
 // The actual global descriptor table. 6 entries.
 #define GDT_NUM_ENTRIES 6
