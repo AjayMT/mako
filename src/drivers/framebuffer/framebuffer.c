@@ -81,6 +81,8 @@ void fb_write(const char *data, const unsigned int len)
     if (data[i] == '\n') { // Move to the next line.
       position += VGA_WIDTH;
       position -= (position % VGA_WIDTH);
+      if (position >= VGA_WIDTH * VGA_HEIGHT)
+        fb_clear();
       continue;
     }
 
