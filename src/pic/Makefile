@@ -1,5 +1,5 @@
 
-all: $(out_c)
+all: $(out)
 
-$(out_c): pic.c pic.h
-	$(CC) $(CFLAGS) pic.c -o $(out_c)
+$(out): pic.c pic.h
+	$(CC) $(CFLAGS) pic.c -o $(out)

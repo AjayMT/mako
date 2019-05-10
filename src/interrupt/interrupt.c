@@ -6,7 +6,7 @@
 // Author: Ajay Tatachar <ajaymt2@illinois.edu>
 
 #include <common/stdint.h>
-#include <drivers/framebuffer/framebuffer.h>
+#include <pic/pic.h>
 #include "interrupt.h"
 
 // All registered interrupt handlers.
@@ -29,10 +29,12 @@ void forward_interrupt(
   cpu_state_t c_state, idt_info_t info, stack_state_t s_state
   )
 {
+  // Send acknowledgement to PIC for IRQs.
+  if (info.idt_index >= 32)
+    pic_acknowledge(info.idt_index);
+
   if (registered_handlers[info.idt_index] == 0) {
-    // TODO Handle this better. Write to stderr or smth.
-    fb_clear();
-    fb_write("unhandled interrupt", 19);
+    // TODO Handle this.
     return;
   }
 

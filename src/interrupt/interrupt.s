@@ -5,7 +5,7 @@
     ;
     ; Author: Ajay Tatachar <ajaymt2@illinois.edu>
 
-%include "common/constants.s"   ; for KERNEL_STACK_SIZE constant
+%include "common/constants.s"
 
 global enable_interrupts
 global disable_interrupts
@@ -31,40 +31,6 @@ global interrupt_handler_%1
 %endmacro
 
 section .text
-
-    ; Common parts of the interrupt handlers.
-    ; Pushes register state to the stack, forwards the interrupt
-    ; to an interrupt_handler_t and restores register state.
-common_interrupt_handler:
-    push esp                    ; -
-    push eax                    ;  |
-    push ebx                    ;  |
-    push ecx                    ;  |-> Save registers onto the stack.
-    push edx                    ;  |
-    push ebp                    ;  |
-    push esi                    ;  |
-    push edi                    ; -
-
-    call forward_interrupt      ; Forward the interrupt
-
-    pop edi                     ; -
-    pop esi                     ;  |
-    pop ebp                     ;  |
-    pop edx                     ;  |-> Restore registers.
-    pop ecx                     ;  |
-    pop ebx                     ;  |
-    pop eax                     ;  |
-    pop esp                     ; -
-
-    add esp, 8                  ; Since we pushed error code and interrupt number earlier.
-    iret
-
-enable_interrupts:
-    sti
-    ret
-disable_interrupts:
-    cli
-    ret
 
     ; Interrupt handlers
     ; Protected mode exceptions
@@ -106,3 +72,37 @@ disable_interrupts:
     no_error_code_handler 45
     no_error_code_handler 46
     no_error_code_handler 47
+
+    ; Common parts of the interrupt handlers.
+    ; Pushes register state to the stack, forwards the interrupt
+    ; to an interrupt_handler_t and restores register state.
+common_interrupt_handler:
+    push esp                    ; -
+    push eax                    ;  |
+    push ebx                    ;  |
+    push ecx                    ;  |-> Save registers onto the stack.
+    push edx                    ;  |
+    push ebp                    ;  |
+    push esi                    ;  |
+    push edi                    ; -
+
+    call forward_interrupt      ; Forward the interrupt
+
+    pop edi                     ; -
+    pop esi                     ;  |
+    pop ebp                     ;  |
+    pop edx                     ;  |-> Restore registers.
+    pop ecx                     ;  |
+    pop ebx                     ;  |
+    pop eax                     ;  |
+    pop esp                     ; -
+
+    add esp, 8                  ; Since we pushed error code and interrupt number earlier.
+    iret
+
+enable_interrupts:
+    sti
+    ret
+disable_interrupts:
+    cli
+    ret

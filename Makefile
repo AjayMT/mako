@@ -9,15 +9,15 @@ LDFLAGS = -T link.ld -melf_i386
 AS = nasm
 ASFLAGS = -I${PWD}/src/ -f elf
 
-DRIVER_OBJECTS = io.o framebuffer.o serial.o
+DRIVER_OBJECTS = io.o framebuffer.o serial.o keyboard.o
 ASM_OBJECTS = gdt.s.o idt.s.o interrupt.s.o
-C_OBJECTS = gdt.o idt.o pic.o interrupt.o
+OBJECTS = gdt.o idt.o pic.o interrupt.o
 export
 
 all: kernel.elf
 
-kernel.elf: boot.o kmain.o $(C_OBJECTS) $(ASM_OBJECTS) $(DRIVER_OBJECTS)
-	$(LD) $(LDFLAGS) boot.o kmain.o $(C_OBJECTS) $(ASM_OBJECTS) $(DRIVER_OBJECTS) -o kernel.elf
+kernel.elf: boot.o kmain.o $(OBJECTS) $(ASM_OBJECTS) $(DRIVER_OBJECTS)
+	$(LD) $(LDFLAGS) boot.o kmain.o $(OBJECTS) $(ASM_OBJECTS) $(DRIVER_OBJECTS) -o kernel.elf
 
 boot.o: src/kernel/boot.s
 	$(AS) $(ASFLAGS) src/kernel/boot.s -o boot.o
@@ -28,8 +28,8 @@ kmain.o: src/kernel/kmain.c
 $(ASM_OBJECTS): $(shell find src -type f)
 	$(MAKE) out_asm=${PWD}/$@ -C src/$(basename $(basename $@))
 
-$(C_OBJECTS): $(shell find src -type f)
-	$(MAKE) out_c=${PWD}/$@ -C src/$(basename $@)
+$(OBJECTS): $(shell find src -type f)
+	$(MAKE) out=${PWD}/$@ -C src/$(basename $@)
 
 $(DRIVER_OBJECTS): $(shell find src/drivers -type f)
 	$(MAKE) out=${PWD}/$@ -C src/drivers/$(basename $@)

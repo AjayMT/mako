@@ -108,9 +108,9 @@ void idt_init()
   table_ptr.limit = sizeof(idt_gate_t) * IDT_NUM_ENTRIES;
   table_ptr.base = (uint32_t)&idt_entries;
 
-#define IDT_CREATE_GATE(i)                                          \
-  idt_create_gate(                                                  \
-    i, (uint32_t)&interrupt_handler_##i, IDT_TRAP_GATE_TYPE, PL0    \
+#define IDT_CREATE_GATE(i)                                      \
+  idt_create_gate(                                              \
+    i, (uint32_t)interrupt_handler_##i, IDT_TRAP_GATE_TYPE, PL0 \
     );
 
   // Create IDT gates for declared interrupts.

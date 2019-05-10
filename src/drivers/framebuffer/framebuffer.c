@@ -29,19 +29,19 @@ const unsigned short FB_WHITE         = 0xF;
 
 // Buffer constants.
 static volatile short *const VGA_BUFFER = (short *)0xB8000;
-static const unsigned int VGA_HEIGHT = 25;
-static const unsigned int VGA_WIDTH  = 80;
+static const unsigned int VGA_HEIGHT    = 25;
+static const unsigned int VGA_WIDTH     = 80;
 
 // Serial port constants.
-static const unsigned short FB_COMMAND_PORT = 0x3D4;
-static const unsigned short FB_DATA_PORT    = 0x3D5;
+static const unsigned short FB_COMMAND_PORT     = 0x3D4;
+static const unsigned short FB_DATA_PORT        = 0x3D5;
 static const unsigned char FB_HIGH_BYTE_COMMAND = 14;
 static const unsigned char FB_LOW_BYTE_COMMAND  = 15;
 
 // Driver state.
 static unsigned short fg_color = FB_WHITE;
 static unsigned short bg_color = FB_BLACK;
-static unsigned int position = 0;
+static unsigned int position   = 0;
 
 // Write a character to current position in current color.
 static inline void fb_write_cell(const char data)
@@ -79,7 +79,8 @@ void fb_write(const char *data, const unsigned int len)
     }
 
     if (data[i] == '\n') { // Move to the next line.
-      position = (position / VGA_WIDTH) + VGA_WIDTH;
+      position += VGA_WIDTH;
+      position -= (position % VGA_WIDTH);
       continue;
     }
 

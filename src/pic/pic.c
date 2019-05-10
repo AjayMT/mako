@@ -30,6 +30,10 @@ static const uint8_t PIC_EOI     = 0x20; // End-of-interrupt.
 // Initialize the PICs.
 void pic_init()
 {
+  unsigned char mask1, mask2;
+  mask1 = inb(PIC1_PORT_B);
+  mask2 = inb(PIC2_PORT_B);
+
   // ICW1
   outb(PIC1_PORT_A, PIC1_ICW1);
   outb(PIC2_PORT_A, PIC2_ICW1);
@@ -46,19 +50,21 @@ void pic_init()
   outb(PIC1_PORT_B, PIC1_ICW4);
   outb(PIC2_PORT_B, PIC2_ICW4);
 
-  pic_mask(0xEC, 0xFF);
+  pic_mask(mask1, mask2);
 }
 
 // Send acknowledgement back to the PICs.
-void pic_acknowledge()
+void pic_acknowledge(uint8_t irq)
 {
+  if (irq >= 0x28)
+    outb(PIC2_PORT_A, PIC_EOI);
   outb(PIC1_PORT_A, PIC_EOI);
-  outb(PIC2_PORT_A, PIC_EOI);
 }
 
-// Mask the PICs.
+// Set PIC masks. Each bit is an index of an IRQ, masked IRQs
+// are ignpred.
 void pic_mask(uint8_t mask1, uint8_t mask2)
 {
-  outb(PIC1_PORT_A, mask1);
-  outb(PIC2_PORT_A, mask2);
+  outb(PIC1_PORT_B, mask1);
+  outb(PIC2_PORT_B, mask2);
 }
