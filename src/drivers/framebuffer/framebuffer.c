@@ -28,7 +28,7 @@ const unsigned short FB_LIGHT_BROWN   = 0xE;
 const unsigned short FB_WHITE         = 0xF;
 
 // Buffer constants.
-static volatile short *const VGA_BUFFER = (short *)0xB8000;
+static volatile short *const VGA_BUFFER = (short *)0xC00B8000;
 static const unsigned int VGA_HEIGHT    = 25;
 static const unsigned int VGA_WIDTH     = 80;
 

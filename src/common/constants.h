@@ -1,7 +1,7 @@
 
 // constants.h
 //
-// PepeHands
+// Constants.
 //
 // Author: Ajay Tatachar <ajaymt2@illinois.edu>
 
