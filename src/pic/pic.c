@@ -5,7 +5,7 @@
 //
 // Author: Ajay Tatachar <ajaymt2@illinois.edu>
 
-#include <common/stdint.h>
+#include <stdint.h>
 #include <drivers/io/io.h>
 #include "pic.h"
 

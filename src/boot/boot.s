@@ -19,15 +19,18 @@ extern kernel_end               ; end address of the kernel exported from link.l
     MAGIC equ 0x1BADB002          ; magic constant for multiboot
     CHECKSUM equ -(MAGIC + FLAGS) ; magic + checksum + flags = 0
 
-    KERNEL_PT_CONFIG equ 0xB         ; present, writable, write through cache
-    KERNEL_PDT_IDENTITY_MAP equ 0x8B ; ^ and global
+    KERNEL_PT_CONFIG equ 11b             ; present, writable
+    KERNEL_PD_IDENTITY_MAP equ 10000011b ; identity map the first 4 MB
 
 section .data
 align 4096
 kernel_pt:
     times 1024 dd 0
-kernel_pdt:
-    dd KERNEL_PDT_IDENTITY_MAP
+kernel_pd:
+    ; First entry in the page directory is the identity map.
+    ; Identity mapping is necessary so that the instruction pointer
+    ; doesn't point to an invalid address.
+    dd KERNEL_PD_IDENTITY_MAP
     times 1023 dd 0
 
 section .data
@@ -49,13 +52,15 @@ align 4
     dd CHECKSUM
 
 loader:                         ; entry point called by GRUB
+    ; GRUB puts magic number and address of multiboot info
+    ; in eax and ebx before jumping to the kernel.
     mov ecx, (grub_magic_number - KERNEL_START_VADDR)
     mov [ecx], eax
     mov ecx, (grub_multiboot_info - KERNEL_START_VADDR)
     mov [ecx], ebx
 
 init_kernel_pdt:
-    mov ecx, (kernel_pdt - KERNEL_START_VADDR + (KERNEL_PDT_IDX * 4))
+    mov ecx, (kernel_pd - KERNEL_START_VADDR + (KERNEL_PD_IDX * 4))
     mov edx, (kernel_pt - KERNEL_START_VADDR)
     or  edx, KERNEL_PT_CONFIG
     mov [ecx], edx
@@ -71,9 +76,8 @@ init_kernel_pt:
     jle .mapping_loop
 
 enable_paging:
-    mov ecx, (kernel_pdt - KERNEL_START_VADDR)
+    mov ecx, (kernel_pd - KERNEL_START_VADDR)
     and ecx, 0xFFFFF000         ; discard all but the upper 20 bits
-    or  ecx, 0x8                ; enable write-through-cache
     mov cr3, ecx                ; load pdt
 
     mov ecx, cr4                ; read current config
@@ -85,14 +89,15 @@ enable_paging:
     mov cr0, ecx                ; write config
 
     lea ecx, [higher_half]
-    jmp ecx                     ; jump to the higher half
+    jmp ecx                     ; absolute jump to the higher half
 
 higher_half:                    ; at this point we are using the page table
-    mov [kernel_pdt], DWORD 0
-    invlpg [0]                  ; stop identity mapping the first 4 MB
+    mov [kernel_pt], DWORD 0    ; stop identity mapping the first 4 MB
+    invlpg [0]                  ; flush TLB
 
 fwd_kmain:
     mov  esp, kernel_stack + KERNEL_STACK_SIZE
+    push kernel_pt
+    push kernel_pd
     call kmain
-hang:
-    jmp hang
+    jmp $                       ; loop indefinitely

@@ -8,7 +8,7 @@
 #ifndef _KEYBOARD_H_
 #define _KEYBOARD_H_
 
-#include <common/stdint.h>
+#include <stdint.h>
 
 extern const uint32_t KEYBOARD_INTERRUPT_INDEX;
 

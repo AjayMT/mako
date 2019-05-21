@@ -8,7 +8,7 @@
 #ifndef _PIC_H_
 #define _PIC_H_
 
-#include <common/stdint.h>
+#include <stdint.h>
 
 // Initialize the PICs.
 void pic_init();

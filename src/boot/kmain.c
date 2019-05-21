@@ -5,8 +5,9 @@
 #include <idt/idt.h>
 #include <pic/pic.h>
 #include <interrupt/interrupt.h>
+#include <paging/paging.h>
 
-void kmain()
+void kmain(page_directory_t *kernel_pd, page_table_t *kernel_pt)
 {
   disable_interrupts();
 
@@ -18,5 +19,7 @@ void kmain()
   fb_clear();
   keyboard_init();
 
+  paging_init(kernel_pd, kernel_pt);
+  
   enable_interrupts();
 }

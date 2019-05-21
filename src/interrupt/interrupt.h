@@ -8,7 +8,7 @@
 #ifndef _INTERRUPT_H_
 #define _INTERRUPT_H_
 
-#include <common/stdint.h>
+#include <stdint.h>
 #include <idt/idt.h>
 
 // IDT info struct.

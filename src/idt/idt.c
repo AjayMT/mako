@@ -5,7 +5,7 @@
 //
 // Author: Ajay Tatachar <ajaymt2@illinois.edu>
 
-#include <common/stdint.h>
+#include <stdint.h>
 #include <common/constants.h>
 #include <gdt/gdt.h>
 #include "idt.h"

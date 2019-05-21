@@ -5,7 +5,7 @@
 //
 // Author: Ajay Tatachar <ajaymt2@illinois.edu>
 
-#include <common/stdint.h>
+#include <stdint.h>
 #include "gdt.h"
 
 // x86 processors divide memory into lots of small regions a.k.a 'segments'.
