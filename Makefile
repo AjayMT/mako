@@ -10,7 +10,8 @@ ASFLAGS = -I${PWD}/src/ -f elf
 
 DRIVER_OBJECTS = io.o framebuffer.o serial.o keyboard.o
 ASM_OBJECTS = gdt.s.o idt.s.o interrupt.s.o paging.s.o
-OBJECTS = gdt.o idt.o pic.o interrupt.o paging.o pmm.o debug.o
+OBJECTS = gdt.o idt.o pic.o interrupt.o paging.o pmm.o \
+          debug.o util.o
 export
 
 all: kernel.elf

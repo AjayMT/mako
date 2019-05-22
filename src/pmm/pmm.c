@@ -6,7 +6,6 @@
 // Author: Ajay Tatachar <ajaymt2@illinois.edu>
 
 #include <stdint.h>
-#include <stddef.h>
 #include <common/multiboot.h>
 #include <debug/log.h>
 #include "pmm.h"
@@ -42,10 +41,8 @@ static memory_map_t get_mmap(
 
   for (
     entry = (multiboot_memory_map_t *)mb_info->mmap_addr;
-
     (uint32_t)entry < mb_info->mmap_addr + mb_info->mmap_length
       && mmap.size <= MAX_MEMORY_MAP_ENTRIES;
-
     entry = (multiboot_memory_map_t *)
       ((uint32_t)entry + entry->size + sizeof(entry->size))
     )
@@ -86,7 +83,7 @@ uint32_t pmm_init(
   const uint32_t kphys_end
   )
 {
-  if ((mb_info->flags & 0x20) == 0) { // No memory map from GRUB.
+  if ((mb_info->flags & 0x20) == 0) {
     log_error("pmm", "No memory map from GRUB.");
     return 1;
   }
