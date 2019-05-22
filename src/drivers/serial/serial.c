@@ -45,21 +45,11 @@ static inline int serial_is_transmit_fifo_empty(const unsigned int com)
 }
 
 // Write a byte to a serial port.
-static void serial_write_byte(
-  const unsigned short com, const unsigned char byte
-  )
+void serial_write(unsigned short com, char data)
 {
-  while (!serial_is_transmit_fifo_empty(com)); // wait until it's empty
-  outb(com, byte);
-}
-
-// Write a sequence of bytes of length `len` to a serial port.
-void serial_write(
-  unsigned short com, const char *data, const unsigned int len
-  )
-{
-  for (unsigned int i = 0; i < len; ++i)
-    serial_write_byte(com, data[i]);
+  while (!serial_is_transmit_fifo_empty(com));
+  
+  outb(com, data);
 }
 
 // Initialize serial port with default configuration.

@@ -18,10 +18,8 @@ void serial_configure_baud_rate(
   const unsigned short com, const unsigned short divisor
   );
 
-// Write a sequence of bytes of length `len` to a serial port.
-void serial_write(
-  unsigned short com, const char *data, const unsigned int len
-  );
+// Write a byte to a serial port.
+void serial_write(unsigned short com, char data);
 
 // Initialise serial port with default configuration.
 void serial_init(const unsigned short com);

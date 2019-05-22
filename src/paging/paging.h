@@ -49,6 +49,6 @@ struct page_directory_s {
 typedef struct page_directory_s page_directory_t;
 
 // Initialize paging.
-void paging_init(page_directory_t *kernel_pd, page_table_t *kernel_pt);
+uint32_t paging_init(page_directory_t *kernel_pd);
 
 #endif /* _PAGING_H_ */
