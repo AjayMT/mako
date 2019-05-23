@@ -11,6 +11,7 @@
 #include <common/multiboot.h>
 #include <common/constants.h>
 #include <debug/log.h>
+#include <util/util.h>
 
 void page_fault_handler()
 {
@@ -20,7 +21,7 @@ void page_fault_handler()
 void kmain(
   uint32_t mb_info_addr,
   uint32_t mb_magic_number,
-  page_directory_t *kernel_pd,
+  page_directory_t kernel_pd,
   uint32_t kvirt_start,
   uint32_t kvirt_end
   )
@@ -41,6 +42,7 @@ void kmain(
     return;
   }
 
+  interrupt_init();
   disable_interrupts();
 
   fb_clear();
@@ -48,23 +50,43 @@ void kmain(
   gdt_init();
   idt_init();
   pic_init();
+  keyboard_init();
 
   pic_mask(1, 0); // Ignore timer interrupts for now.
-  keyboard_init();
 
   register_interrupt_handler(14, page_fault_handler);
 
-  uint32_t res = paging_init(kernel_pd);
-  if (res == 0)
-    fb_write(" pg", 3);
-
+  uint32_t res;
   res = pmm_init(mb_info, kphys_start, kphys_end);
-  if (res == 0)
-    fb_write(" pmm", 4);
+  if (res == 0) fb_write(" pmm", 4);
 
-  page_directory_t *pd = (page_directory_t *)0xFFFFF000;
-  page_directory_entry_t kern_pde = pd->entries[KERNEL_PD_IDX];
+  res = paging_init(
+    kernel_pd, (uint32_t)kernel_pd - KERNEL_START_VADDR
+    );
+  if (res == 0) fb_write(" pg", 3);
+
+  page_directory_t pd = (page_directory_t)0xFFFFF000;
+  page_directory_entry_t kern_pde = pd[KERNEL_PD_IDX];
   if (kern_pde.present) fb_write(" rec", 4);
+
+  int *vaddr = (int *)(0xDEADBEEF & 0xFFFFF000);
+  uint32_t paddr = pmm_alloc();
+  page_table_entry_t flags;
+  u_memset(&flags, 0, sizeof(flags));
+  // flags.rw = 1;
+  paging_map((uint32_t)vaddr, paddr, flags);
+  *vaddr = 12; // why no page fault?
+  log_debug("kmain", "*vaddr: %u\n", *vaddr);
+
+  char out[1024];
+  for (uint32_t i = 0; i < 1024; ++i) {
+    page_table_entry_t pde = (
+      (page_table_t)
+      (0xFFC00000 + (((uint32_t)vaddr) >> 22) * 0x1000)
+      )[i];
+    out[i] = 97 - (pde.present + (pde.rw * 2));
+  }
+  log_debug("kmain", "page table (` is present, ^ is present and writable):\n%s", out);
 
   enable_interrupts();
 }

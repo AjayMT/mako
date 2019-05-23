@@ -44,6 +44,9 @@ typedef struct stack_state_s stack_state_t;
 // Interrupt handler type.
 typedef void (*interrupt_handler_t)(cpu_state_t, idt_info_t, stack_state_t);
 
+// Initialize interrupt handlers.
+void interrupt_init();
+
 // Register an interrupt handler.
 uint32_t register_interrupt_handler(uint32_t, interrupt_handler_t);
 

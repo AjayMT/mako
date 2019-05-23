@@ -12,6 +12,13 @@
 // All registered interrupt handlers.
 static interrupt_handler_t registered_handlers[IDT_NUM_ENTRIES];
 
+// Initialize interrupt handlers.
+void interrupt_init()
+{
+  for (uint32_t i = 0; i < IDT_NUM_ENTRIES; ++i)
+    registered_handlers[i] = 0;
+}
+
 // Register an interrupt handler.
 uint32_t register_interrupt_handler(
   uint32_t index, interrupt_handler_t handler

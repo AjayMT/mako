@@ -25,11 +25,7 @@ struct page_table_entry_s {
   uint32_t frame_addr : 20; // Only the upper 20 bits.
 } __attribute__((packed));
 typedef struct page_table_entry_s page_table_entry_t;
-
-struct page_table_s {
-  page_table_entry_t entries[1024];
-} __attribute__((packed));
-typedef struct page_table_s page_table_t;
+typedef page_table_entry_t *page_table_t;
 
 // A single page directory entry.
 // Page directory entries can point to page tables or to 4MB
@@ -47,16 +43,33 @@ struct page_directory_entry_s {
   uint32_t table_addr : 20; // Only the upper 20 bits.
 } __attribute__((packed));
 typedef struct page_directory_entry_s page_directory_entry_t;
+typedef page_directory_entry_t *page_directory_t;
 
-struct page_directory_s {
-  page_directory_entry_t entries[1024];
-} __attribute__((packed));
-typedef struct page_directory_s page_directory_t;
+// Result of paging_map and paging_unmap.
+typedef enum {
+  PAGING_OK,
+  PAGING_MAP_EXISTS,
+  PAGING_NO_MEMORY,
+  PAGING_NO_ACCESS
+} paging_result_t;
 
 // Initialize paging.
-uint32_t paging_init(page_directory_t *);
+uint32_t paging_init(page_directory_t, uint32_t);
 
 // Set the current page directory. Implemented in paging.s.
 void paging_set_directory(uint32_t);
+
+// Remove a PTE from the TLB. Implemented in paging.s.
+void invalidate_page_table_entry(uint32_t);
+
+// Map a virtual page starting at `virt_addr` to a physical page
+// starting at `phys_addr`. `flags` specifies .rw, .user, .pwt and
+// other PTE flags.
+paging_result_t paging_map(
+  uint32_t virt_addr, uint32_t phys_addr, page_table_entry_t flags
+  );
+
+// Unmap a page starting at virtual address `virt_addr`.
+paging_result_t paging_unmap(uint32_t virt_addr);
 
 #endif /* _PAGING_H_ */

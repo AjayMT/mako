@@ -50,5 +50,8 @@ mako.iso: kernel.elf
 run: mako.iso
 	bochs -f bochsrc.txt -q
 
+qemu: mako.iso
+	qemu-system-i386 -serial file:com1.out -cdrom mako.iso
+
 clean:
 	rm -rf *.o kernel.elf iso/boot/kernel.elf mako.iso bochslog.txt com1.out

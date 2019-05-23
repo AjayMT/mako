@@ -91,7 +91,6 @@ static void log_vprintf(char *fmt, va_list ap)
       break;
     }
   }
-
 }
 
 static void log_printf(char *fmt, ...)
