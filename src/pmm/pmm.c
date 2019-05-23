@@ -8,13 +8,18 @@
 #include <stdint.h>
 #include <common/multiboot.h>
 #include <debug/log.h>
+#include <util/util.h>
 #include "pmm.h"
 
 #define MAX_MEMORY_MAP_ENTRIES 100
+#define BITMAP_ARRAY_SIZE      4096
+
+static const uint32_t FRAME_ADDR_OFFSET = 12;
+static const uint32_t PAGE_SIZE         = 0x1000; // 4K
 
 // A single memory map entry.
 // `addr` is the physical start address, `len` is the size
-// of the region.
+// of the region in bytes.
 typedef struct memory_map_entry_s {
   uint32_t addr;
   uint32_t len;
@@ -27,7 +32,54 @@ typedef struct memory_map_s {
   uint32_t size;
 } memory_map_t;
 
+// Global state.
 static memory_map_t pmm_mmap;
+static uint32_t free_page_bitmap[BITMAP_ARRAY_SIZE];
+static uint32_t free_page_count = 0;
+
+// Page alignment functions.
+static inline uint32_t page_align_up(uint32_t addr)
+{
+  if (addr != (addr & 0xFFFFF000))
+    addr = (addr & 0xFFFFF000) + PAGE_SIZE;
+  return addr;
+}
+static inline uint32_t page_align_down(uint32_t addr)
+{ return addr & 0xFFFFF000; }
+
+// Mark a physical page frame as free.
+static void mark_page_free(uint32_t page_number)
+{
+  uint32_t index = page_number >> 5; // Divide by 32.
+  uint32_t bit = page_number & 0b11111; // Mod 32.
+  if ((free_page_bitmap[index] & (1 << bit)) == 0)
+    ++free_page_count; // Page was not free.
+  free_page_bitmap[index] |= (1 << bit);
+}
+
+// Mark a physical page frame as used.
+static void mark_page_used(uint32_t page_number)
+{
+  uint32_t index = page_number >> 5; // Divide by 32.
+  uint32_t bit = page_number & 0b11111; // Mod 32.
+  if (free_page_bitmap[index] & (1 << bit))
+    --free_page_count; // Page was free.
+  free_page_bitmap[index] &= ~(1 << bit);
+}
+
+// Mark free page frames from a bitmap.
+static void bitmap_init(memory_map_t mmap)
+{
+  for (uint32_t i = 0; i < mmap.size; ++i) {
+    memory_map_entry_t entry = mmap.entries[i];
+    uint32_t start_addr = page_align_up(entry.addr);
+    uint32_t end_addr = page_align_down(entry.addr + entry.len);
+    uint32_t page_number = start_addr >> FRAME_ADDR_OFFSET;
+    uint32_t end_number = end_addr >> FRAME_ADDR_OFFSET;
+    for (; page_number < end_number; ++page_number)
+      mark_page_free(page_number);
+  }
+}
 
 // Retrieve the memory map from GRUB multiboot info.
 static memory_map_t get_mmap(
@@ -36,13 +88,14 @@ static memory_map_t get_mmap(
   const uint32_t kphys_end
   )
 {
-  memory_map_t mmap; mmap.size = 0;
+  memory_map_t mmap;
+  u_memset(&mmap, 0, sizeof(mmap));
   multiboot_memory_map_t *entry;
 
   for (
     entry = (multiboot_memory_map_t *)mb_info->mmap_addr;
     (uint32_t)entry < mb_info->mmap_addr + mb_info->mmap_length
-      && mmap.size <= MAX_MEMORY_MAP_ENTRIES;
+      && mmap.size < MAX_MEMORY_MAP_ENTRIES;
     entry = (multiboot_memory_map_t *)
       ((uint32_t)entry + entry->size + sizeof(entry->size))
     )
@@ -83,6 +136,8 @@ uint32_t pmm_init(
   const uint32_t kphys_end
   )
 {
+  u_memset(free_page_bitmap, 0, sizeof(free_page_bitmap));
+
   if ((mb_info->flags & 0x20) == 0) {
     log_error("pmm", "No memory map from GRUB.");
     return 1;
@@ -94,5 +149,34 @@ uint32_t pmm_init(
     return 1;
   }
 
+  bitmap_init(pmm_mmap);
+  log_info("pmm", "Found %u free pages.", free_page_count);
+
   return 0;
+}
+
+// Allocate a single physical page.
+uint32_t pmm_alloc()
+{
+  if (free_page_count == 0) return 0;
+
+  for (uint32_t i = 0; i < BITMAP_ARRAY_SIZE; ++i) {
+    if (free_page_bitmap[i] == 0) continue;
+
+    for (uint32_t bit = 0; bit < 32; ++bit)
+      if (free_page_bitmap[i] & (1 << bit)) {
+        uint32_t page_number = (i * 32) + bit;
+        mark_page_used(page_number);
+        return page_number << FRAME_ADDR_OFFSET;
+      }
+  }
+
+  return 0;
+}
+
+// Free a single physical page.
+void pmm_free(uint32_t addr)
+{
+  uint32_t page_number = page_align_down(addr) >> FRAME_ADDR_OFFSET;
+  mark_page_free(page_number);
 }
