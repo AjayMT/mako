@@ -6,6 +6,7 @@
 // Author: Ajay Tatachar <ajaymt2@illinois.edu>
 
 #include <stdint.h>
+#include <common/constants.h>
 #include <common/multiboot.h>
 #include <debug/log.h>
 #include <util/util.h>
@@ -13,9 +14,6 @@
 
 #define MAX_MEMORY_MAP_ENTRIES 100
 #define BITMAP_ARRAY_SIZE      4096
-
-static const uint32_t FRAME_ADDR_OFFSET = 12;
-static const uint32_t PAGE_SIZE         = 0x1000; // 4K
 
 // A single memory map entry.
 // `addr` is the physical start address, `len` is the size
@@ -74,8 +72,8 @@ static void bitmap_init(memory_map_t mmap)
     memory_map_entry_t entry = mmap.entries[i];
     uint32_t start_addr = page_align_up(entry.addr);
     uint32_t end_addr = page_align_down(entry.addr + entry.len);
-    uint32_t page_number = start_addr >> FRAME_ADDR_OFFSET;
-    uint32_t end_number = end_addr >> FRAME_ADDR_OFFSET;
+    uint32_t page_number = start_addr >> PHYS_ADDR_OFFSET;
+    uint32_t end_number = end_addr >> PHYS_ADDR_OFFSET;
     for (; page_number < end_number; ++page_number)
       mark_page_free(page_number);
   }
@@ -139,18 +137,18 @@ uint32_t pmm_init(
   u_memset(free_page_bitmap, 0, sizeof(free_page_bitmap));
 
   if ((mb_info->flags & 0x20) == 0) {
-    log_error("pmm", "No memory map from GRUB.");
+    log_error("pmm", "No memory map from GRUB.\n");
     return 1;
   }
 
   pmm_mmap = get_mmap(mb_info, kphys_start, kphys_end);
   if (pmm_mmap.size == 0) {
-    log_error("pmm", "Could not locate any available memory.");
+    log_error("pmm", "Could not locate any available memory.\n");
     return 1;
   }
 
   bitmap_init(pmm_mmap);
-  log_info("pmm", "Found %u free pages.", free_page_count);
+  log_info("pmm", "Found %u free pages.\n", free_page_count);
 
   return 0;
 }
@@ -167,7 +165,7 @@ uint32_t pmm_alloc()
       if (free_page_bitmap[i] & (1 << bit)) {
         uint32_t page_number = (i * 32) + bit;
         mark_page_used(page_number);
-        return page_number << FRAME_ADDR_OFFSET;
+        return page_number << PHYS_ADDR_OFFSET;
       }
   }
 
@@ -177,6 +175,6 @@ uint32_t pmm_alloc()
 // Free a single physical page.
 void pmm_free(uint32_t addr)
 {
-  uint32_t page_number = page_align_down(addr) >> FRAME_ADDR_OFFSET;
+  uint32_t page_number = page_align_down(addr) >> PHYS_ADDR_OFFSET;
   mark_page_free(page_number);
 }

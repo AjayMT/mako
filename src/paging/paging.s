@@ -6,7 +6,7 @@
     ; Author: Ajay Tatachar <ajaymt2@illinois.edu>
 
 global paging_set_directory
-global invalidate_page_table_entry
+global paging_invalidate_pte
 
 section .text
 
@@ -19,10 +19,10 @@ paging_set_directory:
     mov cr3, eax
     ret
 
-    ; invalidate_page_table_entry -- Remove a PTE from the TLB.
+    ; paging_invalidate_pte -- Remove a PTE from the TLB.
     ; stack: [esp + 4] the virtual address whose PTE to remove
     ;        [esp    ] return address
-invalidate_page_table_entry:
+paging_invalidate_pte:
     mov eax, [esp + 4]
     invlpg [eax]
     ret

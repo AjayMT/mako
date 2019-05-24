@@ -36,12 +36,13 @@ align 4
 kernel_stack:
     resb KERNEL_STACK_SIZE
 
-section .text
+section .multiboot
 align 4
     dd MAGIC
     dd FLAGS
     dd CHECKSUM
 
+section .text
 loader:                         ; entry point called by GRUB
     ; We don't need to do anything in here for now.
 

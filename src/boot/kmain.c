@@ -66,27 +66,24 @@ void kmain(
   if (res == 0) fb_write(" pg", 3);
 
   page_directory_t pd = (page_directory_t)0xFFFFF000;
-  page_directory_entry_t kern_pde = pd[KERNEL_PD_IDX];
+  page_directory_entry_t kern_pde = pd[KERNEL_START_VADDR >> 22];
   if (kern_pde.present) fb_write(" rec", 4);
 
-  int *vaddr = (int *)(0xDEADBEEF & 0xFFFFF000);
+  uint32_t vaddr = paging_next_vaddr();
   uint32_t paddr = pmm_alloc();
-  page_table_entry_t flags;
-  u_memset(&flags, 0, sizeof(flags));
-  // flags.rw = 1;
-  paging_map((uint32_t)vaddr, paddr, flags);
-  *vaddr = 12; // why no page fault?
-  log_debug("kmain", "*vaddr: %u\n", *vaddr);
+  log_debug("kmain", "mapping vaddr %x to paddr %x\n", vaddr, paddr);
 
-  char out[1024];
-  for (uint32_t i = 0; i < 1024; ++i) {
-    page_table_entry_t pde = (
-      (page_table_t)
-      (0xFFC00000 + (((uint32_t)vaddr) >> 22) * 0x1000)
-      )[i];
-    out[i] = 97 - (pde.present + (pde.rw * 2));
-  }
-  log_debug("kmain", "page table (` is present, ^ is present and writable):\n%s", out);
+  page_table_entry_t flags; u_memset(&flags, 0, sizeof(flags));
+  paging_map(vaddr, paddr, flags);
+
+  log_debug("kmain", "*vaddr = %u\n", *((uint32_t *)vaddr));
+  *((uint32_t *)vaddr) = 12; // should page fault since r/w bit is zero.
+  log_debug("kmain", "*vaddr = %u\n", *((uint32_t *)vaddr));
+
+  log_debug("kmain", "next free vaddr: %x\n", paging_next_vaddr());
+  log_debug("kmain", "unmapping %x\n", vaddr);
+  paging_unmap(vaddr);
+  log_debug("kmain", "next free vaddr: %x\n", paging_next_vaddr());
 
   enable_interrupts();
 }

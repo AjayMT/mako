@@ -1,10 +1,14 @@
 
-ENTRY(loader)                /* the name of the entry label */
+ENTRY(loader)
 
 SECTIONS {
     . = 0xC0100000;
     kernel_start = .;
-    .text ALIGN (0x1000) : AT(ADDR(.text) - 0xC0000000)
+    .multiboot : AT(ADDR(.multiboot) - 0xC0000000)
+    {
+        *(.multiboot)
+    }
+    .text : AT(ADDR(.text) - 0xC0000000)
     {
         *(.text)
     }
@@ -16,7 +20,7 @@ SECTIONS {
     {
         *(.data)
     }
-    .bss ALIGN (0x1000) : AT(ADDR(.bss) - 0xC0000000)
+    .bss : AT(ADDR(.bss) - 0xC0000000)
     {
         *(COMMON)
         *(.bss)

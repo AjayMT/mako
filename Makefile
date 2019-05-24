@@ -9,21 +9,15 @@ AS = nasm
 ASFLAGS = -I${PWD}/src/ -f elf
 
 DRIVER_OBJECTS = io.o framebuffer.o serial.o keyboard.o
-ASM_OBJECTS = gdt.s.o idt.s.o interrupt.s.o paging.s.o
-OBJECTS = gdt.o idt.o pic.o interrupt.o paging.o pmm.o \
-          debug.o util.o
+ASM_OBJECTS = boot.s.o gdt.s.o idt.s.o interrupt.s.o paging.s.o
+OBJECTS = boot.o gdt.o idt.o pic.o interrupt.o paging.o pmm.o \
+          debug.o util.o kheap.o
 export
 
 all: kernel.elf
 
-kernel.elf: boot.o kmain.o $(OBJECTS) $(ASM_OBJECTS) $(DRIVER_OBJECTS)
-	$(LD) $(LDFLAGS) boot.o kmain.o $(OBJECTS) $(ASM_OBJECTS) $(DRIVER_OBJECTS) -o kernel.elf
-
-boot.o: src/boot/boot.s
-	$(AS) $(ASFLAGS) src/boot/boot.s -o boot.o
-
-kmain.o: src/boot/kmain.c
-	$(CC) $(CFLAGS) src/boot/kmain.c -o kmain.o
+kernel.elf: $(OBJECTS) $(ASM_OBJECTS) $(DRIVER_OBJECTS)
+	$(LD) $(LDFLAGS) $(OBJECTS) $(ASM_OBJECTS) $(DRIVER_OBJECTS) -o kernel.elf
 
 $(ASM_OBJECTS): $(shell find src -type f)
 	$(MAKE) out_asm=${PWD}/$@ -C src/$(basename $(basename $@))
@@ -47,7 +41,7 @@ mako.iso: kernel.elf
 	        -o mako.iso                     \
 	        iso
 
-run: mako.iso
+bochs: mako.iso
 	bochs -f bochsrc.txt -q
 
 qemu: mako.iso

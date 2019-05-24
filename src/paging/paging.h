@@ -60,7 +60,7 @@ uint32_t paging_init(page_directory_t, uint32_t);
 void paging_set_directory(uint32_t);
 
 // Remove a PTE from the TLB. Implemented in paging.s.
-void invalidate_page_table_entry(uint32_t);
+void paging_invalidate_pte(uint32_t);
 
 // Map a virtual page starting at `virt_addr` to a physical page
 // starting at `phys_addr`. `flags` specifies .rw, .user, .pwt and
@@ -71,5 +71,8 @@ paging_result_t paging_map(
 
 // Unmap a page starting at virtual address `virt_addr`.
 paging_result_t paging_unmap(uint32_t virt_addr);
+
+// Get the next free virtual address, or 0 if there are none.
+uint32_t paging_next_vaddr();
 
 #endif /* _PAGING_H_ */
