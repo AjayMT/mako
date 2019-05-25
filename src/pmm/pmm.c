@@ -13,7 +13,7 @@
 #include "pmm.h"
 
 #define MAX_MEMORY_MAP_ENTRIES 100
-#define BITMAP_ARRAY_SIZE      4096
+#define BITMAP_ARRAY_SIZE      0x8000
 
 // A single memory map entry.
 // `addr` is the physical start address, `len` is the size

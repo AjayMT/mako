@@ -56,7 +56,7 @@ enable_paging:
     mov cr4, ecx                ; write config
 
     mov ecx, cr0                ; read current config
-    or  ecx, 0x80008000         ; enable paging and write protection
+    or  ecx, 0x80010000         ; enable paging and write protection
     mov cr0, ecx                ; write config
 
     lea ecx, [higher_half]

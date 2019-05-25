@@ -74,10 +74,11 @@ void kmain(
   log_debug("kmain", "mapping vaddr %x to paddr %x\n", vaddr, paddr);
 
   page_table_entry_t flags; u_memset(&flags, 0, sizeof(flags));
+  flags.rw = 1;
   paging_map(vaddr, paddr, flags);
 
   log_debug("kmain", "*vaddr = %u\n", *((uint32_t *)vaddr));
-  *((uint32_t *)vaddr) = 12; // should page fault since r/w bit is zero.
+  *((uint32_t *)vaddr) = 12;
   log_debug("kmain", "*vaddr = %u\n", *((uint32_t *)vaddr));
 
   log_debug("kmain", "next free vaddr: %x\n", paging_next_vaddr());
