@@ -70,7 +70,7 @@ void kmain(
   if (kern_pde.present) fb_write(" rec", 4);
 
   uint32_t vaddr = paging_next_vaddr();
-  uint32_t paddr = pmm_alloc();
+  uint32_t paddr = pmm_alloc(1);
   log_debug("kmain", "mapping vaddr %x to paddr %x\n", vaddr, paddr);
 
   page_table_entry_t flags; u_memset(&flags, 0, sizeof(flags));

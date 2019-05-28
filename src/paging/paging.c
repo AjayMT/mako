@@ -67,7 +67,7 @@ paging_result_t paging_map(
 
   if (pde.present == 0) { // We have to make a new page table.
     uint32_t pt_vaddr = pd_idx_to_pt_vaddr(pd_idx);
-    uint32_t pt_paddr = pmm_alloc();
+    uint32_t pt_paddr = pmm_alloc(1);
     if (pt_paddr == 0) // Unable to allocate new page.
       return PAGING_NO_MEMORY;
 
@@ -130,7 +130,7 @@ paging_result_t paging_unmap(uint32_t virt_addr)
     );
 
   if (pt_idx == PAGE_SIZE_DWORDS) { // There aren't any.
-    pmm_free(pde.table_addr << PHYS_ADDR_OFFSET);
+    pmm_free(pde.table_addr << PHYS_ADDR_OFFSET, 1);
     pde.present = 0;
     pd[pd_idx] = pde;
     paging_invalidate_pte((uint32_t)pt);

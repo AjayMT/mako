@@ -50,6 +50,7 @@ static void mark_page_free(uint32_t page_number)
 {
   uint32_t index = page_number >> 5; // Divide by 32.
   uint32_t bit = page_number & 0b11111; // Mod 32.
+  if (index >= BITMAP_ARRAY_SIZE) return;
   if ((free_page_bitmap[index] & (1 << bit)) == 0)
     ++free_page_count; // Page was not free.
   free_page_bitmap[index] |= (1 << bit);
@@ -60,6 +61,7 @@ static void mark_page_used(uint32_t page_number)
 {
   uint32_t index = page_number >> 5; // Divide by 32.
   uint32_t bit = page_number & 0b11111; // Mod 32.
+  if (index >= BITMAP_ARRAY_SIZE) return;
   if (free_page_bitmap[index] & (1 << bit))
     --free_page_count; // Page was free.
   free_page_bitmap[index] &= ~(1 << bit);
@@ -153,28 +155,43 @@ uint32_t pmm_init(
   return 0;
 }
 
-// Allocate a single physical page.
-uint32_t pmm_alloc()
+// Allocate multiple contiguous physical pages.
+uint32_t pmm_alloc(uint32_t size)
 {
-  if (free_page_count == 0) return 0;
+  if (free_page_count == 0 || size == 0) return 0;
 
-  for (uint32_t i = 0; i < BITMAP_ARRAY_SIZE; ++i) {
-    if (free_page_bitmap[i] == 0) continue;
+  uint32_t max_page_number = sizeof(free_page_bitmap);
+  uint32_t current = 0, step = 0;
+  for (; current < max_page_number; current += step + 1) {
+    uint32_t current_index = current >> 5;
+    if (free_page_bitmap[current_index] == 0)
+      current = (current_index + 1) << 5;
 
-    for (uint32_t bit = 0; bit < 32; ++bit)
-      if (free_page_bitmap[i] & (1 << bit)) {
-        uint32_t page_number = (i * 32) + bit;
-        mark_page_used(page_number);
-        return page_number << PHYS_ADDR_OFFSET;
+    uint32_t found = 0;
+    for (step = 0; step < size; ++step) {
+      uint32_t page_number = current + step;
+      uint32_t index = page_number >> 5;
+      uint32_t bit = page_number & 0b11111;
+      uint32_t value = free_page_bitmap[index];
+      if (value & (1 << bit))
+        ++found;
+      if (found == size) {
+        for (uint32_t allocated = 0; allocated < size; ++allocated)
+          mark_page_used(current + allocated);
+        return current << PHYS_ADDR_OFFSET;
       }
+      if ((value & (1 << bit)) == 0)
+        break;
+    }
   }
 
   return 0;
 }
 
-// Free a single physical page.
-void pmm_free(uint32_t addr)
+// Free multiple contiguous physical pages.
+void pmm_free(uint32_t addr, uint32_t size)
 {
-  uint32_t page_number = page_align_down(addr) >> PHYS_ADDR_OFFSET;
-  mark_page_free(page_number);
+  addr = page_align_down(addr);
+  for (uint32_t i = 0; i < size; ++i, addr += PAGE_SIZE)
+    mark_page_free(addr >> PHYS_ADDR_OFFSET);
 }
