@@ -69,7 +69,7 @@ void kmain(
   page_directory_entry_t kern_pde = pd[KERNEL_START_VADDR >> 22];
   if (kern_pde.present) fb_write(" rec", 4);
 
-  uint32_t vaddr = paging_next_vaddr();
+  uint32_t vaddr = paging_next_vaddr_n(2) + PAGE_SIZE;
   uint32_t paddr = pmm_alloc(1);
   log_debug("kmain", "mapping vaddr %x to paddr %x\n", vaddr, paddr);
 
@@ -82,9 +82,11 @@ void kmain(
   log_debug("kmain", "*vaddr = %u\n", *((uint32_t *)vaddr));
 
   log_debug("kmain", "next free vaddr: %x\n", paging_next_vaddr());
+  log_debug("kmain", "next free vaddr(3): %x\n", paging_next_vaddr_n(3));
   log_debug("kmain", "unmapping %x\n", vaddr);
   paging_unmap(vaddr);
   log_debug("kmain", "next free vaddr: %x\n", paging_next_vaddr());
+  log_debug("kmain", "next free vaddr(3): %x\n", paging_next_vaddr_n(3));
 
   enable_interrupts();
 }

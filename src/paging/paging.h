@@ -75,4 +75,8 @@ paging_result_t paging_unmap(uint32_t virt_addr);
 // Get the next free virtual address, or 0 if there are none.
 uint32_t paging_next_vaddr();
 
+// Get the next free virtual address at the start of multiple
+// contiguous unmapped pages.
+uint32_t paging_next_vaddr_n(uint32_t size);
+
 #endif /* _PAGING_H_ */

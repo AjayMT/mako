@@ -175,7 +175,7 @@ uint32_t pmm_alloc(uint32_t size)
       uint32_t value = free_page_bitmap[index];
       if (value & (1 << bit))
         ++found;
-      if (found == size) {
+      if (found >= size) {
         for (uint32_t allocated = 0; allocated < size; ++allocated)
           mark_page_used(current + allocated);
         return current << PHYS_ADDR_OFFSET;
