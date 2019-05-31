@@ -47,7 +47,7 @@ typedef struct block_front_s block_front_t;
 
 // Minimum size of a single block, including front and back
 // info structs.
-static const int32_t MIN_SIZE = sizeof(block_front_t)
+static const uint32_t MIN_SIZE = sizeof(block_front_t)
   + sizeof(block_back_t) + BLOCK_SIZE;
 
 // The largest available block and head of the size list.
@@ -251,7 +251,7 @@ static void release_heap(block_front_t *block)
   if (front_space == 0) {
     left_block = NULL;
     page_block = block;
-  } else if (front_space < (uint32_t)MIN_SIZE) {
+  } else if (front_space < MIN_SIZE) {
     block_front_t *pb = previous_block(block);
     if (pb->info->free == 0) {
       // Temporarily place an allocated block in the free list.
@@ -269,7 +269,7 @@ static void release_heap(block_front_t *block)
       block, front_space - sizeof(block_front_t)
       );
 
-  if (back_space >= (uint32_t)MIN_SIZE)
+  if (back_space >= MIN_SIZE)
     right_block = split_block(
       page_block, page_top_addr - page_base_addr - sizeof(block_front_t)
       );
@@ -308,7 +308,7 @@ void *kmalloc(size_t size)
       return NULL;
   }
 
-  if (get_size(biggest) - size <= (uint32_t)MIN_SIZE)
+  if (get_size(biggest) - size < MIN_SIZE)
     size = get_size(biggest);
   else split_block(biggest, size + sizeof(block_back_t));
 
