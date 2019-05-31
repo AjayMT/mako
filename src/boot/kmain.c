@@ -98,7 +98,7 @@ void kmain(
   char *hello = kmalloc(6);
   u_memcpy(hello, "hello", 6);
   log_debug("kmain", "%x %s\n", hello, hello);
-  char *test = kmalloc(PAGE_SIZE);
+  char *test = kmalloc(8);
   kfree(hello);
   kfree(test);
 

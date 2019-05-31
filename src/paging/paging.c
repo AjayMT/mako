@@ -158,7 +158,7 @@ uint32_t paging_next_vaddr(uint32_t size, uint32_t base)
         found += PAGE_SIZE_DWORDS - pt_idx;
         if (found >= size) return current << PHYS_ADDR_OFFSET;
         continue;
-      }
+      } else if (pde.page_size) break;
 
       page_table_t pt = (page_table_t)pd_idx_to_pt_vaddr(pd_idx);
       page_table_entry_t pte = pt[pt_idx];

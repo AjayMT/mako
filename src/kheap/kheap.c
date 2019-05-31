@@ -294,7 +294,7 @@ static void release_heap(block_front_t *block)
   }
 
   if (right_block) sort_down(right_block);
-  if (left_block) sort_down(block);
+  if (left_block) sort_down(left_block);
 }
 
 // Allocate memory.
