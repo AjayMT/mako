@@ -87,8 +87,6 @@ static void remove_block(block_front_t *block)
 // Move a block down the size list to its correct position.
 static void sort_down(block_front_t *block)
 {
-  block_front_t *o_bigger = block->bigger;
-  block_front_t *o_smaller = block->smaller;
   block_front_t *swap = block->smaller;
   block_front_t *prev = block;
   for (
