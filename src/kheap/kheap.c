@@ -203,7 +203,7 @@ static void get_heap(size_t size)
   size = page_align_up(size);
 
   uint32_t npages = size >> PHYS_ADDR_OFFSET;
-  uint32_t vaddr = paging_next_vaddr_n(npages);
+  uint32_t vaddr = paging_next_vaddr(npages, KERNEL_START_VADDR);
   uint32_t acquired_size = 0;
   page_table_entry_t flags; u_memset(&flags, 0, sizeof(flags));
   flags.rw = 1;

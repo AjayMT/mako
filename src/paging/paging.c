@@ -141,11 +141,12 @@ paging_result_t paging_unmap(uint32_t virt_addr)
 
 // Get the next free virtual address at the start of multiple
 // contiguous unmapped pages.
-uint32_t paging_next_vaddr_n(uint32_t size)
+uint32_t paging_next_vaddr(uint32_t size, uint32_t base)
 {
   page_directory_t pd = (page_directory_t)PD_VADDR;
   uint32_t max_page_number = PAGE_SIZE_DWORDS * PAGE_SIZE_DWORDS;
-  uint32_t current = 1, step = 0; // Skip page 0 so NULL is an invalid address.
+  uint32_t current = base >> PHYS_ADDR_OFFSET, step = 0;
+  if (current == 0) ++current; // Skip address 0 so NULL is invalid.
   for (; current < max_page_number; current += step + 1) {
     uint32_t found = 0;
     for (step = 0; step < size; ++step) {
@@ -164,31 +165,6 @@ uint32_t paging_next_vaddr_n(uint32_t size)
       if (pte.present == 0) ++found;
       if (found >= size) return current << PHYS_ADDR_OFFSET;
       if (pte.present) break;
-    }
-  }
-
-  return 0;
-}
-
-// Get the next free virtual address.
-uint32_t paging_next_vaddr()
-{
-  page_directory_t pd = (page_directory_t)PD_VADDR;
-  for (uint32_t pd_idx = 0; pd_idx < PAGE_SIZE_DWORDS; ++pd_idx) {
-    page_directory_entry_t pde = pd[pd_idx];
-    uint32_t pt_idx = 0;
-    if (pde.present == 0) {
-      if (pd_idx == 0) ++pt_idx; // Don't return address 0x0.
-      return pd_idx_to_vaddr(pd_idx) | pt_idx_to_vaddr(pt_idx);
-    }
-
-    page_table_t pt = (page_table_t)pd_idx_to_pt_vaddr(pd_idx);
-    for (; pt_idx < PAGE_SIZE_DWORDS; ++pt_idx) {
-      // Skip mapped pages and address 0x0.
-      if (pt[pt_idx].present || (pd_idx == 0 && pt_idx == 0))
-        continue;
-
-      return pd_idx_to_vaddr(pd_idx) | pt_idx_to_vaddr(pt_idx);
     }
   }
 

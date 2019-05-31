@@ -76,7 +76,7 @@ void kmain(
   page_directory_entry_t kern_pde = pd[KERNEL_START_VADDR >> 22];
   if (kern_pde.present) fb_write(" rec", 4);
 
-  uint32_t vaddr = paging_next_vaddr_n(2) + PAGE_SIZE;
+  uint32_t vaddr = paging_next_vaddr(2, KERNEL_START_VADDR) + PAGE_SIZE;
   uint32_t paddr = pmm_alloc(1);
   // log_debug("kmain", "mapping vaddr %x to paddr %x\n", vaddr, paddr);
 
@@ -97,7 +97,7 @@ void kmain(
 
   char *hello = kmalloc(6);
   u_memcpy(hello, "hello", 6);
-  log_debug("kmain", "%s\n", hello);
+  log_debug("kmain", "%x %s\n", hello, hello);
   char *test = kmalloc(PAGE_SIZE);
   kfree(hello);
   kfree(test);
