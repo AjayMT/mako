@@ -8,14 +8,21 @@
 #include <interrupt/interrupt.h>
 #include <paging/paging.h>
 #include <pmm/pmm.h>
+#include <kheap/kheap.h>
 #include <common/multiboot.h>
 #include <common/constants.h>
 #include <debug/log.h>
 #include <util/util.h>
 
-void page_fault_handler()
+void page_fault_handler(
+  cpu_state_t cs, idt_info_t info, stack_state_t ss
+  )
 {
-  log_debug("kmain", "page fault");
+  uint32_t vaddr;
+  asm("movl %%cr2, %0" : "=r"(vaddr));
+  log_error(
+    "kmain", "%u: page fault %x vaddr %x\n", info.idt_index, info.error_code, vaddr
+    );
 }
 
 void kmain(
@@ -71,22 +78,29 @@ void kmain(
 
   uint32_t vaddr = paging_next_vaddr_n(2) + PAGE_SIZE;
   uint32_t paddr = pmm_alloc(1);
-  log_debug("kmain", "mapping vaddr %x to paddr %x\n", vaddr, paddr);
+  // log_debug("kmain", "mapping vaddr %x to paddr %x\n", vaddr, paddr);
 
   page_table_entry_t flags; u_memset(&flags, 0, sizeof(flags));
   flags.rw = 1;
   paging_map(vaddr, paddr, flags);
 
-  log_debug("kmain", "*vaddr = %u\n", *((uint32_t *)vaddr));
+  // log_debug("kmain", "*vaddr = %u\n", *((uint32_t *)vaddr));
   *((uint32_t *)vaddr) = 12;
-  log_debug("kmain", "*vaddr = %u\n", *((uint32_t *)vaddr));
+  // log_debug("kmain", "*vaddr = %u\n", *((uint32_t *)vaddr));
 
-  log_debug("kmain", "next free vaddr: %x\n", paging_next_vaddr());
-  log_debug("kmain", "next free vaddr(3): %x\n", paging_next_vaddr_n(3));
-  log_debug("kmain", "unmapping %x\n", vaddr);
+  // log_debug("kmain", "next free vaddr: %x\n", paging_next_vaddr());
+  // log_debug("kmain", "next free vaddr(3): %x\n", paging_next_vaddr_n(3));
+  // log_debug("kmain", "unmapping %x\n", vaddr);
   paging_unmap(vaddr);
-  log_debug("kmain", "next free vaddr: %x\n", paging_next_vaddr());
-  log_debug("kmain", "next free vaddr(3): %x\n", paging_next_vaddr_n(3));
+  // log_debug("kmain", "next free vaddr: %x\n", paging_next_vaddr());
+  // log_debug("kmain", "next free vaddr(3): %x\n", paging_next_vaddr_n(3));
+
+  char *hello = kmalloc(6);
+  u_memcpy(hello, "hello", 6);
+  log_debug("kmain", "%s\n", hello);
+  char *test = kmalloc(PAGE_SIZE);
+  kfree(hello);
+  kfree(test);
 
   enable_interrupts();
 }

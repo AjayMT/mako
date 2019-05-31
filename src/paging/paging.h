@@ -79,4 +79,7 @@ uint32_t paging_next_vaddr();
 // contiguous unmapped pages.
 uint32_t paging_next_vaddr_n(uint32_t size);
 
+// Get the physical address that a virtual address is mapped to.
+uint32_t paging_get_paddr(uint32_t);
+
 #endif /* _PAGING_H_ */

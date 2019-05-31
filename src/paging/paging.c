@@ -79,7 +79,7 @@ paging_result_t paging_map(
     pde.pcd = flags.pcd;
     pde.table_addr = pt_paddr >> PHYS_ADDR_OFFSET;
     pd[pd_idx] = pde;
-    u_memset((void *)pt_vaddr, 0, PAGE_SIZE); // Clear the new page table.
+    u_memset((void *)pt_vaddr, 0b10, PAGE_SIZE); // Clear the new page table.
     pd[pd_idx].rw = flags.rw;
   }
 
@@ -153,7 +153,6 @@ uint32_t paging_next_vaddr_n(uint32_t size)
       uint32_t pd_idx = page_number >> 10;
       uint32_t pt_idx = page_number & 0x3FF;
       page_directory_entry_t pde = pd[pd_idx];
-
       if (pde.present == 0) {
         found += PAGE_SIZE_DWORDS - pt_idx;
         if (found >= size) return current << PHYS_ADDR_OFFSET;
@@ -194,4 +193,16 @@ uint32_t paging_next_vaddr()
   }
 
   return 0;
+}
+
+// Get the physical address that a virtual address is mapped to.
+uint32_t paging_get_paddr(uint32_t vaddr)
+{
+  uint32_t pd_idx = vaddr_to_pd_idx(vaddr);
+  uint32_t pt_idx = vaddr_to_pt_idx(vaddr);
+  page_directory_t pd = (page_directory_t)PD_VADDR;
+  if (pd[pd_idx].present == 0) return 0;
+  page_table_t pt = (page_table_t)pd_idx_to_pt_vaddr(pd_idx);
+  if (pt[pt_idx].present == 0) return 0;
+  return pt[pt_idx].frame_addr << PHYS_ADDR_OFFSET;
 }

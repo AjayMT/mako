@@ -11,5 +11,6 @@
 #include <stddef.h>
 
 void *u_memset(void *, char, size_t);
+void *u_memcpy(void *, const void *, size_t);
 
 #endif /* _UTIL_H_ */
