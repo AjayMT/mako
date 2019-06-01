@@ -15,9 +15,21 @@
 #include <common/constants.h>
 #include "kheap.h"
 
+// This is a relatively simple worst-fit allocator. It maintains
+// a list of free blocks of memory, always sorted from largest to
+// smallest. Theoretically, the advantages of this are:
+//   - Allocations are fast since we can always use the first block
+//     in the list, unless more memory is needed from the kernel.
+//   - External fragmentation is encouraged, but the 'holes' are
+//     usually large enough to be useful.
+// Theoretical performance benefits from the worst-fit ordering may
+// by offset by the fact that blocks have to be re-ordered whenever
+// they are shrunk or grown. Nevertheless, this was more interesting
+// to implement than a simple first-fit allocator.
+
 // Constants.
-static const uint32_t BLOCK_SIZE        = 8;
-static const uint32_t BLOCK_SIZE_OFFSET = 3;
+static const uint32_t SIZE_UNIT         = 8;
+static const uint32_t SIZE_UNIT_OFFSET  = 3;
 
 // The back of every block stores its size and three flags:
 //   `free`: whether the block is free
@@ -48,7 +60,7 @@ typedef struct block_front_s block_front_t;
 // Minimum size of a single block, including front and back
 // info structs.
 static const uint32_t MIN_SIZE = sizeof(block_front_t)
-  + sizeof(block_back_t) + BLOCK_SIZE;
+  + sizeof(block_back_t) + SIZE_UNIT;
 
 // The largest available block and head of the size list.
 static block_front_t *biggest = NULL;
@@ -65,11 +77,11 @@ static inline uint32_t page_align_down(uint32_t addr)
 static inline uint32_t block_align_up(uint32_t addr)
 {
   if ((addr & 0b111) != 0)
-    addr += BLOCK_SIZE - (addr & 0b111);
+    addr += SIZE_UNIT - (addr & 0b111);
   return addr;
 }
 static inline size_t get_size(block_front_t *block)
-{ return (block->info->size) << BLOCK_SIZE_OFFSET; }
+{ return (block->info->size) << SIZE_UNIT_OFFSET; }
 
 // Remove a free block from the size list.
 static void remove_block(block_front_t *block)
@@ -126,16 +138,16 @@ static void sort_up(block_front_t *block)
 }
 
 // Get the front of the previous block.
-static block_front_t *previous_block(block_front_t *block)
+static inline block_front_t *previous_block(block_front_t *block)
 {
   uint32_t pinfo_addr = (uint32_t)block - sizeof(block_back_t);
-  uint32_t psize = ((block_back_t *)pinfo_addr)->size << BLOCK_SIZE_OFFSET;
+  uint32_t psize = ((block_back_t *)pinfo_addr)->size << SIZE_UNIT_OFFSET;
   uint32_t pfront_addr = pinfo_addr - psize - sizeof(block_front_t);
   return (block_front_t *)pfront_addr;
 }
 
 // Get the front of the next block.
-static block_front_t *next_block(block_front_t *block)
+static inline block_front_t *next_block(block_front_t *block)
 {
   uint32_t info_addr = (uint32_t)(block->info);
   return (block_front_t *)(info_addr + sizeof(block_back_t));
@@ -158,14 +170,14 @@ static block_front_t *split_block(block_front_t *block, size_t offset)
     .info = block->info
   };
   *((block_front_t *)new_front_addr) = new_front;
-  new_front.info->size = (get_size(block) - offset) >> BLOCK_SIZE_OFFSET;
+  new_front.info->size = (get_size(block) - offset) >> SIZE_UNIT_OFFSET;
   new_front.info->prev = 1;
   block->smaller = (block_front_t *)new_front_addr;
   if (new_front.smaller)
     new_front.smaller->bigger = (block_front_t *)new_front_addr;
 
   block_back_t new_info = {
-    .size = offset >> BLOCK_SIZE_OFFSET,
+    .size = offset >> SIZE_UNIT_OFFSET,
     .free = old_info.free,
     .prev = old_info.prev,
     .next = 1
@@ -189,7 +201,7 @@ static void merge_block(block_front_t *block)
   uint32_t nb_size = get_size(nb);
   block_size += nb_size + sizeof(block_front_t) + sizeof(block_back_t);
   block->info = nb->info;
-  block->info->size = block_size >> BLOCK_SIZE_OFFSET;
+  block->info->size = block_size >> SIZE_UNIT_OFFSET;
   block->info->prev = old_info.prev;
   block->info->free = old_info.free;
 }
@@ -215,7 +227,7 @@ static void get_heap(size_t size)
   size_t new_size = acquired_size
     - sizeof(block_front_t) - sizeof(block_back_t);
   block_back_t new_info = {
-    .size = new_size >> BLOCK_SIZE_OFFSET,
+    .size = new_size >> SIZE_UNIT_OFFSET,
     .free = 1,
     .prev = 0,
     .next = 0
@@ -273,7 +285,7 @@ static void release_heap(block_front_t *block)
     right_block = split_block(
       page_block, page_top_addr - page_base_addr - sizeof(block_front_t)
       );
-  else {} // TODO Shift the front of the next block back.
+  else {} // TODO Shift the front of the next block back?
 
   remove_block(page_block);
   if (left_block) left_block->info->next = 0;
@@ -325,6 +337,7 @@ void *kmalloc(size_t size)
 // Free memory.
 void kfree(void *ptr)
 {
+  if (ptr == NULL) return;
   disable_interrupts();
 
   block_front_t *block = (block_front_t*)
