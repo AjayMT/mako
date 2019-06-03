@@ -8,10 +8,16 @@
 #ifndef _IO_H_
 #define _IO_H_
 
-// Send data to an I/O port. Defined in io.s.
-void outb(unsigned short port, unsigned char data);
+#include <stdint.h>
 
-// Read a byte from an I/O port. Defined in io.s.
-unsigned char inb(unsigned short port);
+// Output functions. Defined in io.s.
+void outb(uint16_t port, uint8_t data);
+void outw(uint16_t port, uint16_t data);
+void outl(uint16_t port, uint32_t data);
+
+// Input functions. Defined in io.s.
+uint8_t inb(uint16_t port);
+uint16_t inw(uint16_t port);
+uint32_t inl(uint16_t port);
 
 #endif /* _IO_H_ */

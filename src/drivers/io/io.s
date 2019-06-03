@@ -27,3 +27,29 @@ inb:
     mov dx, [esp + 4]
     in  al, dx
     ret
+
+    ; outw -- send a WORD to an I/O port.
+outw:
+    mov ax, [esp + 8]
+    mov dx, [esp + 4]
+    out dx, ax
+    ret
+
+    ; inw -- get a WORD from an I/O port.
+inw:
+    mov dx, [esp + 4]
+    in ax, dx
+    ret
+
+    ; outl -- send a DWORD to an I/O port.
+outl:
+    mov eax, [esp + 8]
+    mov dx, [esp + 4]
+    out dx, eax
+    ret
+
+    ; inl -- get a DWORD from an I/O port.
+inl:
+    mov dx, [esp + 4]
+    in eax, dx
+    ret
