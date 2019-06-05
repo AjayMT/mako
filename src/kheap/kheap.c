@@ -30,6 +30,7 @@
 // Constants.
 static const uint32_t SIZE_UNIT         = 8;
 static const uint32_t SIZE_UNIT_OFFSET  = 3;
+static const uint32_t BLOCK_MAGIC       = 0xDEADDEAD;
 
 // The back of every block stores its size and three flags:
 //   `free`: whether the block is free
@@ -54,6 +55,7 @@ struct block_front_s {
   struct block_front_s *bigger;
   struct block_front_s *smaller;
   block_back_t *info;
+  uint32_t magic;
 } __attribute__((packed));
 typedef struct block_front_s block_front_t;
 
@@ -167,7 +169,8 @@ static block_front_t *split_block(block_front_t *block, size_t offset)
   block_front_t new_front = {
     .bigger = block,
     .smaller = block->smaller,
-    .info = block->info
+    .info = block->info,
+    .magic = BLOCK_MAGIC
   };
   *((block_front_t *)new_front_addr) = new_front;
   new_front.info->size = (get_size(block) - offset) >> SIZE_UNIT_OFFSET;
@@ -237,7 +240,8 @@ static void get_heap(size_t size)
   block_front_t new_front = {
     .bigger = NULL,
     .smaller = biggest,
-    .info = (block_back_t *)new_info_addr
+    .info = (block_back_t *)new_info_addr,
+    .magic = BLOCK_MAGIC
   };
   *((block_front_t *)vaddr) = new_front;
   biggest = (block_front_t *)vaddr;
@@ -338,6 +342,9 @@ void *kmalloc(size_t size)
 void kfree(void *ptr)
 {
   if (ptr == NULL) return;
+  if (*((uint32_t *)(ptr - sizeof(uint32_t))) != BLOCK_MAGIC)
+    return;
+
   disable_interrupts();
 
   block_front_t *block = (block_front_t*)
