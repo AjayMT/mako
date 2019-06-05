@@ -12,5 +12,6 @@
 
 void *u_memset(void *, char, size_t);
 void *u_memcpy(void *, const void *, size_t);
+size_t u_strlen(const char *);
 
 #endif /* _UTIL_H_ */

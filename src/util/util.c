@@ -20,3 +20,10 @@ void *u_memcpy(void *dst, const void *src, size_t n)
     ((char *)dst)[i] = ((char *)src)[i];
   return dst;
 }
+
+size_t u_strlen(const char *s)
+{
+  size_t i = 0;
+  for (; s[i] != '\0'; ++i);
+  return i;
+}
