@@ -22,7 +22,7 @@ static void list_destroy_nodes(list_node_t *head)
 
 void list_destroy(list_t *list)
 {
-  list_destroy_nodes(list);
+  list_destroy_nodes(list->head);
   kfree(list);
 }
 
@@ -114,6 +114,12 @@ tree_node_t *tree_init(void *value)
   return root;
 }
 
+void tree_insert(tree_node_t *parent, tree_node_t *child)
+{
+  list_push_front(parent->children, child);
+  child->parent = parent;
+}
+
 void tree_destroy(tree_node_t *root)
 {
   if (root == NULL) return;
@@ -121,5 +127,5 @@ void tree_destroy(tree_node_t *root)
     tree_destroy(child->value);
   list_destroy(root->children);
   kfree(root->value);
-  kfree(root);
+  if (root->parent == NULL) kfree(root);
 }

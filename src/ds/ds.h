@@ -38,6 +38,7 @@ void list_insert_before(list_t *, list_node_t *, void *);
 void list_remove(list_t *, list_node_t *);
 
 tree_node_t *tree_init(void *);
+void tree_insert(tree_node_t *, tree_node_t *);
 void tree_destroy(tree_node_t *);
 
 #define list_foreach(i, l)                                  \
