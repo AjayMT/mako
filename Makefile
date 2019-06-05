@@ -8,10 +8,11 @@ LDFLAGS = -T link.ld -melf_i386
 AS = nasm
 ASFLAGS = -I${PWD}/src/ -f elf
 
-DRIVER_OBJECTS = io.o framebuffer.o serial.o keyboard.o
+DRIVER_OBJECTS = io.o framebuffer.o serial.o keyboard.o ata.o \
+                 pci.o
 ASM_OBJECTS = boot.s.o gdt.s.o idt.s.o interrupt.s.o paging.s.o
 OBJECTS = boot.o gdt.o idt.o pic.o interrupt.o paging.o pmm.o \
-          debug.o util.o kheap.o
+          debug.o util.o kheap.o fs.o ext2.o
 export
 
 all: kernel.elf
