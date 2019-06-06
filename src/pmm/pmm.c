@@ -85,7 +85,9 @@ static void bitmap_init(memory_map_t mmap)
 static memory_map_t get_mmap(
   multiboot_info_t *mb_info,
   const uint32_t kphys_start,
-  const uint32_t kphys_end
+  const uint32_t kphys_end,
+  const uint32_t rd_phys_start,
+  const uint32_t rd_phys_end
   )
 {
   memory_map_t mmap;
@@ -116,6 +118,11 @@ static memory_map_t get_mmap(
       addr = kphys_end;
     }
 
+    if (addr <= rd_phys_start && addr + len > rd_phys_end) {
+      len -= rd_phys_end - addr;
+      addr = rd_phys_end;
+    }
+
     // If the address is below 1MB, exclude it.
     // GRUB's mmap doesn't include some stuff that's mapped to memory
     // below 1MB.
@@ -133,7 +140,9 @@ static memory_map_t get_mmap(
 uint32_t pmm_init(
   multiboot_info_t *mb_info,
   const uint32_t kphys_start,
-  const uint32_t kphys_end
+  const uint32_t kphys_end,
+  const uint32_t rd_phys_start,
+  const uint32_t rd_phys_end
   )
 {
   u_memset(free_page_bitmap, 0, sizeof(free_page_bitmap));
@@ -143,7 +152,9 @@ uint32_t pmm_init(
     return 1;
   }
 
-  pmm_mmap = get_mmap(mb_info, kphys_start, kphys_end);
+  pmm_mmap = get_mmap(
+    mb_info, kphys_start, kphys_end, rd_phys_start, rd_phys_end
+    );
   if (pmm_mmap.size == 0) {
     log_error("pmm", "Could not locate any available memory.\n");
     return 1;

@@ -44,6 +44,15 @@ void kmain(
   uint32_t kphys_start = kvirt_start - KERNEL_START_VADDR;
   uint32_t kphys_end = kvirt_end - KERNEL_START_VADDR;
 
+  if ((mb_info->flags & 8) == 0 || mb_info->mods_count != 1) {
+    log_error("kmain", "Modules not loaded.");
+    return;
+  }
+
+  multiboot_module_t *rd_module = (multiboot_module_t *)(mb_info->mods_addr);
+  uint32_t rd_phys_start = rd_module->mod_start;
+  uint32_t rd_phys_end = rd_module->mod_end;
+
   if (mb_magic_number != MULTIBOOT_BOOTLOADER_MAGIC) {
     log_error("kmain", "Incorrect magic number.");
     return;
@@ -67,7 +76,7 @@ void kmain(
   register_interrupt_handler(14, page_fault_handler);
 
   uint32_t res;
-  res = pmm_init(mb_info, kphys_start, kphys_end);
+  res = pmm_init(mb_info, kphys_start, kphys_end, rd_phys_start, rd_phys_end);
   if (res == 0) fb_write(" pmm", 4);
 
   res = paging_init(

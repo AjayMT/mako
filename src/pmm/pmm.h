@@ -14,7 +14,11 @@
 // Initialize the physical memory manager.
 // Uses the memory map provided by GRUB to determine which
 // regions of memory are available initially.
-uint32_t pmm_init(multiboot_info_t *, const uint32_t, const uint32_t);
+uint32_t pmm_init(
+  multiboot_info_t *,
+  const uint32_t, const uint32_t,
+  const uint32_t, const uint32_t
+  );
 
 // Allocate multiple contiguous physical pages. Returns a physical
 // start address or 0 if no pages are free.

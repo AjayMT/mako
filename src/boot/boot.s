@@ -24,7 +24,7 @@ align 4096
 kernel_pd:
     ; First entry in the page directory is the identity map.
     ; Identity mapping is necessary so that the instruction pointer
-    ; doesn't point to an invalid address after paging is enablede.
+    ; doesn't point to an invalid address after paging is enabled.
     dd 10000011b
     times (KERNEL_PD_IDX - 1) dd 0
     ; This entry maps the kernel.

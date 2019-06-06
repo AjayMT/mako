@@ -29,7 +29,10 @@ $(OBJECTS): $(shell find src -type f)
 $(DRIVER_OBJECTS): $(shell find src/drivers -type f)
 	$(MAKE) out=${PWD}/$@ -C src/drivers/$(basename $@)
 
-mako.iso: kernel.elf
+rd: make_rd.py $(shell find rdroot -type f)
+	python3 make_rd.py
+
+mako.iso: kernel.elf rd
 	cp kernel.elf iso/boot/kernel.elf
 	mkisofs -R                              \
 	        -b boot/grub/stage2_eltorito    \
@@ -48,5 +51,8 @@ bochs: mako.iso
 qemu: mako.iso
 	qemu-system-i386 -serial file:com1.out -cdrom mako.iso
 
+.PHONY: clean
 clean:
-	rm -rf *.o kernel.elf iso/boot/kernel.elf mako.iso bochslog.txt com1.out
+	rm -rf *.o kernel.elf                                     \
+	       iso/boot/kernel.elf mako.iso bochslog.txt com1.out \
+	       iso/modules/rd
