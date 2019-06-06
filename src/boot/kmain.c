@@ -9,6 +9,8 @@
 #include <paging/paging.h>
 #include <pmm/pmm.h>
 #include <kheap/kheap.h>
+#include <fs/fs.h>
+#include <rd/rd.h>
 #include <common/multiboot.h>
 #include <common/constants.h>
 #include <debug/log.h>
@@ -69,8 +71,6 @@ void kmain(
   pic_init();
   keyboard_init();
 
-  log_debug("kmain", "eflags: %x\n", eflags);
-
   pic_mask(1, 0); // Ignore timer interrupts for now.
 
   register_interrupt_handler(14, page_fault_handler);
@@ -84,35 +84,25 @@ void kmain(
     );
   if (res == 0) fb_write(" pg", 3);
 
-  page_directory_t pd = (page_directory_t)0xFFFFF000;
-  page_directory_entry_t kern_pde = pd[KERNEL_START_VADDR >> 22];
-  if (kern_pde.present) fb_write(" rec", 4);
+  fs_init();
+  res = rd_init(rd_phys_start, rd_phys_end);
+  if (res == 0) fb_write(" rd", 3);
 
-  uint32_t vaddr = paging_next_vaddr(2, KERNEL_START_VADDR) + PAGE_SIZE;
-  uint32_t paddr = pmm_alloc(1);
-  // log_debug("kmain", "mapping vaddr %x to paddr %x\n", vaddr, paddr);
+  fs_node_t *file = fs_open_node("/rd/hello.txt", 0);
+  fs_node_t *file2 = fs_open_node("/rd/dir/file.txt", 0);
 
-  page_table_entry_t flags; u_memset(&flags, 0, sizeof(flags));
-  flags.rw = 1;
-  paging_map(vaddr, paddr, flags);
+  uint8_t *buf = kmalloc(12);
+  u_memset(buf, 0, 12);
+  uint32_t size = fs_read(file, 0, 6, buf);
+  fb_write((char *)buf, size);
 
-  // log_debug("kmain", "*vaddr = %u\n", *((uint32_t *)vaddr));
-  *((uint32_t *)vaddr) = 12;
-  // log_debug("kmain", "*vaddr = %u\n", *((uint32_t *)vaddr));
+  u_memset(buf, 0, 12);
+  size = fs_read(file2, 0, 6, buf);
+  fb_write((char *)buf, size);
 
-  // log_debug("kmain", "next free vaddr: %x\n", paging_next_vaddr());
-  // log_debug("kmain", "next free vaddr(3): %x\n", paging_next_vaddr_n(3));
-  // log_debug("kmain", "unmapping %x\n", vaddr);
-  paging_unmap(vaddr);
-  // log_debug("kmain", "next free vaddr: %x\n", paging_next_vaddr());
-  // log_debug("kmain", "next free vaddr(3): %x\n", paging_next_vaddr_n(3));
-
-  char *hello = kmalloc(6);
-  u_memcpy(hello, "hello", 6);
-  log_debug("kmain", "%x %s\n", hello, hello);
-  char *test = kmalloc(8);
-  kfree(hello);
-  kfree(test);
+  kfree(buf);
+  kfree(file);
+  kfree(file2);
 
   interrupt_restore(eflags);
 }

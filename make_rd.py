@@ -44,7 +44,7 @@ def dir_header(path):
         len_end = len_start + DIR_ENTRY_LEN
         flag_start = len_end
         flag_end = flag_start + DIR_ENTRY_FLAG
-        header[entry_idx : len(file)] = bytes(file, "utf-8")
+        header[entry_idx : entry_idx + len(file)] = bytes(file, "utf-8")
         header[len_start:len_end] = flenbytes
         header[flag_start:flag_end] = [fflag]
         entry_idx += DIR_ENTRY_SIZE

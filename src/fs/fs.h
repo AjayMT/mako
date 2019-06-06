@@ -13,14 +13,18 @@
 // The maximum length of a file name.
 #define FS_NAME_LEN 256
 
+// Path separator.
+#define FS_PATH_SEP     '/'
+#define FS_PATH_SEP_STR "/"
+
 // fs_node_t flags.
-const uint32_t FS_FILE        = 1;
-const uint32_t FS_DIRECTORY   = 2;
-const uint32_t FS_CHARDEVICE  = 3;
-const uint32_t FS_BLOCKDEVICE = 4;
-const uint32_t FS_PIPE        = 5;
-const uint32_t FS_SYMLINK     = 6;
-const uint32_t FS_MOUNTPOINT  = 8;
+#define FS_FILE        1
+#define FS_DIRECTORY   2
+#define FS_CHARDEVICE  3
+#define FS_BLOCKDEVICE 4
+#define FS_PIPE        5
+#define FS_SYMLINK     6
+#define FS_MOUNTPOINT  8
 
 struct fs_node_s;
 struct dirent;
@@ -46,7 +50,7 @@ typedef struct fs_node_s {
   uint32_t flags;         // Flags (see above).
   uint32_t inode;         // Inode number.
   uint32_t length;        // File size in bytes.
-  uint32_t impl;          // TODO
+  uint32_t impl;          // Filesystem implementation defined.
 
   // File operations.
   open_type_t open;
@@ -65,11 +69,27 @@ struct dirent {
   uint32_t ino;
 };
 
-void open_fs(fs_node_t *, uint32_t);
-void close_fs(fs_node_t *);
-uint32_t read_fs(fs_node_t *, uint32_t, uint32_t, uint8_t *);
-uint32_t write_fs(fs_node_t *, uint32_t, uint32_t, uint8_t *);
-struct dirent *readdir_fs(fs_node_t *, uint32_t);
-fs_node_t *finddir_fs(fs_node_t *, char *);
+// VFS entry.
+typedef struct vfs_entry_s {
+  char name[FS_NAME_LEN];
+  fs_node_t *file;
+} vfs_entry_t;
+
+// Interface for all filesystems.
+void fs_open(fs_node_t *, uint32_t);
+void fs_close(fs_node_t *);
+uint32_t fs_read(fs_node_t *, uint32_t, uint32_t, uint8_t *);
+uint32_t fs_write(fs_node_t *, uint32_t, uint32_t, uint8_t *);
+struct dirent *fs_readdir(fs_node_t *, uint32_t);
+fs_node_t *fs_finddir(fs_node_t *, char *);
+
+// Initialize the filesystem interface.
+void fs_init();
+
+// Mount a filesystem.
+void fs_mount(fs_node_t *, const char *);
+
+// Open the filesystem node at a path.
+fs_node_t *fs_open_node(const char *, uint32_t);
 
 #endif /* _FS_H_ */
