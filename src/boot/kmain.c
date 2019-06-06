@@ -50,7 +50,8 @@ void kmain(
   }
 
   interrupt_init();
-  disable_interrupts();
+  enable_interrupts();
+  uint32_t eflags = interrupt_save_disable();
 
   fb_clear();
   serial_init(SERIAL_COM1_BASE);
@@ -58,6 +59,8 @@ void kmain(
   idt_init();
   pic_init();
   keyboard_init();
+
+  log_debug("kmain", "eflags: %x\n", eflags);
 
   pic_mask(1, 0); // Ignore timer interrupts for now.
 
@@ -102,5 +105,5 @@ void kmain(
   kfree(hello);
   kfree(test);
 
-  enable_interrupts();
+  interrupt_restore(eflags);
 }

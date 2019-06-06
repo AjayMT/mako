@@ -56,5 +56,7 @@ void forward_interrupt(cpu_state_t, idt_info_t, stack_state_t);
 // Enable/disable interrupts. Implemented in interrupt.s.
 void enable_interrupts();
 void disable_interrupts();
+uint32_t interrupt_save_disable();
+void interrupt_restore(uint32_t);
 
 #endif /* _INTERRUPT_H_ */

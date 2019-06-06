@@ -314,7 +314,7 @@ static void release_heap(block_front_t *block)
 // Allocate memory.
 void *kmalloc(size_t size)
 {
-  disable_interrupts();
+  uint32_t flags = interrupt_save_disable();
 
   size = block_align_up(size);
   if (size == 0) return NULL;
@@ -334,7 +334,7 @@ void *kmalloc(size_t size)
 
   if (biggest) sort_down(biggest);
 
-  enable_interrupts();
+  interrupt_restore(flags);
   return (void *)((uint32_t)ret + sizeof(block_front_t));
 }
 
@@ -345,7 +345,7 @@ void kfree(void *ptr)
   if (*((uint32_t *)(ptr - sizeof(uint32_t))) != BLOCK_MAGIC)
     return;
 
-  disable_interrupts();
+  uint32_t flags = interrupt_save_disable();
 
   block_front_t *block = (block_front_t*)
     ((uint32_t)ptr - sizeof(block_front_t));
@@ -371,5 +371,5 @@ void kfree(void *ptr)
   } else sort_up(block);
 
   release_heap(block);
-  enable_interrupts();
+  interrupt_restore(flags);
 }
