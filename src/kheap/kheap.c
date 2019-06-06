@@ -258,7 +258,7 @@ static void release_heap(block_front_t *block)
   uint32_t front_space = page_base_addr - block_addr;
   uint32_t back_space = back_addr + sizeof(block_back_t) - page_top_addr;
 
-  if (page_base_addr == page_top_addr) return;
+  if (page_base_addr >= page_top_addr) return;
 
   block_front_t *left_block = block;
   block_front_t *page_block = NULL;
@@ -282,7 +282,7 @@ static void release_heap(block_front_t *block)
 
   if (page_block == NULL)
     page_block = split_block(
-      block, front_space - sizeof(block_front_t)
+      left_block, front_space - sizeof(block_front_t)
       );
 
   if (back_space >= MIN_SIZE)
