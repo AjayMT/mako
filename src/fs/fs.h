@@ -13,7 +13,9 @@
 // The maximum length of a file name.
 #define FS_NAME_LEN 256
 
-// Path separator.
+// Path constants.
+#define FS_DIR_SELF     "."
+#define FS_DIR_UP       ".."
 #define FS_PATH_SEP     '/'
 #define FS_PATH_SEP_STR "/"
 

@@ -28,6 +28,16 @@ typedef rd_dir_entry_t *rd_dir_header_t;
 static rd_dir_header_t rd_root = NULL;
 static uint32_t rd_size = 0;
 
+static inline void map_fs_ops(fs_node_t *node)
+{
+  node->open = rd_open;
+  node->close = rd_close;
+  node->read = rd_read;
+  node->write = rd_write;
+  node->readdir = rd_readdir;
+  node->finddir = rd_finddir;
+}
+
 // Initialize the ramdisk and mount it.
 uint32_t rd_init(const uint32_t rd_phys_start, const uint32_t rd_phys_end)
 {
@@ -57,12 +67,7 @@ uint32_t rd_init(const uint32_t rd_phys_start, const uint32_t rd_phys_end)
   fs_node_t *node = kmalloc(sizeof(fs_node_t));
   u_memset(node, 0, sizeof(fs_node_t));
   node->flags = FS_DIRECTORY;
-  node->open = rd_open;
-  node->close = rd_close;
-  node->read = rd_read;
-  node->write = rd_write;
-  node->readdir = rd_readdir;
-  node->finddir = rd_finddir;
+  map_fs_ops(node);
 
   fs_mount(node, "/rd");
 
@@ -78,6 +83,9 @@ uint32_t rd_read(
   fs_node_t *node, uint32_t offset, uint32_t size, uint8_t *buffer
   )
 {
+  if (offset >= node->length) return 0;
+  if (offset + size >= node->length) size = node->length - offset;
+
   char *ptr = (char *)((uint32_t)rd_root + node->inode);
   u_memcpy(buffer, ptr + offset, size);
   return size;
@@ -90,7 +98,30 @@ uint32_t rd_write(
 
 struct dirent *rd_readdir(fs_node_t *node, uint32_t index)
 {
-  return NULL;
+  struct dirent *ent = kmalloc(sizeof(struct dirent));
+  if (index == 0) {
+    u_memcpy(ent->name, FS_DIR_SELF, u_strlen(FS_DIR_SELF) + 1);
+    ent->ino = node->inode;
+    return ent;
+  }
+
+  // TODO ".."
+  --index;
+  rd_dir_header_t header = (rd_dir_header_t)((uint32_t)rd_root + node->inode);
+  rd_dir_entry_t entry = header[index];
+  if (entry.name[0] == 0) {
+    kfree(ent);
+    return NULL;
+  }
+
+  uint32_t size = RD_NUM_DIR_ENTRIES * sizeof(rd_dir_entry_t);
+  for (uint32_t i = 0; i < index; ++i)
+    size += header[i].size;
+
+  u_memcpy(ent->name, entry.name, u_strlen(entry.name) + 1);
+  ent->ino = node->inode + size;
+
+  return ent;
 }
 
 fs_node_t *rd_finddir(fs_node_t *node, char *name)
@@ -111,12 +142,7 @@ fs_node_t *rd_finddir(fs_node_t *node, char *name)
     new_node->flags = ent.is_dir ? FS_DIRECTORY : FS_FILE;
     new_node->inode = node->inode + size;
     new_node->length = ent.size;
-    new_node->open = rd_open;
-    new_node->close = rd_close;
-    new_node->read = rd_read;
-    new_node->write = rd_write;
-    new_node->readdir = rd_readdir;
-    new_node->finddir = rd_finddir;
+    map_fs_ops(new_node);
 
     return new_node;
   }

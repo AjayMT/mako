@@ -100,9 +100,15 @@ void kmain(
   size = fs_read(file2, 0, 6, buf);
   fb_write((char *)buf, size);
 
+  fs_node_t *dir = fs_open_node("/rd/dir", 0);
+  struct dirent *ent = fs_readdir(dir, 2);
+  fb_write(ent->name, u_strlen(ent->name));
+
   kfree(buf);
   kfree(file);
   kfree(file2);
+  kfree(ent);
+  kfree(dir);
 
   interrupt_restore(eflags);
 }
