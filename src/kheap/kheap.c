@@ -342,7 +342,7 @@ void *kmalloc(size_t size)
 void kfree(void *ptr)
 {
   if (ptr == NULL) return;
-  if (*((uint32_t *)(ptr - sizeof(uint32_t))) != BLOCK_MAGIC)
+  if (*((uint32_t *)((uint32_t)ptr - sizeof(uint32_t))) != BLOCK_MAGIC)
     return;
 
   uint32_t flags = interrupt_save_disable();
