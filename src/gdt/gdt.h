@@ -11,9 +11,9 @@
 #include <stdint.h>
 
 // Constants.
-const uint8_t PL0         = 0x0;
-const uint8_t PL3         = 0x3;
-const uint16_t TSS_SEGSEL = 0x28;
+#define PL0        0x0
+#define PL3        0x3
+#define TSS_SEGSEL 0x28
 
 // Initialize the GDT.
 void gdt_init(uint32_t);
