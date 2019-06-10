@@ -2,6 +2,7 @@
 #include <drivers/framebuffer/framebuffer.h>
 #include <drivers/serial/serial.h>
 #include <drivers/keyboard/keyboard.h>
+#include <tss/tss.h>
 #include <gdt/gdt.h>
 #include <idt/idt.h>
 #include <pic/pic.h>
@@ -66,7 +67,10 @@ void kmain(
 
   fb_clear();
   serial_init(SERIAL_COM1_BASE);
-  gdt_init();
+
+  tss_init();
+  uint32_t tss_vaddr = tss_get_vaddr();
+  gdt_init(tss_vaddr);
   idt_init();
   pic_init();
   keyboard_init();

@@ -6,6 +6,7 @@
 // Author: Ajay Tatachar <ajaymt2@illinois.edu>
 
 #include <stdint.h>
+#include <tss/tss.h>
 #include "gdt.h"
 
 // x86 processors divide memory into lots of small regions a.k.a 'segments'.
@@ -71,8 +72,20 @@ static void gdt_create_entry(
     | (type & 0x0F);
 }
 
+// Create an entry for the TSS.
+static void gdt_create_tss_entry(uint32_t index, uint32_t tss_vaddr)
+{
+  // TODO documentation.
+  gdt_entries[index].base_1 = tss_vaddr & 0xFFFF;
+  gdt_entries[index].base_2 = (tss_vaddr >> 16) & 0xFF;
+  gdt_entries[index].base_3 = (tss_vaddr >> 24) & 0xFF;
+  gdt_entries[index].limit_1 = sizeof(tss_t) - 1;
+  gdt_entries[index].access = (1 << 7) | (1 << 3) | 1;
+  gdt_entries[index].limit_2 = 0;
+}
+
 // Initialize the GDT.
-void gdt_init()
+void gdt_init(uint32_t tss_vaddr)
 {
   gdt_ptr_t table_ptr;
   table_ptr.limit = sizeof(gdt_entry_t) * GDT_NUM_ENTRIES;
@@ -93,6 +106,10 @@ void gdt_init()
   // User mode data segment.
   gdt_create_entry(4, PL3, DATA_RW_TYPE);
 
-  // Execute LGDT instruction.
+  // TSS.
+  gdt_create_tss_entry(5, tss_vaddr);
+
+  // Execute LGDT and LTR instructions.
   gdt_load((uint32_t)&table_ptr);
+  tss_load_set(TSS_SEGSEL);
 }

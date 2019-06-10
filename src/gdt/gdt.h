@@ -10,11 +10,12 @@
 
 #include <stdint.h>
 
-// Privilege level constants.
-static const uint8_t PL0 = 0x0;
-static const uint8_t PL3 = 0x3;
+// Constants.
+const uint8_t PL0         = 0x0;
+const uint8_t PL3         = 0x3;
+const uint16_t TSS_SEGSEL = 0x28;
 
 // Initialize the GDT.
-void gdt_init();
+void gdt_init(uint32_t);
 
 #endif /* _GDT_H_ */
