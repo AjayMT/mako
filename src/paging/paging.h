@@ -56,6 +56,13 @@ typedef enum {
 // Initialize paging.
 uint32_t paging_init(page_directory_t, uint32_t);
 
+// Set/get kernel page directory address.
+void paging_set_kernel_pd(page_directory_t, uint32_t);
+void paging_get_kernel_pd(page_directory_t *, uint32_t *);
+
+// Shallow copy the current page directory.
+page_directory_t paging_copy_pd();
+
 // Set the current page directory. Implemented in paging.s.
 void paging_set_directory(uint32_t);
 

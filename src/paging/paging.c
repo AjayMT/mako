@@ -12,6 +12,9 @@
 #include <common/constants.h>
 #include "paging.h"
 
+static page_directory_t kernel_pd_vaddr = 0;
+static uint32_t kernel_pd_paddr = 0;
+
 static inline uint32_t vaddr_to_pd_idx(uint32_t vaddr)
 { return vaddr >> 22; }
 static inline uint32_t vaddr_to_pt_idx(uint32_t vaddr)
@@ -54,6 +57,37 @@ uint32_t paging_init(page_directory_t pd, uint32_t phys_addr)
   paging_set_directory(phys_addr);
 
   return 0;
+}
+
+// Set/get kernel page directory address.
+void paging_set_kernel_pd(page_directory_t vaddr, uint32_t paddr)
+{ kernel_pd_vaddr = vaddr; kernel_pd_paddr = paddr; }
+void paging_get_kernel_pd(page_directory_t *vaddr, uint32_t *paddr)
+{ *vaddr = kernel_pd_vaddr; *paddr = kernel_pd_paddr; }
+
+// Shallow copy the current page directory.
+page_directory_t paging_copy_pd()
+{
+  uint32_t pd_vaddr = paging_next_vaddr(1, KERNEL_START_VADDR);
+  page_directory_t pd = (page_directory_t)pd_vaddr;
+  uint32_t pd_paddr = pmm_alloc(1);
+  page_table_entry_t flags; u_memset(&flags, 0, sizeof(flags));
+  flags.rw = 1;
+  paging_map(pd_vaddr, pd_paddr, flags);
+  u_memset(pd, 0, PAGE_SIZE);
+  page_directory_t current_pd = (page_directory_t)PD_VADDR;
+  for (uint32_t pd_idx = 0; pd_idx < PAGE_SIZE_DWORDS; ++pd_idx) {
+    page_directory_entry_t pde = current_pd[pd_idx];
+    if (pde.present == 0) continue;
+    if (pde.page_size) {
+      pd[pd_idx] = pde;
+      continue;
+    }
+
+    pd[pd_idx] = pde;
+  }
+
+  return pd;
 }
 
 // Map a page.
