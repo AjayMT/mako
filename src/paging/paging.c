@@ -79,11 +79,6 @@ page_directory_t paging_copy_pd()
   for (uint32_t pd_idx = 0; pd_idx < PAGE_SIZE_DWORDS; ++pd_idx) {
     page_directory_entry_t pde = current_pd[pd_idx];
     if (pde.present == 0) continue;
-    if (pde.page_size) {
-      pd[pd_idx] = pde;
-      continue;
-    }
-
     pd[pd_idx] = pde;
   }
 
