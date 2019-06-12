@@ -26,6 +26,9 @@ static inline uint32_t pt_idx_to_vaddr(uint32_t pt_idx)
 static inline uint32_t pd_idx_to_pt_vaddr(uint32_t pd_idx)
 { return FIRST_PT_VADDR + (PAGE_SIZE * pd_idx); }
 
+// Implemented in paging.s.
+uint32_t paging_get_cr3();
+
 // Initialize paging.
 uint32_t paging_init(page_directory_t pd, uint32_t phys_addr)
 {
@@ -65,24 +68,77 @@ void paging_set_kernel_pd(page_directory_t vaddr, uint32_t paddr)
 void paging_get_kernel_pd(page_directory_t *vaddr, uint32_t *paddr)
 { *vaddr = kernel_pd_vaddr; *paddr = kernel_pd_paddr; }
 
-// Shallow copy the current page directory.
-page_directory_t paging_copy_pd()
+// Shallow copy the kernel address space.
+void paging_copy_kernel_space(page_directory_t pd)
 {
+  uint32_t start_idx = vaddr_to_pd_idx(KERNEL_START_VADDR);
+  page_directory_t current_pd = (page_directory_t)PD_VADDR;
+  for (uint32_t pd_idx = start_idx; pd_idx < PAGE_SIZE_DWORDS; ++pd_idx)
+    pd[pd_idx] = current_pd[pd_idx];
+}
+
+// Clone a process' page directory.
+void paging_clone_process_directory(
+  page_directory_t process_pd,
+  page_directory_t *pd_out,
+  uint32_t *cr3_out
+  )
+{
+  uint32_t current_cr3 = paging_get_cr3();
+  paging_init(process_pd, paging_get_paddr((uint32_t)process_pd));
+
+  uint32_t cr3 = pmm_alloc(1);
   uint32_t pd_vaddr = paging_next_vaddr(1, KERNEL_START_VADDR);
   page_directory_t pd = (page_directory_t)pd_vaddr;
-  uint32_t pd_paddr = pmm_alloc(1);
   page_table_entry_t flags; u_memset(&flags, 0, sizeof(flags));
   flags.rw = 1;
-  paging_map(pd_vaddr, pd_paddr, flags);
-  u_memset(pd, 0, PAGE_SIZE);
-  page_directory_t current_pd = (page_directory_t)PD_VADDR;
-  for (uint32_t pd_idx = 0; pd_idx < PAGE_SIZE_DWORDS; ++pd_idx) {
-    page_directory_entry_t pde = current_pd[pd_idx];
-    if (pde.present == 0) continue;
-    pd[pd_idx] = pde;
+  paging_map(pd_vaddr, cr3, flags);
+  paging_copy_kernel_space(pd);
+  uint32_t kernel_idx = vaddr_to_pd_idx(KERNEL_START_VADDR);
+  for (uint32_t pd_idx = 0; pd_idx < kernel_idx; ++pd_idx) {
+    pd[pd_idx] = process_pd[pd_idx];
+
+    page_table_t process_pt = (page_table_t)pd_idx_to_pt_vaddr(pd_idx);
+    uint32_t pt_paddr = pmm_alloc(1);
+    uint32_t pt_vaddr = paging_next_vaddr(1, KERNEL_START_VADDR);
+    page_table_t pt = (page_table_t)pt_vaddr;
+    paging_map(pt_vaddr, pt_paddr, flags);
+    pd[pd_idx].table_addr = pt_paddr >> PHYS_ADDR_OFFSET;
+    for (uint32_t pt_idx = 0; pt_idx < PAGE_SIZE_DWORDS; ++pt_idx) {
+      page_table_entry_t pte = process_pt[pt_idx];
+      if (pte.present == 0) continue;
+
+      pt[pt_idx] = pte;
+      uint32_t frame_paddr = pmm_alloc(1);
+      uint32_t frame_vaddr = paging_next_vaddr(1, KERNEL_START_VADDR);
+      paging_map(frame_vaddr, frame_paddr, flags);
+      pt[pt_idx].frame_addr = frame_paddr >> PHYS_ADDR_OFFSET;
+      u_memcpy(
+        (uint8_t *)frame_vaddr,
+        (uint8_t *)(pd_idx_to_vaddr(pd_idx) | pt_idx_to_vaddr(pt_idx)),
+        PAGE_SIZE
+        );
+      paging_unmap(frame_vaddr);
+    }
+
+    paging_unmap(pt_vaddr);
   }
 
-  return pd;
+  paging_set_directory(current_cr3);
+  *cr3_out = cr3;
+  *pd_out = pd;
+}
+
+// Clear the user-mode address space.
+void paging_clear_user_space()
+{
+  uint32_t kernel_pd_idx = vaddr_to_pd_idx(KERNEL_START_VADDR);
+  for (uint32_t pd_idx = 0; pd_idx < kernel_pd_idx; ++pd_idx)
+    for (uint32_t pt_idx = 0; pt_idx < PAGE_SIZE_DWORDS; ++pt_idx) {
+      uint32_t vaddr = pd_idx_to_vaddr(pd_idx) | pt_idx_to_vaddr(pt_idx);
+      pmm_free(paging_get_paddr(vaddr), 1);
+      paging_unmap(vaddr);
+    }
 }
 
 // Map a page.

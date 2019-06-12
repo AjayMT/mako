@@ -60,8 +60,16 @@ uint32_t paging_init(page_directory_t, uint32_t);
 void paging_set_kernel_pd(page_directory_t, uint32_t);
 void paging_get_kernel_pd(page_directory_t *, uint32_t *);
 
-// Shallow copy the current page directory.
-page_directory_t paging_copy_pd();
+// Clone a process' page directory.
+void paging_clone_process_directory(
+  page_directory_t, page_directory_t *, uint32_t *
+  );
+
+// Clear the user-mode address space.
+void paging_clear_user_space();
+
+// Shallow copy the kernel address space.
+void paging_copy_kernel_space(page_directory_t);
 
 // Set the current page directory. Implemented in paging.s.
 void paging_set_directory(uint32_t);

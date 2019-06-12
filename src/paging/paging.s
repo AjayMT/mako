@@ -7,6 +7,7 @@
 
 global paging_set_directory
 global paging_invalidate_pte
+global paging_get_cr3
 
 section .text
 
@@ -25,4 +26,8 @@ paging_set_directory:
 paging_invalidate_pte:
     mov eax, [esp + 4]
     invlpg [eax]
+    ret
+
+paging_get_cr3:
+    mov eax, cr3
     ret
