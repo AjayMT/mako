@@ -25,8 +25,7 @@ void pit_init()
 // Set interval.
 void pit_set_interval(uint32_t interval)
 {
-  uint32_t freq = 1000 / interval;
-  uint16_t divisor = (uint16_t)(PIT_FREQUENCY / frequency);
+  uint16_t divisor = (uint16_t)((PIT_FREQUENCY * interval) / 1000);
   outb(PIT_CHANNEL_0_DATA, (uint8_t)divisor);
   outb(PIT_CHANNEL_0_DATA, (uint8_t)(divisor >> 8));
 }
