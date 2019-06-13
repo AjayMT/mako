@@ -34,6 +34,7 @@ void list_push_back(list_t *list, void *value)
   new_tail->prev = list->tail;
   if (list->tail != NULL) list->tail->next = new_tail;
   list->tail = new_tail;
+  if (list->head == NULL) list->head = new_tail;
   ++(list->size);
 }
 
@@ -43,6 +44,7 @@ void list_pop_back(list_t *list)
   list_node_t *old_tail = list->tail;
   list->tail = old_tail->prev;
   if (list->tail) list->tail->next = NULL;
+  if (list->head == old_tail) list->head = old_tail->next;
   list_destroy_nodes(old_tail);
   --(list->size);
 }
@@ -55,6 +57,7 @@ void list_push_front(list_t *list, void *value)
   new_head->next = list->head;
   if (list->head != NULL) list->head->prev = new_head;
   list->head = new_head;
+  if (list->tail == NULL) list->tail = new_head;
   ++(list->size);
 }
 
@@ -65,6 +68,7 @@ void list_pop_front(list_t *list)
   list->head = old_head->next;
   if (list->head) list->head->prev = NULL;
   old_head->next = NULL;
+  if (list->tail == old_head) list->tail = old_head->prev;
   list_destroy_nodes(old_head);
   --(list->size);
 }
