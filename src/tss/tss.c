@@ -7,6 +7,7 @@
 
 #include <stdint.h>
 #include <util/util.h>
+#include <common/constants.h>
 #include "tss.h"
 
 // Global TSS struct.
@@ -14,7 +15,10 @@ static tss_t tss;
 
 // Initialize TSS.
 void tss_init()
-{ u_memset(&tss, 0, sizeof(tss_t)); }
+{
+  u_memset(&tss, 0, sizeof(tss_t));
+  tss.iopb_offset = sizeof(tss_t);
+}
 
 // Get the address of the TSS struct.
 uint32_t tss_get_vaddr()
