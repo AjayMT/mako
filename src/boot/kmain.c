@@ -6,12 +6,14 @@
 #include <gdt/gdt.h>
 #include <idt/idt.h>
 #include <pic/pic.h>
+#include <pit/pit.h>
 #include <interrupt/interrupt.h>
 #include <paging/paging.h>
 #include <pmm/pmm.h>
 #include <kheap/kheap.h>
 #include <fs/fs.h>
 #include <rd/rd.h>
+#include <process/process.h>
 #include <common/multiboot.h>
 #include <common/constants.h>
 #include <debug/log.h>
@@ -24,8 +26,16 @@ void page_fault_handler(
   uint32_t vaddr;
   asm("movl %%cr2, %0" : "=r"(vaddr));
   log_error(
-    "kmain", "%u: page fault %x vaddr %x\n", info.idt_index, info.error_code, vaddr
+    "kmain", "eip %x: page fault %x vaddr %x cs %x\n",
+    ss.eip, info.error_code, vaddr, ss.cs
     );
+}
+
+void gp_fault_handler(
+  cpu_state_t cs, idt_info_t info, stack_state_t ss
+  )
+{
+  log_error("kmain", "gpf %x\n", info.error_code);
 }
 
 void kmain(
@@ -73,46 +83,42 @@ void kmain(
   gdt_init(tss_vaddr);
   idt_init();
   pic_init();
+  pit_init();
   keyboard_init();
 
-  pic_mask(1, 0); // Ignore timer interrupts for now.
-
   register_interrupt_handler(14, page_fault_handler);
+  register_interrupt_handler(13, gp_fault_handler);
 
   uint32_t res;
   res = pmm_init(mb_info, kphys_start, kphys_end, rd_phys_start, rd_phys_end);
-  if (res == 0) fb_write(" pmm", 4);
 
   res = paging_init(
     kernel_pd, (uint32_t)kernel_pd - KERNEL_START_VADDR
     );
-  if (res == 0) fb_write(" pg", 3);
+  paging_set_kernel_pd(kernel_pd, (uint32_t)kernel_pd - KERNEL_START_VADDR);
 
   fs_init();
   res = rd_init(rd_phys_start, rd_phys_end);
-  if (res == 0) fb_write(" rd", 3);
 
-  fs_node_t *file = fs_open_node("/rd/hello.txt", 0);
-  fs_node_t *file2 = fs_open_node("/rd/dir/file.txt", 0);
+  fs_node_t *test_node = fs_open_node("/rd/test", 0);
+  uint8_t *test_text = kmalloc(test_node->length);
+  fs_read(test_node, 0, test_node->length, test_text);
 
-  uint8_t *buf = kmalloc(12);
-  u_memset(buf, 0, 12);
-  uint32_t size = fs_read(file, 0, 6, buf);
-  fb_write((char *)buf, size);
+  fs_node_t *test2_node = fs_open_node("/rd/test2", 0);
+  uint8_t *test2_text = kmalloc(test2_node->length);
+  fs_read(test2_node, 0, test2_node->length, test2_text);
 
-  u_memset(buf, 0, 12);
-  size = fs_read(file2, 0, 6, buf);
-  fb_write((char *)buf, size);
+  process_init();
+  process_t *init = process_create_init(
+    test_text, test_node->length, NULL, 0
+    );
 
-  fs_node_t *dir = fs_open_node("/rd/dir", 0);
-  struct dirent *ent = fs_readdir(dir, 2);
-  fb_write(ent->name, u_strlen(ent->name));
-
-  kfree(buf);
-  kfree(file);
-  kfree(file2);
-  kfree(ent);
-  kfree(dir);
+  process_t *child = process_fork(init);
+  u_memcpy(child->name, "child", 6);
+  process_load(child, test2_text, test2_node->length, NULL, 0);
 
   interrupt_restore(eflags);
+
+  process_schedule(child);
+  process_schedule(init);
 }

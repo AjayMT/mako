@@ -11,6 +11,7 @@
 #include <stdint.h>
 
 #define SEGMENT_SELECTOR_KERNEL_CS  8
+#define SEGMENT_SELECTOR_KERNEL_DS  0x10
 #define KERNEL_START_VADDR          0xC0000000
 #define PHYS_ADDR_OFFSET            12
 #define PD_VADDR                    0xFFFFF000
