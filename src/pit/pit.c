@@ -18,7 +18,7 @@ static const uint32_t PIT_FREQUENCY      = 0x1234de;
 // Initialize the PIT.
 void pit_init()
 {
-  uint8_t data = (1 << 5) | (1 << 4) | (1 << 2) | 1;
+  uint8_t data = (1 << 5) | (1 << 4) | (1 << 2) | (1 << 1);
   outb(PIT_COMMAND, data);
 }
 
