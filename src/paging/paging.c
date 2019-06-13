@@ -7,6 +7,7 @@
 
 #include <stdint.h>
 #include <pmm/pmm.h>
+#include <interrupt/interrupt.h>
 #include <util/util.h>
 #include <debug/log.h>
 #include <common/constants.h>
@@ -26,12 +27,11 @@ static inline uint32_t pt_idx_to_vaddr(uint32_t pt_idx)
 static inline uint32_t pd_idx_to_pt_vaddr(uint32_t pd_idx)
 { return FIRST_PT_VADDR + (PAGE_SIZE * pd_idx); }
 
-// Implemented in paging.s.
-uint32_t paging_get_cr3();
-
 // Initialize paging.
 uint32_t paging_init(page_directory_t pd, uint32_t phys_addr)
 {
+  uint32_t eflags = interrupt_save_disable();
+
   // We map the last entry in the page directory to the page directory
   // itself. This is allowed because the PD looks no different than a
   // page table.
@@ -59,6 +59,7 @@ uint32_t paging_init(page_directory_t pd, uint32_t phys_addr)
 
   paging_set_directory(phys_addr);
 
+  interrupt_restore(eflags);
   return 0;
 }
 
@@ -68,7 +69,7 @@ void paging_set_kernel_pd(page_directory_t vaddr, uint32_t paddr)
 void paging_get_kernel_pd(page_directory_t *vaddr, uint32_t *paddr)
 { *vaddr = kernel_pd_vaddr; *paddr = kernel_pd_paddr; }
 
-// Shallow copy the kernel address space.
+// Shallow copy the kernel's address space.
 void paging_copy_kernel_space(page_directory_t pd)
 {
   uint32_t start_idx = vaddr_to_pd_idx(KERNEL_START_VADDR);
@@ -85,6 +86,7 @@ void paging_clone_process_directory(
   )
 {
   uint32_t current_cr3 = paging_get_cr3();
+
   paging_init(process_pd, paging_get_paddr((uint32_t)process_pd));
 
   uint32_t cr3 = pmm_alloc(1);
@@ -94,9 +96,11 @@ void paging_clone_process_directory(
   flags.rw = 1;
   paging_map(pd_vaddr, cr3, flags);
   paging_copy_kernel_space(pd);
+
   uint32_t kernel_idx = vaddr_to_pd_idx(KERNEL_START_VADDR);
   for (uint32_t pd_idx = 0; pd_idx < kernel_idx; ++pd_idx) {
     pd[pd_idx] = process_pd[pd_idx];
+    if (pd[pd_idx].present == 0) continue;
 
     page_table_t process_pt = (page_table_t)pd_idx_to_pt_vaddr(pd_idx);
     uint32_t pt_paddr = pmm_alloc(1);
@@ -105,10 +109,9 @@ void paging_clone_process_directory(
     paging_map(pt_vaddr, pt_paddr, flags);
     pd[pd_idx].table_addr = pt_paddr >> PHYS_ADDR_OFFSET;
     for (uint32_t pt_idx = 0; pt_idx < PAGE_SIZE_DWORDS; ++pt_idx) {
-      page_table_entry_t pte = process_pt[pt_idx];
-      if (pte.present == 0) continue;
+      pt[pt_idx] = process_pt[pt_idx];
+      if (pt[pt_idx].present == 0) continue;
 
-      pt[pt_idx] = pte;
       uint32_t frame_paddr = pmm_alloc(1);
       uint32_t frame_vaddr = paging_next_vaddr(1, KERNEL_START_VADDR);
       paging_map(frame_vaddr, frame_paddr, flags);
@@ -132,13 +135,21 @@ void paging_clone_process_directory(
 // Clear the user-mode address space.
 void paging_clear_user_space()
 {
+  page_directory_t pd = (page_directory_t)PD_VADDR;
   uint32_t kernel_pd_idx = vaddr_to_pd_idx(KERNEL_START_VADDR);
-  for (uint32_t pd_idx = 0; pd_idx < kernel_pd_idx; ++pd_idx)
+  for (uint32_t pd_idx = 0; pd_idx < kernel_pd_idx; ++pd_idx) {
+    if (pd[pd_idx].present == 0) continue;
+
+    page_table_t pt = (page_table_t)pd_idx_to_pt_vaddr(pd_idx);
     for (uint32_t pt_idx = 0; pt_idx < PAGE_SIZE_DWORDS; ++pt_idx) {
+      if (pd[pd_idx].present == 0) break;
+      if (pt[pt_idx].present == 0) continue;
+
       uint32_t vaddr = pd_idx_to_vaddr(pd_idx) | pt_idx_to_vaddr(pt_idx);
       pmm_free(paging_get_paddr(vaddr), 1);
       paging_unmap(vaddr);
     }
+  }
 }
 
 // Map a page.
@@ -256,6 +267,37 @@ uint32_t paging_next_vaddr(uint32_t size, uint32_t base)
   return 0;
 }
 
+// Get the last free virtual address at the start of multiple
+// contiguous unmapped pages.
+uint32_t paging_prev_vaddr(uint32_t size, uint32_t top)
+{
+  page_directory_t pd = (page_directory_t)PD_VADDR;
+  uint32_t min_page_number = 1;
+  uint32_t current = (top >> PHYS_ADDR_OFFSET) - 1, step = 0;
+  for (; current >= min_page_number; current -= step + 1) {
+    uint32_t found = 0;
+    for (step = 0; step < size; ++step) {
+      uint32_t page_number = current - step;
+      uint32_t pd_idx = page_number >> 10;
+      uint32_t pt_idx = page_number & 0x3FF;
+      page_directory_entry_t pde = pd[pd_idx];
+      if (pde.present == 0) {
+        found += PAGE_SIZE_DWORDS - pt_idx;
+        if (found >= size) return current << PHYS_ADDR_OFFSET;
+        continue;
+      } else if (pde.page_size) break;
+
+      page_table_t pt = (page_table_t)pd_idx_to_pt_vaddr(pd_idx);
+      page_table_entry_t pte = pt[pt_idx];
+      if (pte.present == 0) ++found;
+      if (found >= size) return current << PHYS_ADDR_OFFSET;
+      if (pte.present) break;
+    }
+  }
+
+  return 0;
+}
+
 // Get the physical address that a virtual address is mapped to.
 uint32_t paging_get_paddr(uint32_t vaddr)
 {
@@ -263,7 +305,15 @@ uint32_t paging_get_paddr(uint32_t vaddr)
   uint32_t pt_idx = vaddr_to_pt_idx(vaddr);
   page_directory_t pd = (page_directory_t)PD_VADDR;
   if (pd[pd_idx].present == 0) return 0;
+  if (pd[pd_idx].page_size == 1) {
+    uint32_t aligned_down = vaddr & 0xFFFFF000000;
+    uint32_t diff = vaddr - aligned_down;
+    return (pd[pd_idx].table_addr << PHYS_ADDR_OFFSET) + diff;
+  }
+
   page_table_t pt = (page_table_t)pd_idx_to_pt_vaddr(pd_idx);
   if (pt[pt_idx].present == 0) return 0;
-  return pt[pt_idx].frame_addr << PHYS_ADDR_OFFSET;
+  uint32_t aligned_down = vaddr & 0xFFFFF000;
+  uint32_t diff = vaddr - aligned_down;
+  return (pt[pt_idx].frame_addr << PHYS_ADDR_OFFSET) + diff;
 }

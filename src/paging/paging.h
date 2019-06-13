@@ -68,7 +68,7 @@ void paging_clone_process_directory(
 // Clear the user-mode address space.
 void paging_clear_user_space();
 
-// Shallow copy the kernel address space.
+// Shallow copy the kernel's address space.
 void paging_copy_kernel_space(page_directory_t);
 
 // Set the current page directory. Implemented in paging.s.
@@ -91,7 +91,14 @@ paging_result_t paging_unmap(uint32_t virt_addr);
 // contiguous unmapped pages.
 uint32_t paging_next_vaddr(uint32_t, uint32_t);
 
+// Get the last free virtual address at the start of multiple
+// contiguous unmapped pages.
+uint32_t paging_prev_vaddr(uint32_t, uint32_t);
+
 // Get the physical address that a virtual address is mapped to.
 uint32_t paging_get_paddr(uint32_t);
+
+// Implemented in paging.s.
+uint32_t paging_get_cr3();
 
 #endif /* _PAGING_H_ */
