@@ -60,19 +60,20 @@ uint32_t paging_init(page_directory_t, uint32_t);
 void paging_set_kernel_pd(page_directory_t, uint32_t);
 void paging_get_kernel_pd(page_directory_t *, uint32_t *);
 
-// Clone a process' page directory.
-void paging_clone_process_directory(
-  page_directory_t, page_directory_t *, uint32_t *
-  );
+// Clone a process' page directory. Takes and returns physical
+// addresses.
+uint32_t paging_clone_process_directory(uint32_t);
 
 // Clear the user-mode address space.
 void paging_clear_user_space();
 
-// Shallow copy the kernel's address space.
-void paging_copy_kernel_space(page_directory_t);
+// Shallow copy the kernel's address space. Takes the physical
+// address of the page directory to copy into.
+void paging_copy_kernel_space(uint32_t);
 
-// Set the current page directory. Implemented in paging.s.
-void paging_set_directory(uint32_t);
+// Implemented in paging.s.
+void paging_set_cr3(uint32_t);
+uint32_t paging_get_cr3();
 
 // Remove a PTE from the TLB. Implemented in paging.s.
 void paging_invalidate_pte(uint32_t);
@@ -97,8 +98,5 @@ uint32_t paging_prev_vaddr(uint32_t, uint32_t);
 
 // Get the physical address that a virtual address is mapped to.
 uint32_t paging_get_paddr(uint32_t);
-
-// Implemented in paging.s.
-uint32_t paging_get_cr3();
 
 #endif /* _PAGING_H_ */

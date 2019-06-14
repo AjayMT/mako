@@ -9,9 +9,6 @@
 #define _PROCESS_H_
 
 #include <stdint.h>
-#include <interrupt/interrupt.h>
-#include <paging/paging.h>
-#include <fs/fs.h>
 #include <ds/ds.h>
 
 #define PROCESS_NAME_LEN 256
@@ -55,7 +52,6 @@ typedef struct process_s {
 
   uint32_t brk;
   uint32_t cr3;
-  page_directory_t pd;
   process_mmap_t mmap;
 
   tree_node_t *tree_node;

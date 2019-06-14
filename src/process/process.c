@@ -21,7 +21,7 @@
 
 // Constants.
 static const uint32_t SCHEDULER_INTERVAL   = 2;
-static const uint32_t SCHEDULER_TIME_SLICE = 10 * SCHEDULER_INTERVAL;
+static const uint32_t SCHEDULER_TIME_SLICE = 5 * SCHEDULER_INTERVAL;
 static const uint32_t USER_MODE_CS         = 0x18;
 static const uint32_t USER_MODE_DS         = 0x20;
 
@@ -76,7 +76,7 @@ static void process_switch(process_t *process)
   tss_set_kernel_stack(
     SEGMENT_SELECTOR_KERNEL_DS, process->mmap.kernel_stack
     );
-  paging_init(process->pd, process->cr3);
+  paging_set_cr3(process->cr3);
   enter_usermode(&(process->regs));
 }
 
@@ -103,7 +103,7 @@ static void scheduler_interrupt_handler(
     next = node->value;
   } while (next->is_running == 0 && next != current_process);
 
-  paging_copy_kernel_space(next->pd);
+  paging_copy_kernel_space(next->cr3);
   process_switch(next);
 }
 
@@ -113,6 +113,8 @@ void process_init()
   process_tree = tree_init(NULL);
   process_queue = kmalloc(sizeof(list_t));
   u_memset(process_queue, 0, sizeof(list_t));
+
+  log_debug("process", "%x\n", enter_usermode);
 
   pit_set_interval(SCHEDULER_INTERVAL);
   register_interrupt_handler(32, scheduler_interrupt_handler);
@@ -133,7 +135,7 @@ process_t *process_create_init(
 
   page_directory_t kernel_pd; uint32_t kernel_cr3;
   paging_get_kernel_pd(&kernel_pd, &kernel_cr3);
-  paging_clone_process_directory(kernel_pd, &(init->pd), &(init->cr3));
+  init->cr3 = paging_clone_process_directory(kernel_cr3);
 
   uint32_t kstack_vaddr = paging_prev_vaddr(1, PD_VADDR);
   uint32_t kstack_paddr = pmm_alloc(1);
@@ -173,8 +175,7 @@ process_t *process_fork(process_t *process)
   flags.rw = 1;
   paging_map(kstack_vaddr, kstack_paddr, flags);
   child->mmap.kernel_stack = kstack_vaddr + PAGE_SIZE - 1;
-
-  paging_clone_process_directory(process->pd, &(child->pd), &(child->cr3));
+  child->cr3 = paging_clone_process_directory(process->cr3);
 
   interrupt_restore(eflags);
   return child;
@@ -192,7 +193,7 @@ void process_load(
   uint32_t eflags = interrupt_save_disable();
   uint32_t cr3 = paging_get_cr3();
 
-  paging_init(process->pd, process->cr3);
+  paging_set_cr3(process->cr3);
   paging_clear_user_space();
 
   uint32_t npages = page_align_up(text_len) >> PHYS_ADDR_OFFSET;
@@ -224,7 +225,7 @@ void process_load(
   flags.user = 0;
   paging_map(stack_vaddr, stack_paddr, flags);
 
-  paging_set_directory(cr3);
+  paging_set_cr3(cr3);
 
   process->mmap.text = text_vaddr;
   process->mmap.stack = stack_vaddr + PAGE_SIZE - 1;
