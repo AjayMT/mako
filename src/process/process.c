@@ -36,10 +36,12 @@ static uint32_t next_pid = 0;
 static process_t *init_process = NULL;
 static process_t *current_process = NULL;
 static tree_node_t *process_tree = NULL;
-static list_t *process_queue = NULL;
+static list_t *running_list = NULL;
+static list_t *ready_queue = NULL;
 
 // Implemented in process.s.
 void enter_usermode(process_registers_t *);
+void enter_kernelmode(process_registers_t *);
 
 // Save the registers of the current process.
 static void update_current_process_registers(
@@ -70,14 +72,13 @@ static void update_current_process_registers(
 static void process_switch(process_t *process)
 {
   current_process = process;
-  process->regs.cs = USER_MODE_CS | 3;
-  process->regs.ss = USER_MODE_DS | 3;
-
   tss_set_kernel_stack(
-    SEGMENT_SELECTOR_KERNEL_DS, process->mmap.kernel_stack
+    SEGMENT_SELECTOR_KERNEL_DS, process->mmap.kernel_stack_top
     );
   paging_set_cr3(process->cr3);
-  enter_usermode(&(process->regs));
+  if (process->regs.cs == (USER_MODE_CS | 3))
+    enter_usermode(&(process->regs));
+  else enter_kernelmode(&(process->regs));
 }
 
 // Interrupt handler that switches processes.
@@ -90,16 +91,37 @@ static void scheduler_interrupt_handler(
   static uint32_t ms = 0;
   ms = (ms + SCHEDULER_INTERVAL) % SCHEDULER_TIME_SLICE;
   if (ms) return;
-  if (process_queue == NULL || process_queue->size == 0) return;
+
+  if (running_list->size == 0 && ready_queue->size == 0)
+    return;
 
   if (current_process)
     update_current_process_registers(cstate, sstate);
-  else current_process = process_queue->head->value;
+  else if (ready_queue->size) {
+    list_node_t *head = ready_queue->head;
+    list_remove(ready_queue, head, 0);
+    current_process = head->value;
+    kfree(head);
+    list_push_front(running_list, current_process);
+    current_process->list_node = running_list->head;
+  }
+
+  if (ready_queue->size) {
+    list_node_t *head = ready_queue->head;
+    list_remove(ready_queue, head, 0);
+    process_t *p = head->value;
+    kfree(head);
+    list_insert_after(running_list, current_process->list_node, p);
+    p->list_node = current_process->list_node->next;
+  }
 
   process_t *next = current_process;
   do {
-    list_node_t *node = next->queue_node->next;
-    if (node == NULL) node = process_queue->head;
+    list_node_t *node = next->list_node->next;
+    if (next->is_finished)
+      process_destroy(next);
+
+    if (node == NULL) node = running_list->head;
     next = node->value;
   } while (next->is_running == 0 && next != current_process);
 
@@ -111,8 +133,10 @@ static void scheduler_interrupt_handler(
 void process_init()
 {
   process_tree = tree_init(NULL);
-  process_queue = kmalloc(sizeof(list_t));
-  u_memset(process_queue, 0, sizeof(list_t));
+  running_list = kmalloc(sizeof(list_t));
+  u_memset(running_list, 0, sizeof(list_t));
+  ready_queue = kmalloc(sizeof(list_t));
+  u_memset(ready_queue, 0, sizeof(list_t));
 
   log_debug("process", "%x\n", enter_usermode);
 
@@ -142,7 +166,8 @@ process_t *process_create_init(
   page_table_entry_t flags; u_memset(&flags, 0, sizeof(flags));
   flags.rw = 1;
   paging_map(kstack_vaddr, kstack_paddr, flags);
-  init->mmap.kernel_stack = kstack_vaddr + PAGE_SIZE - 1;
+  init->mmap.kernel_stack_bottom = kstack_vaddr;
+  init->mmap.kernel_stack_top = kstack_vaddr + PAGE_SIZE - 1;
 
   process_load(init, text, text_len, data, data_len);
   process_tree->value = init;
@@ -167,15 +192,16 @@ process_t *process_fork(process_t *process)
   tree_node_t *node = tree_init(child);
   child->tree_node = node;
   tree_insert(process->tree_node, node);
-  child->queue_node = NULL;
+  child->list_node = NULL;
+  child->cr3 = paging_clone_process_directory(process->cr3);
 
   uint32_t kstack_vaddr = paging_prev_vaddr(1, PD_VADDR);
   uint32_t kstack_paddr = pmm_alloc(1);
   page_table_entry_t flags; u_memset(&flags, 0, sizeof(flags));
   flags.rw = 1;
   paging_map(kstack_vaddr, kstack_paddr, flags);
-  child->mmap.kernel_stack = kstack_vaddr + PAGE_SIZE - 1;
-  child->cr3 = paging_clone_process_directory(process->cr3);
+  child->mmap.kernel_stack_bottom = kstack_vaddr;
+  child->mmap.kernel_stack_top = kstack_vaddr + PAGE_SIZE - 1;
 
   interrupt_restore(eflags);
   return child;
@@ -228,12 +254,13 @@ void process_load(
   paging_set_cr3(cr3);
 
   process->mmap.text = text_vaddr;
-  process->mmap.stack = stack_vaddr + PAGE_SIZE - 1;
+  process->mmap.stack_bottom = stack_vaddr;
+  process->mmap.stack_top = stack_vaddr + PAGE_SIZE - 1;
   process->mmap.data = data_vaddr;
   process->brk = process->mmap.data;
   process->regs.eip = process->mmap.text;
-  process->regs.ebp = process->mmap.stack;
-  process->regs.esp = process->mmap.stack;
+  process->regs.ebp = process->mmap.stack_top;
+  process->regs.esp = process->mmap.stack_top;
 
   interrupt_restore(eflags);
 }
@@ -242,7 +269,65 @@ void process_load(
 void process_schedule(process_t *process)
 {
   uint32_t eflags = interrupt_save_disable();
-  list_push_back(process_queue, process);
-  process->queue_node = process_queue->tail;
+  list_push_back(ready_queue, process);
   interrupt_restore(eflags);
+}
+
+// Mark a process as finished, deal with children.
+void process_finish(process_t *process)
+{
+  uint32_t eflags = interrupt_save_disable();
+
+  process->is_finished = 1;
+  tree_node_t *node = process->tree_node;
+  list_foreach(lchild, node->children) {
+    tree_node_t *tchild = lchild->value;
+    process_t *child_process = tchild->value;
+
+    // Threads just die, child processes become children of init.
+    if (child_process->is_thread) process_finish(child_process);
+    else {
+      list_node_t *next = lchild->next;
+      list_remove(node->children, lchild, 0);
+      tree_insert(process_tree, tchild);
+      kfree(lchild);
+      lchild = next;
+    }
+  }
+
+  interrupt_restore(eflags);
+}
+
+// Destroy a process.
+void process_destroy(process_t *process)
+{
+  uint32_t cr3 = paging_get_cr3();
+  paging_set_cr3(process->cr3);
+  paging_clear_user_space();
+  paging_set_cr3(cr3);
+  pmm_free(process->cr3, 1);
+
+  for (
+    uint32_t vaddr = process->mmap.kernel_stack_bottom;
+    vaddr < process->mmap.kernel_stack_top;
+    vaddr += PAGE_SIZE
+    )
+  {
+    pmm_free(paging_get_paddr(vaddr), 1);
+    paging_unmap(vaddr);
+  }
+
+  tree_node_t *tree_node = process->tree_node;
+  list_node_t *list_node = process->list_node;
+  list_remove(running_list, list_node, 0);
+  list_foreach(lchild, tree_node->parent->children) {
+    if (lchild->value == tree_node) {
+      list_remove(tree_node->parent->children, lchild, 0);
+      break;
+    }
+  }
+
+  kfree(tree_node);
+  kfree(list_node);
+  kfree(process);
 }

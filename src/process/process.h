@@ -35,8 +35,10 @@ typedef struct process_registers_s process_registers_t;
 typedef struct process_mmap_s {
   uint32_t text;
   uint32_t data;
-  uint32_t stack;
-  uint32_t kernel_stack;
+  uint32_t stack_top;
+  uint32_t stack_bottom;
+  uint32_t kernel_stack_top;
+  uint32_t kernel_stack_bottom;
 } process_mmap_t;
 
 // Process structure.
@@ -55,7 +57,7 @@ typedef struct process_s {
   process_mmap_t mmap;
 
   tree_node_t *tree_node;
-  list_node_t *queue_node;
+  list_node_t *list_node;
 } process_t;
 
 // Initialize the scheduler and other things.
@@ -76,5 +78,11 @@ process_t *process_fork(process_t *);
 
 // Add a process to the scheduler queue.
 void process_schedule(process_t *);
+
+// Mark a process as finished, deal with children.
+void process_finish(process_t *);
+
+// Destroy a process.
+void process_destroy(process_t *);
 
 #endif /* _PROCESS_H_ */

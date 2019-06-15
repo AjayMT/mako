@@ -6,6 +6,7 @@
     ; Author: Ajay Tatachar <ajaymt2@illinois.edu>
 
 global enter_usermode
+global enter_kernelmode
 
 section .text
 enter_usermode:
@@ -33,6 +34,30 @@ enter_usermode:
     mov es, cx
     mov fs, cx
     pop ecx
+
+    mov eax, [eax]              ; restore eax
+
+    iret
+
+enter_kernelmode:
+    cli
+    mov eax, [esp + 4]
+
+    mov ebx, [eax + 4]
+    mov ecx, [eax + 8]
+    mov edx, [eax + 12]
+    mov ebp, [eax + 16]
+    mov esi, [eax + 20]
+    mov edi, [eax + 24]
+
+    mov esp, [eax + 32]         ; mov esp instead of pushing it
+
+    ; don't push esp and ss unlike user mode interrupt
+    push dword [eax + 36]
+    push dword [eax + 40]
+    push dword [eax + 44]
+
+    ; we also don't need to set the data registers
 
     mov eax, [eax]              ; restore eax
 
