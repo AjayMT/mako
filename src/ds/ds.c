@@ -6,6 +6,7 @@
 // Author: Ajay Tatachar <ajaymt2@illinois.edu>
 
 #include <stddef.h>
+#include <stdint.h>
 #include <kheap/kheap.h>
 #include <util/util.h>
 #include "ds.h"
@@ -82,6 +83,7 @@ void list_insert_after(list_t *list, list_node_t *node, void *value)
   new_node->value = value;
   node->next = new_node;
   if (new_node->next) new_node->next->prev = new_node;
+  else list->tail = new_node;
   ++(list->size);
 }
 
@@ -94,16 +96,19 @@ void list_insert_before(list_t *list, list_node_t *node, void *value)
   new_node->value = value;
   node->prev = new_node;
   if (new_node->prev) new_node->prev->next = new_node;
+  else list->head = new_node;
   ++(list->size);
 }
 
-void list_remove(list_t *list, list_node_t *node)
+void list_remove(list_t *list, list_node_t *node, uint8_t destroy)
 {
   if (node->next) node->next->prev = node->prev;
+  else list->tail = node->prev;
   if (node->prev) node->prev->next = node->next;
+  else list->head = node->next;
   node->next = NULL;
   node->prev = NULL;
-  list_destroy_nodes(node);
+  if (destroy) list_destroy_nodes(node);
   --(list->size);
 }
 

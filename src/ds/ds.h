@@ -9,6 +9,7 @@
 #define _DS_H_
 
 #include <stddef.h>
+#include <stdint.h>
 
 typedef struct list_node_s {
   void *value;
@@ -35,7 +36,7 @@ void list_push_front(list_t *, void *);
 void list_pop_front(list_t *);
 void list_insert_after(list_t *, list_node_t *, void *);
 void list_insert_before(list_t *, list_node_t *, void *);
-void list_remove(list_t *, list_node_t *);
+void list_remove(list_t *, list_node_t *, uint8_t);
 
 tree_node_t *tree_init(void *);
 void tree_insert(tree_node_t *, tree_node_t *);
