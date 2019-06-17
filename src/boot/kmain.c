@@ -14,6 +14,7 @@
 #include <fs/fs.h>
 #include <rd/rd.h>
 #include <process/process.h>
+#include <elf/elf.h>
 #include <common/multiboot.h>
 #include <common/constants.h>
 #include <debug/log.h>
@@ -100,25 +101,21 @@ void kmain(
   fs_init();
   res = rd_init(rd_phys_start, rd_phys_end);
 
-  fs_node_t *test_node = fs_open_node("/rd/test", 0);
-  uint8_t *test_text = kmalloc(test_node->length);
-  fs_read(test_node, 0, test_node->length, test_text);
-
-  fs_node_t *test2_node = fs_open_node("/rd/test2", 0);
-  uint8_t *test2_text = kmalloc(test2_node->length);
-  fs_read(test2_node, 0, test2_node->length, test2_text);
+  fs_node_t *test3_node = fs_open_node("/rd/test3", 0);
+  uint8_t *test3_text = kmalloc(test3_node->length);
+  fs_read(test3_node, 0, test3_node->length, test3_text);
 
   process_init();
-  process_t *init = process_create_init(
-    test_text, test_node->length, NULL, 0
-    );
 
-  process_t *child = process_fork(init);
-  u_memcpy(child->name, "child", 6);
-  process_load(child, test2_text, test2_node->length, NULL, 0);
+  process_image_t p;
+  elf_load(&p, test3_text);
+
+  process_t *init = process_create_init(p);
+  process_schedule(init);
+
+  kfree(test3_text);
+  kfree(p.text);
+  kfree(p.data);
 
   interrupt_restore(eflags);
-
-  process_schedule(child);
-  process_schedule(init);
 }

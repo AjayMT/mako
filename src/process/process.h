@@ -35,11 +35,23 @@ typedef struct process_registers_s process_registers_t;
 typedef struct process_mmap_s {
   uint32_t text;
   uint32_t data;
+  uint32_t heap;
   uint32_t stack_top;
   uint32_t stack_bottom;
   uint32_t kernel_stack_top;
   uint32_t kernel_stack_bottom;
 } process_mmap_t;
+
+// Process image structs used to load binaries.
+typedef struct process_image_s {
+  uint32_t entry;
+  uint8_t *text;
+  uint32_t text_len;
+  uint32_t text_vaddr;
+  uint8_t *data;
+  uint32_t data_len;
+  uint32_t data_vaddr;
+} process_image_t;
 
 // Process structure.
 typedef struct process_s {
@@ -64,14 +76,10 @@ typedef struct process_s {
 void process_init();
 
 // Create the `init` process.
-process_t *process_create_init(
-  uint8_t *, uint32_t, uint8_t *, uint32_t
-  );
+process_t *process_create_init(process_image_t);
 
 // Overwrite process image.
-void process_load(
-  process_t *, uint8_t *, uint32_t, uint8_t *, uint32_t
-  );
+void process_load(process_t *, process_image_t);
 
 // Fork a process.
 process_t *process_fork(process_t *);

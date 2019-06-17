@@ -106,13 +106,15 @@ static void scheduler_interrupt_handler(
     current_process->list_node = running_list->head;
   }
 
-  if (ready_queue->size) {
+  list_node_t *insertion_node = current_process->list_node;
+  while (ready_queue->size) {
     list_node_t *head = ready_queue->head;
     list_remove(ready_queue, head, 0);
     process_t *p = head->value;
     kfree(head);
-    list_insert_after(running_list, current_process->list_node, p);
-    p->list_node = current_process->list_node->next;
+    list_insert_after(running_list, insertion_node, p);
+    p->list_node = insertion_node->next;
+    insertion_node = insertion_node->next;
   }
 
   process_t *next = current_process;
@@ -145,10 +147,7 @@ void process_init()
 }
 
 // Create the `init` process.
-process_t *process_create_init(
-  uint8_t *text, uint32_t text_len,
-  uint8_t *data, uint32_t data_len
-  )
+process_t *process_create_init(process_image_t img)
 {
   uint32_t eflags = interrupt_save_disable();
 
@@ -169,7 +168,7 @@ process_t *process_create_init(
   init->mmap.kernel_stack_bottom = kstack_vaddr;
   init->mmap.kernel_stack_top = kstack_vaddr + PAGE_SIZE - 1;
 
-  process_load(init, text, text_len, data, data_len);
+  process_load(init, img);
   process_tree->value = init;
   init->tree_node = process_tree;
   init->regs.cs = USER_MODE_CS | 3;
@@ -208,13 +207,9 @@ process_t *process_fork(process_t *process)
 }
 
 // Overwrite a process image.
-void process_load(
-  process_t *process,
-  uint8_t *text, uint32_t text_len,
-  uint8_t *data, uint32_t data_len
-  )
+void process_load(process_t *process, process_image_t img)
 {
-  if (text_len == 0) return;
+  if (img.text_len == 0) return;
 
   uint32_t eflags = interrupt_save_disable();
   uint32_t cr3 = paging_get_cr3();
@@ -222,43 +217,42 @@ void process_load(
   paging_set_cr3(process->cr3);
   paging_clear_user_space();
 
-  uint32_t npages = page_align_up(text_len) >> PHYS_ADDR_OFFSET;
-  uint32_t text_vaddr = paging_next_vaddr(npages, 0);
+  uint32_t npages = page_align_up(img.text_len) >> PHYS_ADDR_OFFSET;
   page_table_entry_t flags; u_memset(&flags, 0, sizeof(flags));
   flags.user = 1;
   flags.rw = 1;
   for (uint32_t i = 0; i < npages; ++i) {
     uint32_t paddr = pmm_alloc(1);
-    paging_map(text_vaddr + (i << PHYS_ADDR_OFFSET), paddr, flags);
+    paging_map(
+      (uint32_t)img.text_vaddr + (i << PHYS_ADDR_OFFSET), paddr, flags
+      );
   }
 
-  u_memcpy((uint8_t *)text_vaddr, text, text_len);
+  u_memcpy((uint8_t *)img.text_vaddr, img.text, img.text_len);
 
-  uint32_t data_vaddr = text_vaddr + page_align_up(text_len);
-  if (data_len) {
-    npages = page_align_up(data_len) >> PHYS_ADDR_OFFSET;
-    data_vaddr = paging_next_vaddr(npages, 0); // Should be the same as before.
-    for (uint32_t i = 0; i < npages; ++i) {
-      uint32_t paddr = pmm_alloc(1);
-      paging_map(data_vaddr + (i << PHYS_ADDR_OFFSET), paddr, flags);
-    }
-
-    u_memcpy((uint8_t *)data_vaddr, data, data_len);
+  npages = page_align_up(img.data_len) >> PHYS_ADDR_OFFSET;
+  for (uint32_t i = 0; i < npages; ++i) {
+    uint32_t paddr = pmm_alloc(1);
+    paging_map(
+      (uint32_t)img.data_vaddr + (i << PHYS_ADDR_OFFSET), paddr, flags
+      );
   }
+
+  u_memcpy((uint8_t *)img.data_vaddr, img.data, img.data_len);
 
   uint32_t stack_paddr = pmm_alloc(1);
   uint32_t stack_vaddr = paging_prev_vaddr(1, KERNEL_START_VADDR);
-  flags.user = 0;
   paging_map(stack_vaddr, stack_paddr, flags);
 
   paging_set_cr3(cr3);
 
-  process->mmap.text = text_vaddr;
+  process->mmap.text = img.text_vaddr;
   process->mmap.stack_bottom = stack_vaddr;
   process->mmap.stack_top = stack_vaddr + PAGE_SIZE - 1;
-  process->mmap.data = data_vaddr;
-  process->brk = process->mmap.data;
-  process->regs.eip = process->mmap.text;
+  process->mmap.data = img.data_vaddr;
+  process->mmap.heap = img.data_vaddr + page_align_up(img.data_len);
+  process->brk = process->mmap.heap;
+  process->regs.eip = img.entry;
   process->regs.ebp = process->mmap.stack_top;
   process->regs.esp = process->mmap.stack_top;
 

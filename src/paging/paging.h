@@ -60,7 +60,7 @@ uint32_t paging_init(page_directory_t, uint32_t);
 void paging_set_kernel_pd(page_directory_t, uint32_t);
 void paging_get_kernel_pd(page_directory_t *, uint32_t *);
 
-// Clone a process' page directory. Takes and returns physical
+// Clone a process's page directory. Takes and returns physical
 // addresses.
 uint32_t paging_clone_process_directory(uint32_t);
 
