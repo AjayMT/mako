@@ -6,7 +6,11 @@
     ; Author: Ajay Tatachar <ajaymt2@illinois.edu>
 
 global outb
+global outw
+global outl
 global inb
+global inw
+global inl
 
 section .text
 
