@@ -15,6 +15,7 @@
 #include <rd/rd.h>
 #include <process/process.h>
 #include <elf/elf.h>
+#include <drivers/ata/ata.h>
 #include <common/multiboot.h>
 #include <common/constants.h>
 #include <debug/log.h>
@@ -36,7 +37,10 @@ void gp_fault_handler(
   cpu_state_t cs, idt_info_t info, stack_state_t ss
   )
 {
-  log_error("kmain", "gpf %x\n", info.error_code);
+  log_error(
+    "kmain", "eip %x: gpf %x cs %x\n",
+    ss.eip, info.error_code, ss.cs
+    );
 }
 
 void kmain(
@@ -101,21 +105,23 @@ void kmain(
   fs_init();
   res = rd_init(rd_phys_start, rd_phys_end);
 
-  fs_node_t *test3_node = fs_open_node("/rd/test3", 0);
-  uint8_t *test3_text = kmalloc(test3_node->length);
-  fs_read(test3_node, 0, test3_node->length, test3_text);
+  /* fs_node_t *test_node = fs_open_node("/rd/test", 0); */
+  /* uint8_t *test_text = kmalloc(test_node->length); */
+  /* fs_read(test_node, 0, test_node->length, test_text); */
 
-  process_init();
+  /* process_init(); */
 
-  process_image_t p;
-  elf_load(&p, test3_text);
+  /* process_image_t p; */
+  /* elf_load(&p, test_text); */
 
-  process_t *init = process_create_init(p);
-  process_schedule(init);
+  /* process_t *init = process_create_init(p); */
+  /* process_schedule(init); */
 
-  kfree(test3_text);
-  kfree(p.text);
-  kfree(p.data);
+  /* kfree(test_text); */
+  /* kfree(p.text); */
+  /* kfree(p.data); */
+
+  ata_init();
 
   interrupt_restore(eflags);
 }

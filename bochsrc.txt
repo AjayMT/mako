@@ -2,7 +2,8 @@ megs:            1024
 display_library: sdl2
 romimage:        file=/usr/local/share/bochs/BIOS-bochs-latest
 vgaromimage:     file=/usr/local/share/bochs/VGABIOS-lgpl-latest
-ata0-master:     type=cdrom, path=mako.iso, status=inserted
+ata0-master:     type=disk, path=hda.img, status=inserted
+ata1-master:     type=cdrom, path=mako.iso, status=inserted
 boot:            cdrom
 log:             bochslog.txt
 clock:           sync=realtime, time0=local
