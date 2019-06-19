@@ -81,6 +81,9 @@ void interrupt_handler_45();
 void interrupt_handler_46();
 void interrupt_handler_47();
 
+// Syscall interrupt handler defined in syscall.s.
+void interrupt_handler_syscall();
+
 // Create an entry in the table.
 static void idt_create_gate(
   uint32_t index, uint32_t offset, uint8_t type,uint8_t privilege_level
@@ -153,6 +156,14 @@ void idt_init()
   IDT_CREATE_GATE(45);
   IDT_CREATE_GATE(46);
   IDT_CREATE_GATE(47);
+
+  // Syscall.
+  idt_create_gate(
+    SYSCALL_INT_IDX,
+    (uint32_t)interrupt_handler_syscall,
+    IDT_TRAP_GATE_TYPE,
+    PL3
+    );
 
   idt_load((uint32_t)&table_ptr);
 }

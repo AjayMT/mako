@@ -9,6 +9,8 @@
 #define _PROCESS_H_
 
 #include <stdint.h>
+#include <interrupt/interrupt.h>
+#include <fs/fs.h>
 #include <ds/ds.h>
 
 #define PROCESS_NAME_LEN 256
@@ -53,6 +55,13 @@ typedef struct process_image_s {
   uint32_t data_vaddr;
 } process_image_t;
 
+// Resizable array of file descriptors.
+typedef struct process_fds_s {
+  fs_node_t *nodes;
+  uint32_t size;
+  uint32_t capacity;
+} process_fds_t;
+
 // Process structure.
 typedef struct process_s {
   uint32_t pid;
@@ -63,6 +72,7 @@ typedef struct process_s {
   uint8_t is_thread;
   uint8_t is_finished;
   process_registers_t regs;
+  process_fds_t fds;
 
   uint32_t brk;
   uint32_t cr3;
@@ -74,6 +84,21 @@ typedef struct process_s {
 
 // Initialize the scheduler and other things.
 void process_init();
+
+// Get current process.
+process_t *process_current();
+
+// Switch to next scheduled process.
+void process_switch_next();
+
+// Update registers of current process.
+void update_current_process_registers(cpu_state_t, stack_state_t);
+
+// Implemented in process.s.
+void enter_usermode();
+
+// Switch processes.
+void process_switch(process_t *);
 
 // Create the `init` process.
 process_t *process_create_init(process_image_t);

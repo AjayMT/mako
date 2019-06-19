@@ -12,6 +12,7 @@
 #include <tss/tss.h>
 #include <ds/ds.h>
 #include <kheap/kheap.h>
+#include <fs/fs.h>
 #include <pmm/pmm.h>
 #include <paging/paging.h>
 #include <util/util.h>
@@ -40,11 +41,10 @@ static list_t *running_list = NULL;
 static list_t *ready_queue = NULL;
 
 // Implemented in process.s.
-void enter_usermode(process_registers_t *);
 void enter_kernelmode(process_registers_t *);
 
 // Save the registers of the current process.
-static void update_current_process_registers(
+void update_current_process_registers(
   cpu_state_t cstate, stack_state_t sstate
   )
 {
@@ -69,7 +69,7 @@ static void update_current_process_registers(
 }
 
 // Switch processes.
-static void process_switch(process_t *process)
+void process_switch(process_t *process)
 {
   current_process = process;
   tss_set_kernel_stack(
@@ -79,6 +79,34 @@ static void process_switch(process_t *process)
   if (process->regs.cs == (USER_MODE_CS | 3))
     enter_usermode(&(process->regs));
   else enter_kernelmode(&(process->regs));
+}
+
+// Switch to next scheduled process.
+void process_switch_next()
+{
+  list_node_t *insertion_node = current_process->list_node;
+  while (ready_queue->size) {
+    list_node_t *head = ready_queue->head;
+    list_remove(ready_queue, head, 0);
+    process_t *p = head->value;
+    kfree(head);
+    list_insert_after(running_list, insertion_node, p);
+    p->list_node = insertion_node->next;
+    insertion_node = insertion_node->next;
+  }
+
+  process_t *next = current_process;
+  do {
+    list_node_t *node = next->list_node->next;
+    if (next->is_finished)
+      process_destroy(next);
+
+    if (node == NULL) node = running_list->head;
+    next = node->value;
+  } while (next->is_running == 0 && next != current_process);
+
+  paging_copy_kernel_space(next->cr3);
+  process_switch(next);
 }
 
 // Interrupt handler that switches processes.
@@ -106,29 +134,7 @@ static void scheduler_interrupt_handler(
     current_process->list_node = running_list->head;
   }
 
-  list_node_t *insertion_node = current_process->list_node;
-  while (ready_queue->size) {
-    list_node_t *head = ready_queue->head;
-    list_remove(ready_queue, head, 0);
-    process_t *p = head->value;
-    kfree(head);
-    list_insert_after(running_list, insertion_node, p);
-    p->list_node = insertion_node->next;
-    insertion_node = insertion_node->next;
-  }
-
-  process_t *next = current_process;
-  do {
-    list_node_t *node = next->list_node->next;
-    if (next->is_finished)
-      process_destroy(next);
-
-    if (node == NULL) node = running_list->head;
-    next = node->value;
-  } while (next->is_running == 0 && next != current_process);
-
-  paging_copy_kernel_space(next->cr3);
-  process_switch(next);
+  process_switch_next();
 }
 
 // Initialize the scheduler and other things.
@@ -145,6 +151,10 @@ void process_init()
   pit_set_interval(SCHEDULER_INTERVAL);
   register_interrupt_handler(32, scheduler_interrupt_handler);
 }
+
+// Get current process.
+process_t *process_current()
+{ return current_process; }
 
 // Create the `init` process.
 process_t *process_create_init(process_image_t img)
@@ -193,6 +203,11 @@ process_t *process_fork(process_t *process)
   tree_insert(process->tree_node, node);
   child->list_node = NULL;
   child->cr3 = paging_clone_process_directory(process->cr3);
+
+  fs_node_t *nodes = kmalloc(sizeof(fs_node_t) * process->fds.capacity);
+  for (uint32_t i = 0; i < process->fds.size; ++i)
+    u_memcpy(nodes + i, process->fds.nodes + i, sizeof(fs_node_t));
+  child->fds.nodes = nodes;
 
   uint32_t kstack_vaddr = paging_prev_vaddr(1, PD_VADDR);
   uint32_t kstack_paddr = pmm_alloc(1);
@@ -321,6 +336,7 @@ void process_destroy(process_t *process)
     }
   }
 
+  kfree(process->fds.nodes);
   kfree(tree_node);
   kfree(list_node);
   kfree(process);

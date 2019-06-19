@@ -10,6 +10,7 @@
 
 #include <stdint.h>
 
+#define SYSCALL_INT_IDX             0x80
 #define SEGMENT_SELECTOR_KERNEL_CS  8
 #define SEGMENT_SELECTOR_KERNEL_DS  0x10
 #define KERNEL_START_VADDR          0xC0000000

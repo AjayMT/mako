@@ -1,18 +1,21 @@
 
-all: test test2 test3
+CC = i386-elf-gcc
+CFLAGS = -ffreestanding -nostdlib -nostdinc -c
+AS = nasm
+ASFLAGS = -f elf32
+LD = i386-elf-ld
 
-test: test.s
-	nasm -f elf test.s -o test.o
-	i386-elf-ld -T link.ld test.o -o test
+all: test
 
-test2: test2.s
-	nasm -f elf test2.s -o test2.o
-	i386-elf-ld -T link.ld test2.o -o test2
+test: test.o crt0.o
+	$(LD) test.o crt0.o -o test
 
-test3: test3.s
-	nasm -f elf32 test3.s -o test3.o
-	i386-elf-ld test3.o -o test3
+test.o: test.c
+	$(CC) $(CFLAGS) test.c -o test.o
+
+crt0.o:
+	$(AS) $(ASFLAGS) crt0.s -o crt0.o
 
 .PHONY: clean
 clean:
-	rm -fr test test.o test2 test2.o test3 test3.o
+	rm -fr test *.o
