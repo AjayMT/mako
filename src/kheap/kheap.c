@@ -349,6 +349,7 @@ void kfree(void *ptr)
 
   block_front_t *block = (block_front_t*)
     ((uint32_t)ptr - sizeof(block_front_t));
+  if (block->info->free) return;
   block->info->free = 1;
 
   if (block->info->prev) {
