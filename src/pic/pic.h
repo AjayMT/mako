@@ -17,7 +17,7 @@ void pic_init();
 void pic_acknowledge(uint8_t);
 
 // Set PIC masks. Each bit is an index of an IRQ, masked IRQs
-// are ignpred.
+// are ignored.
 void pic_mask(uint8_t, uint8_t);
 
 #endif /* _PIC_H_ */
