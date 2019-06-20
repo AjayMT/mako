@@ -8,6 +8,7 @@
 #include <stdint.h>
 #include <stddef.h>
 #include <common/constants.h>
+#include <common/errno.h>
 #include <paging/paging.h>
 #include <kheap/kheap.h>
 #include <util/util.h>
@@ -16,6 +17,10 @@
 
 #define RD_FILE_NAME_LEN   128
 #define RD_NUM_DIR_ENTRIES 16
+
+#define CHECK(err, msg, code) if ((err)) {      \
+    log_error("rd", msg "\n"); return (code);   \
+  }
 
 struct rd_dir_entry_s {
   char name[RD_FILE_NAME_LEN];
@@ -52,24 +57,24 @@ uint32_t rd_init(const uint32_t rd_phys_start, const uint32_t rd_phys_end)
 
   uint32_t npages = _rd_size >> PHYS_ADDR_OFFSET;
   uint32_t base_vaddr = paging_next_vaddr(npages, KERNEL_START_VADDR);
+  CHECK(base_vaddr == 0, "No memory.", ENOMEM);
+
   for (uint32_t i = 0; i < npages; ++i) {
     paging_result_t res = paging_map(
       base_vaddr + (i * PAGE_SIZE), _rd_phys_start + (i * PAGE_SIZE), flags
       );
-    if (res != PAGING_OK) {
-      log_error("rd", "Unable to map ramdisk to virtual memory.");
-      return 1;
-    }
+    CHECK(res != PAGING_OK, "Unable to map ramdisk to virtual memory.", 1);
   }
 
   rd_root = (rd_dir_header_t)(base_vaddr + (rd_phys_start - _rd_phys_start));
-
   fs_node_t *node = kmalloc(sizeof(fs_node_t));
+  CHECK(node == NULL, "No memory.", ENOMEM);
   u_memset(node, 0, sizeof(fs_node_t));
   node->flags = FS_DIRECTORY;
   map_fs_ops(node);
 
-  fs_mount(node, "/rd");
+  uint32_t res = fs_mount(node, "/rd");
+  CHECK(res, "Unable to mount ramdisk.", res);
 
   return 0;
 }
@@ -99,6 +104,7 @@ uint32_t rd_write(
 struct dirent *rd_readdir(fs_node_t *node, uint32_t index)
 {
   struct dirent *ent = kmalloc(sizeof(struct dirent));
+  CHECK(ent == NULL, "No memory.", NULL);
   if (index == 0) {
     u_memcpy(ent->name, FS_DIR_SELF, u_strlen(FS_DIR_SELF) + 1);
     ent->ino = node->inode;
@@ -137,6 +143,7 @@ fs_node_t *rd_finddir(fs_node_t *node, char *name)
     }
 
     fs_node_t *new_node = kmalloc(sizeof(fs_node_t));
+    CHECK(new_node == NULL, "No memory.", NULL);
     u_memset(new_node, 0, sizeof(fs_node_t));
     u_memcpy(new_node->name, name, u_strlen(name) + 1);
     new_node->flags = ent.is_dir ? FS_DIRECTORY : FS_FILE;

@@ -28,6 +28,19 @@
 #define FS_SYMLINK     6
 #define FS_MOUNTPOINT  8
 
+// fs_open flags.
+#define O_RDONLY    0
+#define O_WRONLY    1
+#define O_RDWR      2
+#define O_APPEND    8
+#define O_CREAT     0x200
+#define O_TRUNC     0x400
+#define O_EXCL      0x800
+#define O_NOFOLLOW  0x1000
+#define O_PATH      0x2000
+#define O_NONBLOCK  0x4000
+#define O_DIRECTORY 0x8000
+
 struct fs_node_s;
 struct dirent;
 
@@ -52,7 +65,8 @@ typedef struct fs_node_s {
   uint32_t flags;         // Flags (see above).
   uint32_t inode;         // Inode number.
   uint32_t length;        // File size in bytes.
-  uint32_t impl;          // Filesystem implementation defined.
+  uint32_t impl;          // Used to track which FS it is part of.
+  void *device;           // Device object.
 
   // File operations.
   open_type_t open;
@@ -86,12 +100,12 @@ struct dirent *fs_readdir(fs_node_t *, uint32_t);
 fs_node_t *fs_finddir(fs_node_t *, char *);
 
 // Initialize the filesystem interface.
-void fs_init();
+uint32_t fs_init();
 
 // Mount a filesystem.
-void fs_mount(fs_node_t *, const char *);
+uint32_t fs_mount(fs_node_t *, const char *);
 
 // Open the filesystem node at a path.
-fs_node_t *fs_open_node(const char *, uint32_t);
+uint32_t fs_open_node(fs_node_t *, const char *, uint32_t);
 
 #endif /* _FS_H_ */
