@@ -123,5 +123,14 @@ void kmain(
 
   ata_init();
 
+  fs_node_t dev_node;
+  fs_open_node(&dev_node, "/dev", 0);
+  struct dirent *ad = fs_readdir(&dev_node, 0);
+  log_debug("kmain", "%s\n", ad->name);
+  struct dirent *bd = fs_readdir(&dev_node, 1);
+  log_debug("kmain", "%s\n", bd->name);
+  struct dirent *d = fs_readdir(&dev_node, 2);
+  log_debug("kmain", "%s\n", d->name);
+
   interrupt_restore(eflags);
 }
