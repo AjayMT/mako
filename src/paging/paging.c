@@ -11,7 +11,12 @@
 #include <util/util.h>
 #include <debug/log.h>
 #include <common/constants.h>
+#include <common/errno.h>
 #include "paging.h"
+
+#define CHECK(err, msg, code) if ((err)) {          \
+    log_error("paging", msg "\n"); return (code);   \
+  }
 
 static page_directory_t kernel_pd_vaddr = 0;
 static uint32_t kernel_pd_paddr = 0;
@@ -70,15 +75,17 @@ void paging_get_kernel_pd(page_directory_t *vaddr, uint32_t *paddr)
 { *vaddr = kernel_pd_vaddr; *paddr = kernel_pd_paddr; }
 
 // Shallow copy the kernel's address space.
-void paging_copy_kernel_space(uint32_t cr3)
+uint32_t paging_copy_kernel_space(uint32_t cr3)
 {
   // Map the page directory to an address in user space so it
   // doesn't get copied.
   uint32_t pd_vaddr = paging_next_vaddr(1, 0);
+  CHECK(pd_vaddr == 0, "No memory.", ENOMEM);
   page_directory_t pd = (page_directory_t)pd_vaddr;
   page_table_entry_t flags; u_memset(&flags, 0, sizeof(flags));
   flags.rw = 1;
-  paging_map(pd_vaddr, cr3, flags);
+  paging_result_t res = paging_map(pd_vaddr, cr3, flags);
+  CHECK(res != PAGING_OK, "paging_map failed.", res);
 
   uint32_t start_idx = vaddr_to_pd_idx(KERNEL_START_VADDR);
   page_directory_t current_pd = (page_directory_t)PD_VADDR;
@@ -92,11 +99,16 @@ void paging_copy_kernel_space(uint32_t cr3)
   self_pde.table_addr = cr3 >> PHYS_ADDR_OFFSET;
   pd[vaddr_to_pd_idx(PD_VADDR)] = self_pde;
 
-  paging_unmap(pd_vaddr);
+  res = paging_unmap(pd_vaddr);
+  CHECK(res != PAGING_OK, "paging_unmap failed.", res);
+
+  return 0;
 }
 
 // Clone a process' page directory.
-uint32_t paging_clone_process_directory(uint32_t process_cr3)
+uint32_t paging_clone_process_directory(
+  uint32_t *out_cr3, uint32_t process_cr3
+  )
 {
   uint32_t current_cr3 = paging_get_cr3();
 
@@ -104,13 +116,20 @@ uint32_t paging_clone_process_directory(uint32_t process_cr3)
   page_directory_t process_pd = (page_directory_t)PD_VADDR;
 
   uint32_t cr3 = pmm_alloc(1);
-  paging_copy_kernel_space(cr3);
+  CHECK(cr3 == 0, "No memory.", ENOMEM);
+  CHECK(
+    paging_copy_kernel_space(cr3),
+    "Could not copy kernel address space.",
+    1
+    );
 
   uint32_t pd_vaddr = paging_next_vaddr(1, KERNEL_START_VADDR);
+  CHECK(pd_vaddr == 0, "No memory.", ENOMEM);
   page_directory_t pd = (page_directory_t)pd_vaddr;
   page_table_entry_t flags; u_memset(&flags, 0, sizeof(flags));
   flags.rw = 1;
-  paging_map(pd_vaddr, cr3, flags);
+  paging_result_t res = paging_map(pd_vaddr, cr3, flags);
+  CHECK(res != PAGING_OK, "paging_map failed.", 1);
 
   uint32_t kernel_idx = vaddr_to_pd_idx(KERNEL_START_VADDR);
   for (uint32_t pd_idx = 0; pd_idx < kernel_idx; ++pd_idx) {
@@ -119,9 +138,12 @@ uint32_t paging_clone_process_directory(uint32_t process_cr3)
 
     page_table_t process_pt = (page_table_t)pd_idx_to_pt_vaddr(pd_idx);
     uint32_t pt_paddr = pmm_alloc(1);
+    CHECK(pt_paddr == 0, "No memory.", ENOMEM);
     uint32_t pt_vaddr = paging_next_vaddr(1, KERNEL_START_VADDR);
+    CHECK(pt_vaddr == 0, "No memory.", ENOMEM);
     page_table_t pt = (page_table_t)pt_vaddr;
-    paging_map(pt_vaddr, pt_paddr, flags);
+    res = paging_map(pt_vaddr, pt_paddr, flags);
+    CHECK(res != PAGING_OK, "paging_map failed.", 1);
     pd[pd_idx].table_addr = pt_paddr >> PHYS_ADDR_OFFSET;
 
     for (uint32_t pt_idx = 0; pt_idx < PAGE_SIZE_DWORDS; ++pt_idx) {
@@ -129,28 +151,35 @@ uint32_t paging_clone_process_directory(uint32_t process_cr3)
       if (pt[pt_idx].present == 0) continue;
 
       uint32_t frame_paddr = pmm_alloc(1);
+      CHECK(frame_paddr == 0, "No memory.", ENOMEM);
       uint32_t frame_vaddr = paging_next_vaddr(1, KERNEL_START_VADDR);
-      paging_map(frame_vaddr, frame_paddr, flags);
+      CHECK(frame_vaddr == 0, "No memory.", ENOMEM);
+      res = paging_map(frame_vaddr, frame_paddr, flags);
+      CHECK(res != PAGING_OK, "paging_map failed.", 1);
       pt[pt_idx].frame_addr = frame_paddr >> PHYS_ADDR_OFFSET;
       u_memcpy(
         (uint8_t *)frame_vaddr,
         (uint8_t *)(pd_idx_to_vaddr(pd_idx) | pt_idx_to_vaddr(pt_idx)),
         PAGE_SIZE
         );
-      paging_unmap(frame_vaddr);
+      res = paging_unmap(frame_vaddr);
+      CHECK(res != PAGING_OK, "paging_unmap failed.", 1);
     }
 
-    paging_unmap(pt_vaddr);
+    res = paging_unmap(pt_vaddr);
+    CHECK(res != PAGING_OK, "paging_unmap failed.", 1);
   }
 
-  paging_unmap(pd_vaddr);
+  res = paging_unmap(pd_vaddr);
+  CHECK(res != PAGING_OK, "paging_unmap failed.", 1);
   paging_set_cr3(current_cr3);
+  *out_cr3 = cr3;
 
-  return cr3;
+  return 0;
 }
 
 // Clear the user-mode address space.
-void paging_clear_user_space()
+uint8_t paging_clear_user_space()
 {
   page_directory_t pd = (page_directory_t)PD_VADDR;
   uint32_t kernel_pd_idx = vaddr_to_pd_idx(KERNEL_START_VADDR);
@@ -164,9 +193,12 @@ void paging_clear_user_space()
 
       uint32_t vaddr = pd_idx_to_vaddr(pd_idx) | pt_idx_to_vaddr(pt_idx);
       pmm_free(paging_get_paddr(vaddr), 1);
-      paging_unmap(vaddr);
+      paging_result_t res = paging_unmap(vaddr);
+      CHECK(res != PAGING_OK, "paging_unmap failed.", 1);
     }
   }
+
+  return 0;
 }
 
 // Map a page.
@@ -181,8 +213,7 @@ paging_result_t paging_map(
   if (pde.present == 0) { // We have to make a new page table.
     uint32_t pt_vaddr = pd_idx_to_pt_vaddr(pd_idx);
     uint32_t pt_paddr = pmm_alloc(1);
-    if (pt_paddr == 0) // Unable to allocate new page.
-      return PAGING_NO_MEMORY;
+    CHECK(pt_paddr == 0, "No memory.", PAGING_NO_MEMORY);
 
     u_memset(&pde, 0, sizeof(pde));
     pde.present = 1;
@@ -199,8 +230,7 @@ paging_result_t paging_map(
   page_table_t pt = (page_table_t)pd_idx_to_pt_vaddr(pd_idx);
   uint32_t pt_idx = vaddr_to_pt_idx(virt_addr);
   page_table_entry_t pte = pt[pt_idx];
-
-  if (pte.present) return PAGING_MAP_EXISTS; // Page already mapped.
+  CHECK(pte.present, "Map already exists.", PAGING_MAP_EXISTS);
 
   u_memset(&pte, 0, sizeof(pte));
   pte.present = 1;
@@ -220,11 +250,12 @@ paging_result_t paging_unmap(uint32_t virt_addr)
   uint32_t pd_idx = vaddr_to_pd_idx(virt_addr);
 
   // Cannot unmap kernel memory or page directory.
-  if (
+  CHECK(
     pd_idx == vaddr_to_pd_idx(KERNEL_START_VADDR)
-    || pd_idx == vaddr_to_pd_idx(PD_VADDR)
-    )
-    return PAGING_NO_ACCESS;
+    || pd_idx == vaddr_to_pd_idx(PD_VADDR),
+    "Attempt to unmap kernel memory or page directory.",
+    PAGING_NO_ACCESS
+    );
 
   page_directory_t pd = (page_directory_t)PD_VADDR;
   page_directory_entry_t pde = pd[pd_idx];

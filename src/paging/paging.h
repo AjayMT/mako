@@ -62,14 +62,14 @@ void paging_get_kernel_pd(page_directory_t *, uint32_t *);
 
 // Clone a process's page directory. Takes and returns physical
 // addresses.
-uint32_t paging_clone_process_directory(uint32_t);
+uint32_t paging_clone_process_directory(uint32_t *, uint32_t);
 
 // Clear the user-mode address space.
-void paging_clear_user_space();
+uint8_t paging_clear_user_space();
 
 // Shallow copy the kernel's address space. Takes the physical
 // address of the page directory to copy into.
-void paging_copy_kernel_space(uint32_t);
+uint32_t paging_copy_kernel_space(uint32_t);
 
 // Implemented in paging.s.
 void paging_set_cr3(uint32_t);
