@@ -23,7 +23,7 @@
 //   - External fragmentation is encouraged, but the 'holes' are
 //     usually large enough to be useful.
 // Theoretical performance benefits from the worst-fit ordering may
-// by offset by the fact that blocks have to be re-ordered whenever
+// be offset by the fact that blocks have to be re-ordered whenever
 // they are shrunk or grown. Nevertheless, this was more interesting
 // to implement than a simple first-fit allocator.
 
@@ -173,14 +173,15 @@ static block_front_t *split_block(block_front_t *block, size_t offset)
     .magic = BLOCK_MAGIC
   };
   *((block_front_t *)new_front_addr) = new_front;
-  new_front.info->size = (get_size(block) - offset) >> SIZE_UNIT_OFFSET;
+  new_front.info->size =
+    (get_size(block) - offset - sizeof(block_front_t)) >> SIZE_UNIT_OFFSET;
   new_front.info->prev = 1;
   block->smaller = (block_front_t *)new_front_addr;
   if (new_front.smaller)
     new_front.smaller->bigger = (block_front_t *)new_front_addr;
 
   block_back_t new_info = {
-    .size = offset >> SIZE_UNIT_OFFSET,
+    .size = (offset - sizeof(block_back_t)) >> SIZE_UNIT_OFFSET,
     .free = old_info.free,
     .prev = old_info.prev,
     .next = 1
@@ -217,15 +218,19 @@ static void get_heap(size_t size)
 
   uint32_t npages = size >> PHYS_ADDR_OFFSET;
   uint32_t vaddr = paging_next_vaddr(npages, KERNEL_START_VADDR);
+  if (vaddr == 0) return;
   uint32_t acquired_size = 0;
   page_table_entry_t flags; u_memset(&flags, 0, sizeof(flags));
   flags.rw = 1;
   for (uint32_t i = 0; i < npages; ++i) {
     uint32_t paddr = pmm_alloc(1);
     if (paddr == 0) break;
-    paging_map(vaddr + acquired_size, paddr, flags);
+    paging_result_t res = paging_map(vaddr + acquired_size, paddr, flags);
+    if (res != PAGING_OK) break;
     acquired_size = (i + 1) << PHYS_ADDR_OFFSET;
   }
+
+  if (acquired_size < MIN_SIZE) return;
 
   size_t new_size = acquired_size
     - sizeof(block_front_t) - sizeof(block_back_t);
