@@ -105,22 +105,6 @@ void kmain(
   fs_init();
   res = rd_init(rd_phys_start, rd_phys_end);
 
-  /* fs_node_t *test_node = fs_open_node("/rd/test", 0); */
-  /* uint8_t *test_text = kmalloc(test_node->length); */
-  /* fs_read(test_node, 0, test_node->length, test_text); */
-
-  /* process_init(); */
-
-  /* process_image_t p; */
-  /* elf_load(&p, test_text); */
-
-  /* process_t *init = process_create_init(p); */
-  /* process_schedule(init); */
-
-  /* kfree(test_text); */
-  /* kfree(p.text); */
-  /* kfree(p.data); */
-
   ata_init();
 
   fs_node_t dev_node;
@@ -131,6 +115,24 @@ void kmain(
   log_debug("kmain", "%s\n", bd->name);
   struct dirent *d = fs_readdir(&dev_node, 2);
   log_debug("kmain", "%s\n", d->name);
+
+  fs_node_t test_node;
+  fs_open_node(&test_node, "/rd/test", 0);
+  uint8_t *test_text = kmalloc(test_node.length);
+  fs_read(&test_node, 0, test_node.length, test_text);
+
+  process_init();
+
+  process_image_t p;
+  elf_load(&p, test_text);
+
+  process_t init;
+  process_create_init(&init, p);
+  process_schedule(&init);
+
+  kfree(test_text);
+  kfree(p.text);
+  kfree(p.data);
 
   interrupt_restore(eflags);
 }

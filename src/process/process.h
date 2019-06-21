@@ -83,13 +83,13 @@ typedef struct process_s {
 } process_t;
 
 // Initialize the scheduler and other things.
-void process_init();
+uint32_t process_init();
 
 // Get current process.
 process_t *process_current();
 
 // Switch to next scheduled process.
-void process_switch_next();
+uint32_t process_switch_next();
 
 // Update registers of current process.
 void update_current_process_registers(cpu_state_t, stack_state_t);
@@ -101,13 +101,13 @@ void enter_usermode();
 void process_switch(process_t *);
 
 // Create the `init` process.
-process_t *process_create_init(process_image_t);
+uint32_t process_create_init(process_t *, process_image_t);
 
 // Overwrite process image.
-void process_load(process_t *, process_image_t);
+uint32_t process_load(process_t *, process_image_t);
 
 // Fork a process.
-process_t *process_fork(process_t *);
+uint32_t process_fork(process_t *, process_t *);
 
 // Add a process to the scheduler queue.
 void process_schedule(process_t *);
@@ -116,6 +116,6 @@ void process_schedule(process_t *);
 void process_finish(process_t *);
 
 // Destroy a process.
-void process_destroy(process_t *);
+uint8_t process_destroy(process_t *);
 
 #endif /* _PROCESS_H_ */
