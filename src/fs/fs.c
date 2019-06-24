@@ -8,6 +8,7 @@
 #include <stddef.h>
 #include <stdint.h>
 #include <kheap/kheap.h>
+#include <klock/klock.h>
 #include <ds/ds.h>
 #include <common/errno.h>
 #include <util/util.h>
@@ -17,6 +18,10 @@
 #define CHECK(err, msg, code) if ((err)) {      \
     log_error("fs", msg "\n"); return (code);   \
   }
+#define CHECK_UNLOCK(err, msg, code) if ((err)) {   \
+    log_error("fs", msg "\n"); kunlock(&fs_lock);   \
+    return (code);                                  \
+  }
 
 const uint32_t FS_FLAGS_MASK = 7;
 
@@ -24,6 +29,7 @@ const uint32_t FS_FLAGS_MASK = 7;
 
 // Filesystem mountpoint tree.
 static tree_node_t *fs_tree = NULL;
+static volatile uint32_t fs_lock = 0;
 
 void fs_open(fs_node_t *node, uint32_t flags)
 { if (node && node->open) node->open(node, flags); }
@@ -123,9 +129,11 @@ uint32_t fs_mount(fs_node_t *local_root, const char *path)
     ENXIO
     );
 
+  klock(&fs_lock);
+
   size_t path_len = u_strlen(path);
   char *mpath = kmalloc(path_len + 1);
-  CHECK(mpath == NULL, "No memory.", ENOMEM);
+  CHECK_UNLOCK(mpath == NULL, "No memory.", ENOMEM);
   u_memcpy(mpath, path, path_len + 1);
 
   if (path[0] != FS_PATH_SEP) {
@@ -156,11 +164,11 @@ uint32_t fs_mount(fs_node_t *local_root, const char *path)
 
     if (found == 0) {
       vfs_entry_t *ent = kmalloc(sizeof(vfs_entry_t));
-      CHECK(ent == NULL, "No memory.", ENOMEM);
+      CHECK_UNLOCK(ent == NULL, "No memory.", ENOMEM);
       u_memset(ent, 0, sizeof(vfs_entry_t));
       u_memcpy(ent->name, mpath + path_idx, u_strlen(mpath + path_idx) + 1);
       fs_node_t *vfs_node = vfs_node_create();
-      CHECK(vfs_node == NULL, "Could not create VFS node.", ENOMEM);
+      CHECK_UNLOCK(vfs_node == NULL, "Could not create VFS node.", ENOMEM);
       u_memcpy(vfs_node->name, ent->name, u_strlen(ent->name) + 1);
       tree_node_t *child = tree_init(ent);
       vfs_node->device = child;
@@ -173,7 +181,7 @@ uint32_t fs_mount(fs_node_t *local_root, const char *path)
   vfs_entry_t *ent = (vfs_entry_t *)(node->value);
   ent->file = local_root;
   kfree(mpath);
-
+  kunlock(&fs_lock);
   return 0;
 }
 

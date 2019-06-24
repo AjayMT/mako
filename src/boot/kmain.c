@@ -14,6 +14,8 @@
 #include <fs/fs.h>
 #include <rd/rd.h>
 #include <process/process.h>
+#include <syscall/syscall.h>
+#include <klock/klock.h>
 #include <elf/elf.h>
 #include <drivers/ata/ata.h>
 #include <common/multiboot.h>
@@ -126,9 +128,11 @@ void kmain(
   process_image_t p;
   elf_load(&p, test_text);
 
-  process_t init;
+  process_t init; process_t child;
   process_create_init(&init, p);
+  process_fork(&child, &init);
   process_schedule(&init);
+  process_schedule(&child);
 
   kfree(test_text);
   kfree(p.text);

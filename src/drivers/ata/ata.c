@@ -9,6 +9,7 @@
 #include <drivers/pci/pci.h>
 #include <drivers/io/io.h>
 #include <kheap/kheap.h>
+#include <klock/klock.h>
 #include <pmm/pmm.h>
 #include <paging/paging.h>
 #include <interrupt/interrupt.h>
@@ -21,6 +22,10 @@
 
 #define CHECK(err, msg, code) if ((err)) {      \
     log_error("ata", msg "\n"); return (code);  \
+  }
+#define CHECK_UNLOCK(err, msg, code) if ((err)) {   \
+    log_error("ata", msg "\n"); kunlock(&ata_lock); \
+    return (code);                                  \
   }
 
 // PCI info.
@@ -48,6 +53,7 @@ static ata_dev_t primary_slave;
 static ata_dev_t secondary_master;
 static ata_dev_t secondary_slave;
 static char ata_drive_char = 'a';
+static volatile uint32_t ata_lock = 0;
 
 static void wait_io(ata_dev_t *);
 static uint8_t wait_status(ata_dev_t *, int32_t);
@@ -56,8 +62,10 @@ static uint8_t ata_read_sector(
   ata_dev_t *dev, uint32_t block, uint8_t *buf
   )
 {
+  klock(&ata_lock);
+
   wait_io(dev);
-  CHECK(wait_status(dev, -1) & STATUS_ERR, "Error status.", 1);
+  CHECK_UNLOCK(wait_status(dev, -1) & STATUS_ERR, "Error status.", 1);
 
   // Reset busmaster command register.
   outb(dev->ports.busmaster_command, 0);
@@ -73,7 +81,7 @@ static uint8_t ata_read_sector(
   outb(dev->ports.busmaster_status, busmaster_status | 2 | 4);
   uint32_t eflags = interrupt_save_disable();
   enable_interrupts();
-  CHECK(wait_status(dev, -1) & STATUS_ERR, "Error status.", 1);
+  CHECK_UNLOCK(wait_status(dev, -1) & STATUS_ERR, "Error status.", 1);
 
   // Select drive.
   outb(
@@ -86,7 +94,7 @@ static uint8_t ata_read_sector(
   outb(dev->ports.lba_1, block & 0xFF);
   outb(dev->ports.lba_2, (block & 0xFF00) >> 8);
   outb(dev->ports.lba_3, (block & 0xFF0000) >> 16);
-  CHECK(wait_status(dev, -1) & STATUS_ERR, "Error status.", 1);
+  CHECK_UNLOCK(wait_status(dev, -1) & STATUS_ERR, "Error status.", 1);
 
   // Set the command register to the READ DMA command.
   outb(dev->ports.command_status, COMMAND_DMA_READ);
@@ -114,6 +122,7 @@ static uint8_t ata_read_sector(
   busmaster_status = inb(dev->ports.busmaster_status);
   outb(dev->ports.busmaster_status, busmaster_status | 4 | 2);
 
+  kunlock(&ata_lock);
   return 0;
 }
 
@@ -181,9 +190,11 @@ static uint8_t ata_write_sector(
   ata_dev_t *dev, uint32_t block, uint8_t *buf
   )
 {
+  klock(&ata_lock);
+
   u_memcpy(dev->buf, buf, SECTOR_SIZE);
   wait_io(dev);
-  CHECK(wait_status(dev, -1) & STATUS_ERR, "Error status.", 1);
+  CHECK_UNLOCK(wait_status(dev, -1) & STATUS_ERR, "Error status.", 1);
   // Reset busmaster command register.
   outb(dev->ports.busmaster_command, 0);
 
@@ -195,7 +206,7 @@ static uint8_t ata_write_sector(
   outb(dev->ports.busmaster_status, busmaster_status | 2 | 4);
   uint32_t eflags = interrupt_save_disable();
   enable_interrupts();
-  CHECK(wait_status(dev, -1) & STATUS_ERR, "Error status.", 1);
+  CHECK_UNLOCK(wait_status(dev, -1) & STATUS_ERR, "Error status.", 1);
 
   // Select drive.
   outb(
@@ -208,7 +219,7 @@ static uint8_t ata_write_sector(
   outb(dev->ports.lba_1, block & 0xFF);
   outb(dev->ports.lba_2, (block & 0xFF00) >> 8);
   outb(dev->ports.lba_3, (block & 0xFF0000) >> 16);
-  CHECK(wait_status(dev, -1) & STATUS_ERR, "Error status.", 1);
+  CHECK_UNLOCK(wait_status(dev, -1) & STATUS_ERR, "Error status.", 1);
 
   // Set the command register to the WRITE DMA command.
   outb(dev->ports.command_status, COMMAND_DMA_WRITE);
@@ -233,6 +244,7 @@ static uint8_t ata_write_sector(
   busmaster_status = inb(dev->ports.busmaster_status);
   outb(dev->ports.busmaster_status, busmaster_status | 4 | 2);
 
+  kunlock(&ata_lock);
   return 0;
 }
 
