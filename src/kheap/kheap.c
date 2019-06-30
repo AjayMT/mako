@@ -30,7 +30,7 @@
 // Constants.
 static const uint32_t SIZE_UNIT         = 8;
 static const uint32_t SIZE_UNIT_OFFSET  = 3;
-static const uint32_t BLOCK_MAGIC       = 0xDEADDEAD;
+static const uint64_t BLOCK_MAGIC       = 0xDEADDEAD;
 
 // The back of every block stores its size and three flags:
 //   `free`: whether the block is free
@@ -55,7 +55,7 @@ struct block_front_s {
   struct block_front_s *bigger;
   struct block_front_s *smaller;
   block_back_t *info;
-  uint32_t magic;
+  uint64_t magic;
 } __attribute__((packed));
 typedef struct block_front_s block_front_t;
 
@@ -204,6 +204,7 @@ static void merge_block(block_front_t *block)
   uint32_t block_size = get_size(block);
   uint32_t nb_size = get_size(nb);
   block_size += nb_size + sizeof(block_front_t) + sizeof(block_back_t);
+
   block->info = nb->info;
   block->info->size = block_size >> SIZE_UNIT_OFFSET;
   block->info->prev = old_info.prev;

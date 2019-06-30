@@ -9,6 +9,7 @@
 #include <stdint.h>
 #include <kheap/kheap.h>
 #include <util/util.h>
+#include <debug/log.h>
 #include "ds.h"
 
 // We assume everything has been allocated with kmalloc.
