@@ -191,6 +191,9 @@ uint32_t process_create_init(process_t *out_init, process_image_t img)
   CHECK(init == NULL, "No memory.", ENOMEM);
   u_memset(init, 0, sizeof(process_t));
   u_memcpy(init->name, "init", 5);
+  init->wd = kmalloc(u_strlen("/") + 1);
+  CHECK(init->wd == NULL, "No memory.", ENOMEM);
+  u_memcpy(init->wd, "/", u_strlen("/") + 1);
   init->is_running = 1;
 
   page_directory_t kernel_pd; uint32_t kernel_cr3;
@@ -231,6 +234,9 @@ uint32_t process_fork(process_t *out_child, process_t *process)
   process_t *child = kmalloc(sizeof(process_t));
   CHECK_UNLOCK_F(child == NULL, "No memory.", ENOMEM);
   u_memcpy(child, process, sizeof(process_t));
+  child->wd = kmalloc(u_strlen(process->wd) + 1);
+  CHECK_UNLOCK_F(child->wd == NULL, "No memory.", ENOMEM);
+  u_memcpy(child->wd, process->wd, u_strlen(process->wd) + 1);
   child->pid = ++next_pid;
   tree_node_t *node = tree_init(child);
   child->tree_node = node;
@@ -387,6 +393,7 @@ uint8_t process_destroy(process_t *process)
     }
   }
 
+  kfree(process->wd);
   kfree(process->fds.nodes);
   kfree(tree_node);
   kfree(list_node);

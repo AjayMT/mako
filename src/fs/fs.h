@@ -9,6 +9,7 @@
 #define _FS_H_
 
 #include <stdint.h>
+#include <stddef.h>
 
 // The maximum length of a file name.
 #define FS_NAME_LEN 256
@@ -55,6 +56,12 @@ typedef uint32_t (*write_type_t)(
   );
 typedef struct dirent *(*readdir_type_t)(struct fs_node_s *, uint32_t);
 typedef struct fs_node_s *(*finddir_type_t)(struct fs_node_s *, char *);
+typedef int32_t (*mkdir_type_t)(struct fs_node_s *, char *, uint16_t);
+typedef int32_t (*create_type_t)(struct fs_node_s *, char *, uint16_t);
+typedef int32_t (*unlink_type_t)(struct fs_node_s *, char *);
+typedef int32_t (*chmod_type_t)(struct fs_node_s *, int32_t);
+typedef int32_t (*symlink_type_t)(struct fs_node_s *, char *, char *);
+typedef int32_t (*readlink_type_t)(struct fs_node_s *, char *, size_t);
 
 // A single filesystem node.
 typedef struct fs_node_s {
@@ -68,6 +75,10 @@ typedef struct fs_node_s {
   uint32_t impl;          // Used to track which FS it is part of.
   void *device;           // Device object.
 
+  uint32_t atime;         // Accessed time.
+  uint32_t ctime;         // Created time.
+  uint32_t mtime;         // Modified time.
+
   // File operations.
   open_type_t open;
   close_type_t close;
@@ -75,6 +86,12 @@ typedef struct fs_node_s {
   write_type_t write;
   readdir_type_t readdir;
   finddir_type_t finddir;
+  mkdir_type_t mkdir;
+  create_type_t create;
+  chmod_type_t chmod;
+  unlink_type_t unlink;
+  symlink_type_t symlink;
+  readlink_type_t readlink;
 
   struct fs_node_s *ptr; // Pointer for symlinks.
 } fs_node_t;
@@ -98,6 +115,14 @@ uint32_t fs_read(fs_node_t *, uint32_t, uint32_t, uint8_t *);
 uint32_t fs_write(fs_node_t *, uint32_t, uint32_t, uint8_t *);
 struct dirent *fs_readdir(fs_node_t *, uint32_t);
 fs_node_t *fs_finddir(fs_node_t *, char *);
+int32_t fs_chmod(fs_node_t *, int32_t);
+int32_t fs_readlink(fs_node_t *, char *, size_t);
+
+// Non-trivial wrappers around internal functions.
+int32_t fs_symlink(char *, char *);
+int32_t fs_mkdir(char *, uint16_t);
+int32_t fs_create(char *, uint16_t);
+int32_t fs_unlink(char *);
 
 // Initialize the filesystem interface.
 uint32_t fs_init();

@@ -67,6 +67,7 @@ typedef struct process_s {
   uint32_t pid;
   uint32_t gid;
   char name[PROCESS_NAME_LEN];
+  char *wd;
 
   uint8_t is_running;
   uint8_t is_thread;
