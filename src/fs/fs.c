@@ -48,8 +48,8 @@ uint32_t fs_write(
   fs_node_t *node, uint32_t offset, uint32_t size, uint8_t *buffer
   )
 {
-  if (node && node->read)
-    return node->read(node, offset, size, buffer);
+  if (node && node->write)
+    return node->write(node, offset, size, buffer);
   return -ENODEV;
 }
 struct dirent *fs_readdir(fs_node_t *node, uint32_t index)
@@ -103,6 +103,7 @@ static uint32_t resolve_path(char **outpath, const char *inpath)
       u_memcpy(segment, wd + i, u_strlen(wd + i) + 1);
       list_push_back(stack, segment);
     }
+    kfree(wd);
   }
 
   for (uint32_t i = 0; i < path_len; i += u_strlen(path + i) + 1) {
