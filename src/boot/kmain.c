@@ -18,6 +18,7 @@
 #include <klock/klock.h>
 #include <elf/elf.h>
 #include <drivers/ata/ata.h>
+#include <ext2/ext2.h>
 #include <common/multiboot.h>
 #include <common/constants.h>
 #include <debug/log.h>
@@ -109,15 +110,6 @@ void kmain(
 
   ata_init();
 
-  fs_node_t dev_node;
-  fs_open_node(&dev_node, "/dev", 0);
-  struct dirent *ad = fs_readdir(&dev_node, 0);
-  log_debug("kmain", "%s\n", ad->name);
-  struct dirent *bd = fs_readdir(&dev_node, 1);
-  log_debug("kmain", "%s\n", bd->name);
-  struct dirent *d = fs_readdir(&dev_node, 2);
-  log_debug("kmain", "%s\n", d->name);
-
   fs_node_t test_node;
   fs_open_node(&test_node, "/rd/test", 0);
   uint8_t *test_text = kmalloc(test_node.length);
@@ -131,12 +123,21 @@ void kmain(
   process_t init; process_t child;
   process_create_init(&init, p);
   process_fork(&child, &init);
-  process_schedule(&init);
-  process_schedule(&child);
+  /* process_schedule(&init); */
+  /* process_schedule(&child); */
 
   kfree(test_text);
   kfree(p.text);
   kfree(p.data);
+
+  res = ext2_init("/dev/hda");
+  log_debug("kmain", "ext2 init res: %u\n", res);
+
+  int32_t sres = fs_create("/ext2/testfile", 0660);
+  log_debug("kmain", "sres: %u\n", sres);
+
+  sres = fs_mkdir("/ext2/testdir", 0660);
+  log_debug("kmain", "sres: %u\n", sres);
 
   interrupt_restore(eflags);
 }
