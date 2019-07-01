@@ -40,17 +40,24 @@ static const uint64_t BLOCK_MAGIC       = 0xDEADDEAD;
 //           memory, after it.
 // The size can be stored with only 29 bits because we force it
 // to be a multiple of 8, so the last three bits are always zero.
+//
+// UPDATE: This needs to also be a multiple of 8 in size, so 4
+// padding bytes are necessary.
 struct block_back_s {
-  uint32_t size : 29;
-  uint32_t free : 1;
-  uint32_t prev : 1;
-  uint32_t next : 1;
+  uint32_t padding : 32;
+  uint32_t size    : 29;
+  uint32_t free    : 1;
+  uint32_t prev    : 1;
+  uint32_t next    : 1;
 } __attribute__((packed));
 typedef struct block_back_s block_back_t;
 
 // The front of every block stores pointers to the next (smaller) and
 // previous (bigger) blocks in the size chain, and a pointer to the
 // struct at the back of the block.
+//
+// UPDATE: It also stores a magic number to confirm that it is a
+// kmalloc'd block and to pad out its size to a multiple of 8.
 struct block_front_s {
   struct block_front_s *bigger;
   struct block_front_s *smaller;
@@ -209,6 +216,7 @@ static void merge_block(block_front_t *block)
   block->info->size = block_size >> SIZE_UNIT_OFFSET;
   block->info->prev = old_info.prev;
   block->info->free = old_info.free;
+  u_memset(nb, 0, sizeof(block_front_t));
 }
 
 // Get more memory from the physical allocator and map it.
