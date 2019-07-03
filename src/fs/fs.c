@@ -24,8 +24,6 @@
     return (code);                                  \
   }
 
-const uint32_t FS_FLAGS_MASK = 7;
-
 // TODO return/set error codes.
 
 // Filesystem mountpoint tree.
@@ -54,13 +52,13 @@ uint32_t fs_write(
 }
 struct dirent *fs_readdir(fs_node_t *node, uint32_t index)
 {
-  if (node && (node->flags & FS_FLAGS_MASK) == FS_DIRECTORY && node->readdir)
+  if (node && (node->flags & FS_DIRECTORY) && node->readdir)
     return node->readdir(node, index);
   return NULL;
 }
 fs_node_t *fs_finddir(fs_node_t *node, char *name)
 {
-  if (node && (node->flags & FS_FLAGS_MASK) == FS_DIRECTORY && node->finddir)
+  if (node && (node->flags & FS_DIRECTORY) && node->finddir)
     return node->finddir(node, name);
   return NULL;
 }
@@ -473,7 +471,41 @@ uint32_t fs_open_node(fs_node_t *out_node, const char *path, uint32_t flags)
 
   fs_node_t *node = mount_point;
   while (path_idx < path_len) {
-    // TODO symlinks.
+    if (node->flags & FS_SYMLINK) {
+      char *target = kmalloc(1024);
+      CHECK(target == NULL, "No memory.", ENOMEM);
+
+      int32_t sres = fs_readlink(node, target, 1024);
+      if (sres < 0) { kfree(target); kfree(mpath); return -sres; }
+      char *rtarget = NULL;
+      res = resolve_path(&rtarget, target);
+      if (res) {
+        kfree(rtarget); kfree(target); kfree(mpath);
+        return res;
+      }
+
+      uint32_t rpath_len = u_strlen(rtarget);
+      for (size_t i = 0; i < rpath_len; ++i)
+        if (rtarget[i] == FS_PATH_SEP) rtarget[i] = '\0';
+
+      if (rpath_len >= 1024) {
+        kfree(mpath); kfree(target); kfree(rtarget);
+        return ENOENT;
+      }
+
+      u_memset(target, 0, 1024);
+      u_memcpy(target, rtarget, rpath_len);
+      u_memcpy(target + rpath_len + 1, mpath + path_idx, path_len - path_idx);
+
+      path_len += rpath_len - path_idx + 1;
+      path_idx = 0;
+      kfree(mpath); mpath = target;
+      kfree(rtarget);
+
+      mount_point = get_mount_point(mpath, path_len, &path_idx);
+      if (mount_point == NULL) { kfree(mpath); return ENOENT; }
+      node = mount_point;
+    }
 
     fs_node_t *new_node = fs_finddir(node, mpath + path_idx);
     if (node != mount_point) kfree(node); // Not sure about this.

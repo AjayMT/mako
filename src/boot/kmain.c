@@ -112,47 +112,33 @@ void kmain(
 
   fs_node_t test_node;
   fs_open_node(&test_node, "/rd/test", 0);
-  uint8_t *test_text = kmalloc(test_node.length);
-  fs_read(&test_node, 0, test_node.length, test_text);
+  /* uint8_t *test_text = kmalloc(test_node.length); */
+  /* fs_read(&test_node, 0, test_node.length, test_text); */
 
   process_init();
 
-  process_image_t p;
-  elf_load(&p, test_text);
+  /* process_image_t p; */
+  /* elf_load(&p, test_text); */
 
-  process_t init; process_t child;
-  process_create_init(&init, p);
-  process_fork(&child, &init);
+  /* process_t init; process_t child; */
+  /* process_create_init(&init, p); */
+  /* process_fork(&child, &init); */
   /* process_schedule(&init); */
   /* process_schedule(&child); */
 
-  kfree(test_text);
-  kfree(p.text);
-  kfree(p.data);
+  /* kfree(test_text); */
+  /* kfree(p.text); */
+  /* kfree(p.data); */
 
   res = ext2_init("/dev/hda");
   log_debug("kmain", "ext2 init res: %u\n", res);
 
-  int32_t sres = fs_create("/ext2/testfile", 0660);
-  log_debug("kmain", "sres: %u\n", sres);
-
-  sres = fs_mkdir("/ext2/testdir", 0660);
-  log_debug("kmain", "sres: %u\n", sres);
-
-  sres = fs_symlink("/usr", "/ext2/lnk");
-  log_debug("kmain", "sres: %u\n", sres);
-
-  sres = fs_unlink("/ext2/testfile");
-  log_debug("kmain", "sres: %u\n", sres);
-
-  sres = fs_unlink("/ext2/testdir");
-  log_debug("kmain", "sres: %u\n", sres);
-
-  sres = fs_create("/ext2/testfile2", 0660);
+  int32_t sres = fs_symlink("/ext2/d", "/ext2/lnk");
   log_debug("kmain", "sres: %u\n", sres);
 
   fs_node_t node;
-  fs_open_node(&node, "/ext2/testfile2", 0);
+  res = fs_open_node(&node, "/ext2/d/hello.txt", 0);
+  log_debug("kmain", "res: %u\n", res);
   fs_write(&node, 0, 5, (uint8_t *)"hello");
 
   interrupt_restore(eflags);

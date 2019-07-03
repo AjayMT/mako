@@ -23,11 +23,11 @@
 // fs_node_t flags.
 #define FS_FILE        1
 #define FS_DIRECTORY   2
-#define FS_CHARDEVICE  3
-#define FS_BLOCKDEVICE 4
-#define FS_PIPE        5
-#define FS_SYMLINK     6
-#define FS_MOUNTPOINT  8
+#define FS_CHARDEVICE  4
+#define FS_BLOCKDEVICE 8
+#define FS_PIPE        0x10
+#define FS_SYMLINK     0x20
+#define FS_MOUNTPOINT  0x40
 
 // fs_open flags.
 #define O_RDONLY    0
