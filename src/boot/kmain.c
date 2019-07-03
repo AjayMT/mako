@@ -139,5 +139,21 @@ void kmain(
   sres = fs_mkdir("/ext2/testdir", 0660);
   log_debug("kmain", "sres: %u\n", sres);
 
+  sres = fs_symlink("/usr", "/ext2/lnk");
+  log_debug("kmain", "sres: %u\n", sres);
+
+  sres = fs_unlink("/ext2/testfile");
+  log_debug("kmain", "sres: %u\n", sres);
+
+  sres = fs_unlink("/ext2/testdir");
+  log_debug("kmain", "sres: %u\n", sres);
+
+  sres = fs_create("/ext2/testfile2", 0660);
+  log_debug("kmain", "sres: %u\n", sres);
+
+  fs_node_t node;
+  fs_open_node(&node, "/ext2/testfile2", 0);
+  fs_write(&node, 0, 5, (uint8_t *)"hello");
+
   interrupt_restore(eflags);
 }

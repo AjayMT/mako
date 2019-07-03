@@ -19,6 +19,14 @@
 #define CHECK(err, msg, code) if ((err)) {      \
     log_error("ext2", msg "\n"); return (code); \
   }
+#define CHECK_UNLOCK_I(err, msg, code) if ((err)) {             \
+    log_error("ext2", msg "\n"); kunlock(&(self->inode_lock));  \
+    return (code);                                              \
+  }
+#define CHECK_UNLOCK_B(err, msg, code) if ((err)) {             \
+    log_error("ext2", msg "\n"); kunlock(&(self->block_lock));  \
+    return (code);                                              \
+  }
 
 typedef struct ext2_fs_s {
   fs_node_t *block_device;
@@ -30,6 +38,9 @@ typedef struct ext2_fs_s {
   uint32_t group_count;
   uint32_t bgd_block_count;
   volatile uint32_t lock;
+  volatile uint32_t inode_lock;
+  volatile uint32_t block_lock;
+  volatile uint32_t bgds_lock;
 } ext2_fs_t;
 
 static const uint32_t EXT2_DIRECT_BLOCKS = 12;
@@ -76,19 +87,43 @@ static uint32_t write_block(
   return res;
 }
 
+static uint32_t write_bgds(ext2_fs_t *self)
+{
+  klock(&(self->bgds_lock));
+
+  uint32_t bgd_block_offset = self->block_size > 1024 ? 1 : 2;
+  for (uint32_t i = 0; i < self->bgd_block_count; ++i) {
+    uint32_t res = write_block(
+      self,
+      bgd_block_offset + i,
+      (uint8_t *)((uint32_t)self->bgds + (i * self->block_size))
+      );
+    if (res != self->block_size) {
+      log_error("ext2", "Failed to write block group descriptors.");
+      kunlock(&(self->bgds_lock));
+      return EAGAIN;
+    }
+  }
+
+  kunlock(&(self->bgds_lock));
+  return 0;
+}
+
 static uint32_t alloc_block(ext2_fs_t *self)
 {
+  klock(&(self->block_lock));
+
   uint32_t res = 0;
   uint32_t block_num = 0;
   uint32_t block_offset = 0;
   uint32_t group_num = 0;
   uint8_t *bg_buf = kmalloc(self->block_size);
-  CHECK(bg_buf == NULL, "No memory.", 0);
+  CHECK_UNLOCK_B(bg_buf == NULL, "No memory.", 0);
   for (uint32_t i = 0; i < self->group_count; ++i) {
     if (self->bgds[i].free_block_count == 0) continue;
 
     res = read_block(self, self->bgds[i].block_bitmap, bg_buf);
-    CHECK(res != self->block_size, "Failed to read block.", 0);
+    CHECK_UNLOCK_B(res != self->block_size, "Failed to read block.", 0);
     while (blockbit(bg_buf, block_offset)) ++block_offset;
     block_num = block_offset + (self->blocks_per_group * i);
     group_num = i;
@@ -99,17 +134,10 @@ static uint32_t alloc_block(ext2_fs_t *self)
 
   bg_buf[block_offset >> 3] |= 1 << (block_offset % 8);
   res = write_block(self, self->bgds[group_num].block_bitmap, bg_buf);
-  CHECK(res != self->block_size, "Failed to write block.", 0);
+  CHECK_UNLOCK_B(res != self->block_size, "Failed to write block.", 0);
   --(self->bgds[group_num].free_block_count);
-  uint32_t bgd_block_offset = self->block_size > 1024 ? 1 : 2;
-  for (uint32_t i = 0; i < self->bgd_block_count; ++i) {
-    res = write_block(
-      self,
-      bgd_block_offset + i,
-      (uint8_t *)((uint32_t)self->bgds + (i * self->block_size))
-      );
-    CHECK(res != self->block_size, "Failed to write block.", 0);
-  }
+  res = write_bgds(self);
+  CHECK_UNLOCK_B(res, "Failed to write block group descriptors.", res);
 
   --(self->superblock->free_block_count);
   res = fs_write(
@@ -118,29 +146,34 @@ static uint32_t alloc_block(ext2_fs_t *self)
     sizeof(ext2_superblock_t),
     (uint8_t *)self->superblock
     );
-  CHECK(res != sizeof(ext2_superblock_t), "Failed to write superblock.", 0);
+  CHECK_UNLOCK_B(
+    res != sizeof(ext2_superblock_t), "Failed to write superblock.", 0
+    );
 
   u_memset(bg_buf, 0, self->block_size);
   res = write_block(self, block_num, bg_buf);
-  CHECK(res != self->block_size, "Failed to clear block.", 0);
+  CHECK_UNLOCK_B(res != self->block_size, "Failed to clear block.", 0);
 
   kfree(bg_buf);
+  kunlock(&(self->block_lock));
   return block_num;
 }
 
 static uint32_t alloc_inode(ext2_fs_t *self)
 {
+  klock(&(self->inode_lock));
+
   uint32_t res = 0;
   uint32_t inode_num = 0;
   uint32_t inode_offset = 0;
   uint32_t group_num = 0;
   uint8_t *bg_buf = kmalloc(self->block_size);
-  CHECK(bg_buf == NULL, "No memory.", 0);
+  CHECK_UNLOCK_I(bg_buf == NULL, "No memory.", 0);
   for (uint32_t i = 0; i < self->group_count; ++i) {
     if (self->bgds[i].free_block_count == 0) continue;
 
     res = read_block(self, self->bgds[i].inode_bitmap, bg_buf);
-    CHECK(res != self->block_size, "Failed to read block.", 0);
+    CHECK_UNLOCK_I(res != self->block_size, "Failed to read block.", 0);
     while (blockbit(bg_buf, inode_offset)) ++inode_offset;
     inode_num = inode_offset + (self->inodes_per_group * i);
     group_num = i;
@@ -151,17 +184,10 @@ static uint32_t alloc_inode(ext2_fs_t *self)
 
   bg_buf[inode_offset >> 3] |= 1 << (inode_offset % 8);
   res = write_block(self, self->bgds[group_num].inode_bitmap, bg_buf);
-  CHECK(res != self->block_size, "Failed to write block.", 0);
+  CHECK_UNLOCK_I(res != self->block_size, "Failed to write block.", 0);
   --(self->bgds[group_num].free_inode_count);
-  uint32_t bgd_block_offset = self->block_size > 1024 ? 1 : 2;
-  for (uint32_t i = 0; i < self->bgd_block_count; ++i) {
-    res = write_block(
-      self,
-      bgd_block_offset + i,
-      (uint8_t *)((uint32_t)self->bgds + (i * self->block_size))
-      );
-    CHECK(res != self->block_size, "Failed to write block.", 0);
-  }
+  res = write_bgds(self);
+  CHECK_UNLOCK_I(res, "Failed to write block group descriptors.", res);
 
   --(self->superblock->free_inode_count);
   res = fs_write(
@@ -170,10 +196,101 @@ static uint32_t alloc_inode(ext2_fs_t *self)
     sizeof(ext2_superblock_t),
     (uint8_t *)self->superblock
     );
-  CHECK(res != sizeof(ext2_superblock_t), "Failed to write superblock.", 0);
+  CHECK_UNLOCK_I(
+    res != sizeof(ext2_superblock_t), "Failed to write superblock.", 0
+    );
 
   kfree(bg_buf);
+  kunlock(&(self->inode_lock));
   return inode_num;
+}
+
+static uint32_t free_block(ext2_fs_t *self, uint32_t block_num)
+{
+  klock(&(self->block_lock));
+
+  uint32_t group_num = block_num / self->blocks_per_group;
+  uint32_t bitmap_num = (block_num % self->blocks_per_group) / 4;
+  uint32_t idx = (block_num % self->blocks_per_group) % 4;
+  uint32_t *blk_buf = kmalloc(self->block_size);
+  CHECK_UNLOCK_B(blk_buf == NULL, "No memory.", ENOMEM);
+  uint32_t res = read_block(
+    self, self->bgds[group_num].block_bitmap, (uint8_t *)blk_buf
+    );
+  CHECK_UNLOCK_B(
+    res != self->block_size, "Failed to read disk block.", EAGAIN
+    );
+
+  uint32_t mask = ~(1 << idx);
+  blk_buf[bitmap_num] = blk_buf[bitmap_num] & mask;
+
+  res = write_block(
+    self, self->bgds[group_num].block_bitmap, (uint8_t *)blk_buf
+    );
+  CHECK_UNLOCK_B(
+    res != self->block_size, "Failed to write disk block.", EAGAIN
+    );
+  ++(self->bgds[group_num].free_block_count);
+  res = write_bgds(self);
+  CHECK_UNLOCK_B(res, "Failed to write block group descriptors.", res);
+
+  ++(self->superblock->free_block_count);
+  res = fs_write(
+    self->block_device,
+    1024,
+    sizeof(ext2_superblock_t),
+    (uint8_t *)self->superblock
+    );
+  CHECK_UNLOCK_B(
+    res != sizeof(ext2_superblock_t), "Failed to write superblock.", EAGAIN
+    );
+
+  kunlock(&(self->block_lock));
+  return 0;
+}
+
+static uint32_t free_inode(ext2_fs_t *self, uint32_t inode_num)
+{
+  klock(&(self->inode_lock));
+
+  uint32_t group_num = inode_num / self->inodes_per_group;
+  uint32_t bitmap_num = (inode_num % self->inodes_per_group) / 4;
+  uint32_t idx = (inode_num % self->inodes_per_group) % 4;
+  uint32_t *blk_buf = kmalloc(self->block_size);
+  CHECK_UNLOCK_B(blk_buf == NULL, "No memory.", ENOMEM);
+  uint32_t res = read_block(
+    self, self->bgds[group_num].inode_bitmap, (uint8_t *)blk_buf
+    );
+  CHECK_UNLOCK_B(
+    res != self->block_size, "Failed to read disk block.", EAGAIN
+    );
+
+  uint32_t mask = ~(1 << idx);
+  blk_buf[bitmap_num] = blk_buf[bitmap_num] & mask;
+
+  res = write_block(
+    self, self->bgds[group_num].inode_bitmap, (uint8_t *)blk_buf
+    );
+  CHECK_UNLOCK_B(
+    res != self->block_size, "Failed to write disk block.", EAGAIN
+    );
+  ++(self->bgds[group_num].free_inode_count);
+  res = write_bgds(self);
+  CHECK_UNLOCK_I(res, "Failed to write block group descriptors.", res);
+
+  ++(self->superblock->free_inode_count);
+  res = fs_write(
+    self->block_device,
+    1024,
+    sizeof(ext2_superblock_t),
+    (uint8_t *)self->superblock
+    );
+  CHECK_UNLOCK_I(
+    res != sizeof(ext2_superblock_t), "Failed to write superblock.", EAGAIN
+    );
+
+  kunlock(&(self->inode_lock));
+  return 0;
 }
 
 static uint32_t read_inode_info(
@@ -181,7 +298,7 @@ static uint32_t read_inode_info(
   )
 {
   uint32_t group_idx = inode_num / self->inodes_per_group;
-  CHECK(group_idx > self->group_count, "Invalid group number.", 1);
+  CHECK(group_idx > self->group_count, "Invalid group number.", EAGAIN);
   uint32_t inode_table_block = self->bgds[group_idx].inode_table;
   uint32_t group_offset = inode_num % self->inodes_per_group;
   // group_offset - 1 since inode numbers start at 1.
@@ -209,7 +326,7 @@ static uint32_t write_inode_info(
   )
 {
   uint32_t group_idx = inode_num / self->inodes_per_group;
-  CHECK(group_idx > self->group_count, "Invalid group number.", 1);
+  CHECK(group_idx > self->group_count, "Invalid group number.", EAGAIN);
   uint32_t inode_table_block = self->bgds[group_idx].inode_table;
   uint32_t group_offset = inode_num % self->inodes_per_group;
   // group_offset - 1 since inode numbers start at 1.
@@ -333,12 +450,12 @@ static uint32_t set_disk_block_number(
     res = read_block(
       self, inode->block_pointer[EXT2_DIRECT_BLOCKS], (uint8_t *)tmp
       );
-    CHECK(res != self->block_size, "Failed to read block.", 1);
+    CHECK(res != self->block_size, "Failed to read block.", EAGAIN);
     tmp[a] = disk_block_num;
     res = write_block(
       self, inode->block_pointer[EXT2_DIRECT_BLOCKS], (uint8_t *)tmp
       );
-    CHECK(res != self->block_size, "Failed to write block.", 1);
+    CHECK(res != self->block_size, "Failed to write block.", EAGAIN);
     kfree(tmp);
     return 0;
   }
@@ -357,7 +474,7 @@ static uint32_t set_disk_block_number(
     res = read_block(
       self, inode->block_pointer[EXT2_DIRECT_BLOCKS + 1], (uint8_t *)tmp
       );
-    CHECK(res != self->block_size, "Failed to read block.", 1);
+    CHECK(res != self->block_size, "Failed to read block.", EAGAIN);
     if (tmp[c] == 0) {
       uint32_t bn = alloc_block(self);
       CHECK(bn == 0, "No space.", ENOSPC);
@@ -365,14 +482,14 @@ static uint32_t set_disk_block_number(
       res = write_block(
         self, inode->block_pointer[EXT2_DIRECT_BLOCKS + 1], (uint8_t *)tmp
         );
-      CHECK(res != self->block_size, "Failed to write block.", 1);
+      CHECK(res != self->block_size, "Failed to write block.", EAGAIN);
     }
     uint32_t bn = tmp[c];
     res = read_block(self, bn, (uint8_t *)tmp);
-    CHECK(res != self->block_size, "Failed to read block.", 1);
+    CHECK(res != self->block_size, "Failed to read block.", EAGAIN);
     tmp[d] = disk_block_num;
     res = write_block(self, bn, (uint8_t *)tmp);
-    CHECK(res != self->block_size, "Failed to write block.", 1);
+    CHECK(res != self->block_size, "Failed to write block.", EAGAIN);
     kfree(tmp);
     return 0;
   }
@@ -392,7 +509,7 @@ static uint32_t set_disk_block_number(
     res = read_block(
       self, inode->block_pointer[EXT2_DIRECT_BLOCKS + 2], (uint8_t *)tmp
       );
-    CHECK(res != self->block_size, "Failed to read block.", 1);
+    CHECK(res != self->block_size, "Failed to read block.", EAGAIN);
     if (tmp[e] == 0) {
       uint32_t bn = alloc_block(self);
       CHECK(bn == 0, "No space.", ENOSPC);
@@ -400,24 +517,24 @@ static uint32_t set_disk_block_number(
       res = write_block(
         self, inode->block_pointer[EXT2_DIRECT_BLOCKS + 2], (uint8_t *)tmp
         );
-      CHECK(res != self->block_size, "Failed to write block.", 1);
+      CHECK(res != self->block_size, "Failed to write block.", EAGAIN);
     }
     uint32_t nblock = tmp[e];
     res = read_block(self, nblock, (uint8_t *)tmp);
-    CHECK(res != self->block_size, "Failed to read block.", 1);
+    CHECK(res != self->block_size, "Failed to read block.", EAGAIN);
     if (tmp[f] == 0) {
       uint32_t bn = alloc_block(self);
       CHECK(bn == 0, "No space.", ENOSPC);
       tmp[f] = bn;
       res = write_block(self, nblock, (uint8_t *)tmp);
-      CHECK(res != self->block_size, "Failed to write block.", 1);
+      CHECK(res != self->block_size, "Failed to write block.", EAGAIN);
     }
     nblock = tmp[f];
     res = read_block(self, nblock, (uint8_t *)tmp);
-    CHECK(res != self->block_size, "Failed to read block.", 1);
+    CHECK(res != self->block_size, "Failed to read block.", EAGAIN);
     tmp[g] = disk_block_num;
     res = write_block(self, nblock, (uint8_t *)tmp);
-    CHECK(res != self->block_size, "Failed to write block.", 1);
+    CHECK(res != self->block_size, "Failed to write block.", EAGAIN);
     kfree(tmp);
     return 0;
   }
@@ -445,6 +562,23 @@ static uint32_t alloc_inode_block(
   CHECK(res, "Failed to write inode info.", res);
 
   return 0;
+}
+
+static uint32_t free_inode_block(
+  ext2_fs_t *self, ext2_inode_t *inode, uint32_t inode_num, uint32_t block_num
+  )
+{
+  uint32_t disk_block_num = get_disk_block_number(self, inode, block_num);
+  CHECK(
+    disk_block_num >= (uint32_t)(-ENOMEM),
+    "Failed to get disk block number.",
+    EAGAIN
+    );
+  uint32_t res = free_block(self, disk_block_num);
+  CHECK(res, "Failed to free disk block.", res);
+  res = set_disk_block_number(self, inode, inode_num, block_num, 0);
+  CHECK(res, "Failed to set disk block number.", res);
+  return write_inode_info(self, inode, inode_num);
 }
 
 static uint32_t read_inode_block(
@@ -504,7 +638,7 @@ static int32_t create_dir_entry(
   CHECK(blk_buf == NULL, "No memory.", -ENOMEM);
   uint32_t block_num = 0;
   res = read_inode_block(self, &inode, block_num, blk_buf);
-  CHECK(res != self->block_size, "Failed to read inode block.", -1);
+  CHECK(res != self->block_size, "Failed to read inode block.", -EAGAIN);
 
   uint32_t idx = 0;
   uint32_t dir_idx = 0;
@@ -519,7 +653,7 @@ static int32_t create_dir_entry(
       ++block_num;
       dir_idx -= self->block_size;
       res = read_inode_block(self, &inode, block_num, blk_buf);
-      CHECK(res != self->block_size, "Failed to read inode block.", -1);
+      CHECK(res != self->block_size, "Failed to read inode block.", -EAGAIN);
     }
 
     current_entry = (ext2_dir_entry_t *)(blk_buf + dir_idx);
@@ -547,7 +681,7 @@ static int32_t create_dir_entry(
   u_memcpy(current_entry->name, name, current_entry->name_len);
 
   res = write_inode_block(self, &inode, node->inode, block_num, blk_buf);
-  CHECK(res != self->block_size, "Failed to write inode block", -1);
+  CHECK(res != self->block_size, "Failed to write inode block", -EAGAIN);
 
   kfree(blk_buf);
   return 0;
@@ -912,7 +1046,7 @@ static int32_t ext2_mkdir(fs_node_t *node, char *name, uint16_t mask)
   ent->size = self->block_size - 12;
   u_memcpy(&buf[12], ent, 12);
   res = write_inode_block(self, &inode, inode_num, 0, buf);
-  CHECK(res != self->block_size, "Failed to write inode block.", -1);
+  CHECK(res != self->block_size, "Failed to write inode block.", -EAGAIN);
   kfree(ent);
   kfree(buf);
 
@@ -925,15 +1059,8 @@ static int32_t ext2_mkdir(fs_node_t *node, char *name, uint16_t mask)
 
   uint32_t group_num = inode_num / self->inodes_per_group;
   ++(self->bgds[group_num].dir_count);
-  uint32_t bgd_block_offset = self->block_size > 1024 ? 1 : 2;
-  for (uint32_t i = 0; i < self->bgd_block_count; ++i) {
-    res = write_block(
-      self,
-      bgd_block_offset + i,
-      (uint8_t *)((uint32_t)self->bgds + (i * self->block_size))
-      );
-    CHECK(res != self->block_size, "Failed to write block.", -1);
-  }
+  res = write_bgds(self);
+  CHECK(res, "Failed to write block group descriptors.", -res);
 
   return 0;
 }
@@ -986,7 +1113,89 @@ static int32_t ext2_create(fs_node_t *node, char *name, uint16_t mask)
 static int32_t ext2_unlink(fs_node_t *node, char *name)
 {
   ext2_fs_t *self = node->device;
+  ext2_inode_t inode;
+  uint32_t res = read_inode_info(self, &inode, node->inode);
+  CHECK(res, "Failed to read inode info.", -res);
 
+  uint8_t *blk_buf = kmalloc(self->block_size);
+  CHECK(blk_buf == NULL, "No memory.", -ENOMEM);
+  uint32_t block_num = 0;
+  res = read_inode_block(self, &inode, block_num, blk_buf);
+  CHECK(res != self->block_size, "Failed to read inode block.", -EAGAIN);
+
+  uint32_t idx = 0;
+  uint32_t dir_idx = 0;
+  ext2_dir_entry_t *current_entry = NULL;
+  ext2_dir_entry_t *found_entry = NULL;
+  for (
+    ;
+    idx < inode.size;
+    idx += current_entry->size, dir_idx += current_entry->size
+    )
+  {
+    if (dir_idx >= self->block_size) {
+      ++block_num;
+      dir_idx -= self->block_size;
+      res = read_inode_block(self, &inode, block_num, blk_buf);
+      CHECK(res != self->block_size, "Failed to read inode block.", -EAGAIN);
+    }
+
+    current_entry = (ext2_dir_entry_t *)(blk_buf + dir_idx);
+    if (current_entry->inode == 0 || u_strlen(name) != current_entry->name_len)
+      continue;
+
+    char *dname = kmalloc(current_entry->name_len + 1);
+    u_memcpy(dname, current_entry->name, current_entry->name_len);
+    dname[current_entry->name_len] = '\0';
+    if (u_strcmp(dname, name) == 0) {
+      kfree(dname);
+      found_entry = current_entry;
+      break;
+    }
+    kfree(dname);
+  }
+
+  if (found_entry == NULL) { kfree(blk_buf); return -ENOENT; }
+
+  uint32_t child_inode_num = found_entry->inode;
+  found_entry->inode = 0;
+  res = write_inode_block(self, &inode, node->inode, block_num, blk_buf);
+  CHECK(res != self->block_size, "Failed to write inode block.", -EAGAIN);
+
+  ext2_inode_t child_inode;
+  res = read_inode_info(self, &child_inode, child_inode_num);
+  CHECK(res, "Failed to read child inode info.", -res);
+  --(child_inode.hard_link_count);
+  res = write_inode_info(self, &child_inode, child_inode_num);
+  CHECK(res, "Failed to write child inode info.", -res);
+
+  uint8_t isfile = (child_inode.permissions & EXT2_S_IFREG) == EXT2_S_IFREG;
+  uint8_t islink = (child_inode.permissions & EXT2_S_IFLNK) == EXT2_S_IFLNK;
+  uint8_t isdir = (child_inode.permissions & EXT2_S_IFDIR) == EXT2_S_IFDIR;
+  if (isdir) {
+    --(inode.hard_link_count);
+    res = write_inode_info(self, &inode, node->inode);
+    CHECK(res, "Failed to write inode info.", -res);
+  }
+
+  if (
+    ((islink || isfile) && child_inode.hard_link_count == 0)
+    || (isdir && child_inode.hard_link_count == 1)
+    )
+  {
+    uint32_t tmp = child_inode.sector_count / (self->block_size / 512);
+    for (uint32_t i = 0; i < tmp; ++i) {
+      res = free_inode_block(self, &child_inode, child_inode_num, i);
+      CHECK(res, "Failed to free inode block.", -res);
+      res = read_inode_info(self, &child_inode, child_inode_num);
+      CHECK(res, "Failed to read inode info.", -res);
+    }
+
+    res = free_inode(self, child_inode_num);
+    CHECK(res, "Failed to free inode.", -res);
+  }
+
+  kfree(blk_buf);
   return 0;
 }
 
@@ -1002,14 +1211,85 @@ static int32_t ext2_chmod(fs_node_t *node, int32_t mask)
   return 0;
 }
 
-static int32_t ext2_symlink(fs_node_t *node, char *name, char *value)
+static int32_t ext2_symlink(fs_node_t *node, char *value, char *name)
 {
+  ext2_fs_t *self = node->device;
+  fs_node_t *child = ext2_finddir(node, name);
+  kfree(child);
+  if (child) return -EEXIST;
+
+  uint32_t inode_num = alloc_inode(self);
+  if (inode_num == 0) return -ENOSPC;
+  ext2_inode_t inode;
+  uint32_t res = read_inode_info(self, &inode, inode_num);
+  CHECK(res, "Failed to read inode info.", -res);
+
+  // TODO atime, mtime, ctime
+  inode.atime = 0;
+  inode.ctime = 0;
+  inode.mtime = 0;
+
+  u_memset(&(inode.block_pointer), 0, sizeof(inode.block_pointer));
+  inode.sector_count = 0;
+  inode.size = 0;
+
+  // TODO users
+  inode.uid = 0;
+  inode.gid = 0;
+
+  inode.fragment_addr = 0;
+  inode.hard_link_count = 1;
+  inode.flags = 0;
+  inode.os_1 = 0;
+  inode.generation_number = 0;
+  inode.file_acl = 0;
+  inode.dir_acl = 0;
+  inode.permissions = EXT2_S_IFLNK;
+  inode.permissions |= 0660;
+
+  uint32_t src_len = u_strlen(value);
+  uint8_t embedded = src_len <= sizeof(inode.block_pointer);
+  if (embedded) {
+    u_memcpy(&(inode.block_pointer), value, src_len);
+    inode.size = src_len;
+  }
+
+  res = write_inode_info(self, &inode, inode_num);
+  CHECK(res, "Failed to write inode info.", -res);
+  int32_t sres = create_dir_entry(node, name, inode_num);
+  CHECK(sres < 0, "Failed to create directory entry.", sres);
+
+  if (!embedded) {
+    fs_node_t tmp;
+    tmp.device = self;
+    tmp.inode = inode_num;
+    res = ext2_write(&tmp, 0, src_len, (uint8_t *)value);
+    CHECK(res != src_len, "Failed to write symlink.", -EAGAIN);
+  }
+
   return 0;
 }
 
 static int32_t ext2_readlink(fs_node_t *node, char *buf, size_t bufsize)
 {
-  return 0;
+  ext2_fs_t *self = node->device;
+  ext2_inode_t inode;
+  uint32_t res = read_inode_info(self, &inode, node->inode);
+  CHECK(res, "Failed to read inode info.", -res);
+  uint32_t size = bufsize;
+  if (inode.size < bufsize) size = inode.size;
+
+  uint32_t read_size = 0;
+  if (inode.size > sizeof(inode.block_pointer))
+    read_size = ext2_read(node, 0, size, (uint8_t *)buf);
+  else {
+    u_memcpy(buf, &(inode.block_pointer), size);
+    read_size = size;
+  }
+
+  if (size < bufsize) buf[size] = '\0';
+
+  return read_size;
 }
 
 static void make_ext2_node(
