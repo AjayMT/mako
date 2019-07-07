@@ -20,14 +20,15 @@ typedef struct idt_info_s idt_info_t;
 
 // CPU state struct.
 struct cpu_state_s {
+  uint32_t ds;
   uint32_t edi;
   uint32_t esi;
   uint32_t ebp;
+  uint32_t esp;
+  uint32_t ebx;
   uint32_t edx;
   uint32_t ecx;
-  uint32_t ebx;
   uint32_t eax;
-  uint32_t esp;
 } __attribute__((packed));
 typedef struct cpu_state_s cpu_state_t;
 

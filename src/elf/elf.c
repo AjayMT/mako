@@ -27,6 +27,7 @@ uint8_t elf_is_valid(uint8_t *buf)
 
 uint8_t elf_load(process_image_t *img, uint8_t *buf)
 {
+  u_memset(img, 0, sizeof(process_image_t));
   CHECK(elf_is_valid(buf) == 0, "Not a valid ELF executable.", 1);
 
   Elf32_Header *ehdr = (Elf32_Header *)buf;

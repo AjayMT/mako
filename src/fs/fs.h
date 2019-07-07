@@ -72,7 +72,6 @@ typedef struct fs_node_s {
   uint32_t flags;         // Flags (see above).
   uint32_t inode;         // Inode number.
   uint32_t length;        // File size in bytes.
-  uint32_t impl;          // Used to track which FS it is part of.
   void *device;           // Device object.
 
   uint32_t atime;         // Accessed time.
@@ -92,8 +91,6 @@ typedef struct fs_node_s {
   unlink_type_t unlink;
   symlink_type_t symlink;
   readlink_type_t readlink;
-
-  struct fs_node_s *ptr; // Pointer for symlinks.
 } fs_node_t;
 
 // A single directory entry.

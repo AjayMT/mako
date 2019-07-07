@@ -17,7 +17,7 @@ void klock_wait(process_registers_t regs)
 {
   if (process_current()) {
     regs.esp += 16;
-    u_memcpy(&(process_current()->regs), &regs, sizeof(process_registers_t));
+    u_memcpy(&(process_current()->kregs), &regs, sizeof(process_registers_t));
     process_switch_next();
   }
 }

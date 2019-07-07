@@ -1,12 +1,12 @@
 
 CC = i386-elf-gcc
-CFLAGS = -g -nostdlib -fno-builtin -fno-stack-protector   \
+CFLAGS = -g -nostdlib -fstack-protector-explicit \
          -ffreestanding -Wno-unused -Wall -Wextra -Werror \
          -lgcc -I${PWD}/src/ -c
 LD = i386-elf-ld
 LDFLAGS = -T link.ld -melf_i386
 AS = nasm
-ASFLAGS = -I${PWD}/src/ -f elf
+ASFLAGS = -g -I${PWD}/src/ -f elf
 
 DRIVER_OBJECTS = io.o framebuffer.o serial.o keyboard.o ata.o \
                  pci.o
@@ -52,7 +52,7 @@ bochs: mako.iso
 
 qemu: mako.iso
 	qemu-system-i386 -serial file:com1.out -cdrom mako.iso \
-	                 -drive format=raw,file=hda.img
+	                 -drive format=raw,file=hda.img -d cpu_reset
 
 .PHONY: clean
 clean:

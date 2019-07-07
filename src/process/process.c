@@ -29,17 +29,13 @@
     log_error("process", msg "\n"); kunlock(&process_fork_lock);    \
     return (code);                                                  \
   }
-#define CHECK_UNLOCK_L(err, msg, code) if ((err)) {                 \
-    log_error("process", msg "\n"); kunlock(&process_load_lock);    \
-    return (code);                                                  \
-  }
 #define CHECK_UNLOCK_S(err, msg, code) if ((err)) {                     \
     log_error("process", msg "\n"); kunlock(&process_schedule_lock);    \
     return (code);                                                      \
   }
 
 // Constants.
-static const uint32_t SCHEDULER_INTERVAL = 2;
+static const uint32_t SCHEDULER_INTERVAL = 10;
 static const uint32_t USER_MODE_CS       = 0x18;
 static const uint32_t USER_MODE_DS       = 0x20;
 
@@ -57,35 +53,39 @@ static tree_node_t *process_tree = NULL;
 static list_t *running_list = NULL;
 static list_t *ready_queue = NULL;
 static volatile uint32_t process_fork_lock = 0;
-static volatile uint32_t process_load_lock = 0;
 static volatile uint32_t process_schedule_lock = 0;
 
 // Implemented in process.s.
-void enter_kernelmode(process_registers_t *);
+void resume_kernel(process_registers_t *);
 
 // Save the registers of the current process.
 void update_current_process_registers(
   cpu_state_t cstate, stack_state_t sstate
   )
 {
-  current_process->regs.edi = cstate.edi;
-  current_process->regs.esi = cstate.esi;
-  current_process->regs.ebp = cstate.ebp;
-  current_process->regs.edx = cstate.edx;
-  current_process->regs.ecx = cstate.ecx;
-  current_process->regs.ebx = cstate.ebx;
-  current_process->regs.eax = cstate.eax;
-  current_process->regs.eip = sstate.eip;
-  current_process->regs.cs = sstate.cs;
-  current_process->regs.eflags = sstate.eflags;
-
+  process_registers_t *regs;
   if (sstate.cs == (USER_MODE_CS | 3)) {
-    current_process->regs.esp = sstate.user_esp;
-    current_process->regs.ss = sstate.user_ss;
+    current_process->in_kernel = 0;
+    regs = &(current_process->uregs);
+    regs->ss = sstate.user_ss;
+    regs->esp = sstate.user_esp;
   } else {
-    current_process->regs.esp = cstate.esp + sizeof(stack_state_t);
-    current_process->regs.ss = SEGMENT_SELECTOR_KERNEL_CS;
+    current_process->in_kernel = 1;
+    regs = &(current_process->kregs);
+    regs->ss = SEGMENT_SELECTOR_KERNEL_DS;
+    regs->esp = cstate.esp + 20;
   }
+
+  regs->edi = cstate.edi;
+  regs->esi = cstate.esi;
+  regs->ebp = cstate.ebp;
+  regs->edx = cstate.edx;
+  regs->ecx = cstate.ecx;
+  regs->ebx = cstate.ebx;
+  regs->eax = cstate.eax;
+  regs->eip = sstate.eip;
+  regs->cs = sstate.cs;
+  regs->eflags = sstate.eflags | 0x202;
 }
 
 // Switch processes.
@@ -96,14 +96,14 @@ void process_switch(process_t *process)
     SEGMENT_SELECTOR_KERNEL_DS, process->mmap.kernel_stack_top
     );
   paging_set_cr3(process->cr3);
-  if (process->regs.cs == (USER_MODE_CS | 3))
-    enter_usermode(&(process->regs));
-  else enter_kernelmode(&(process->regs));
+  if (process->in_kernel) resume_kernel(&(process->kregs));
+  else enter_usermode(&(process->uregs));
 }
 
 // Switch to next scheduled process.
 uint32_t process_switch_next()
 {
+  disable_interrupts();
   CHECK(current_process == NULL, "No current process", 1);
 
   list_node_t *insertion_node = current_process->list_node;
@@ -117,18 +117,20 @@ uint32_t process_switch_next()
     insertion_node = insertion_node->next;
   }
 
-  process_t *next = current_process;
-  do {
-    list_node_t *node = next->list_node->next;
-    if (next->is_finished) {
-      uint8_t res = process_destroy(next);
+  list_node_t *lnode = current_process->list_node->next;
+  if (lnode == NULL) lnode = running_list->head;
+  while (lnode->value != current_process) {
+    list_node_t *next = lnode->next;
+    if (next == NULL) next = running_list->head;
+    process_t *p = lnode->value;
+    if (p->is_finished) {
+      uint8_t res = process_destroy(p);
       CHECK(res, "Failed to destroy process.", res);
-    }
+    } else if (p->is_running) break;
+    lnode = next;
+  }
 
-    if (node == NULL) node = running_list->head;
-    next = node->value;
-  } while (next->is_running == 0 && next != current_process);
-
+  process_t *next = lnode->value;
   uint32_t res = paging_copy_kernel_space(next->cr3);
   CHECK(res, "Failed to copy kernel address space.", res);
 
@@ -142,10 +144,11 @@ static void scheduler_interrupt_handler(
   cpu_state_t cstate, idt_info_t info, stack_state_t sstate
   )
 {
-  disable_interrupts();
+  uint32_t eflags = interrupt_save_disable();
 
-  if (running_list->size == 0 && ready_queue->size == 0)
-    return;
+  if (running_list->size == 0 && ready_queue->size == 0) {
+    interrupt_restore(eflags); return;
+  }
 
   if (current_process)
     update_current_process_registers(cstate, sstate);
@@ -201,7 +204,7 @@ uint32_t process_create_init(process_t *out_init, process_image_t img)
   uint32_t err = paging_clone_process_directory(&(init->cr3), kernel_cr3);
   CHECK(err, "Failed to clone page directory.", err);
 
-  uint32_t kstack_vaddr = paging_prev_vaddr(1, PD_VADDR);
+  uint32_t kstack_vaddr = paging_prev_vaddr(1, FIRST_PT_VADDR);
   CHECK(kstack_vaddr == 0, "No memory.", ENOMEM);
   uint32_t kstack_paddr = pmm_alloc(1);
   CHECK(kstack_paddr == 0, "No memory.", ENOMEM);
@@ -216,9 +219,9 @@ uint32_t process_create_init(process_t *out_init, process_image_t img)
   CHECK(err, "Failed to load process image.", err);
   process_tree->value = init;
   init->tree_node = process_tree;
-  init->regs.cs = USER_MODE_CS | 3;
-  init->regs.ss = USER_MODE_DS | 3;
-  init->regs.eflags = 0x202;
+  init->uregs.cs = USER_MODE_CS | 3;
+  init->uregs.ss = USER_MODE_DS | 3;
+  init->uregs.eflags = 0x202;
   init_process = init;
   u_memcpy(out_init, init, sizeof(process_t));
 
@@ -231,9 +234,9 @@ uint32_t process_fork(process_t *out_child, process_t *process)
 {
   klock(&process_fork_lock);
 
-  process_t *child = kmalloc(sizeof(process_t));
-  CHECK_UNLOCK_F(child == NULL, "No memory.", ENOMEM);
+  process_t *child = out_child;
   u_memcpy(child, process, sizeof(process_t));
+  child->in_kernel = 0;
   child->wd = kmalloc(u_strlen(process->wd) + 1);
   CHECK_UNLOCK_F(child->wd == NULL, "No memory.", ENOMEM);
   u_memcpy(child->wd, process->wd, u_strlen(process->wd) + 1);
@@ -251,7 +254,8 @@ uint32_t process_fork(process_t *out_child, process_t *process)
     u_memcpy(nodes + i, process->fds.nodes + i, sizeof(fs_node_t));
   child->fds.nodes = nodes;
 
-  uint32_t kstack_vaddr = paging_prev_vaddr(1, PD_VADDR);
+  uint32_t eflags = interrupt_save_disable();
+  uint32_t kstack_vaddr = paging_prev_vaddr(1, FIRST_PT_VADDR);
   CHECK_UNLOCK_F(kstack_vaddr == 0, "No memory.", ENOMEM);
   uint32_t kstack_paddr = pmm_alloc(1);
   CHECK_UNLOCK_F(kstack_paddr == 0, "No memory.", ENOMEM);
@@ -261,23 +265,28 @@ uint32_t process_fork(process_t *out_child, process_t *process)
   CHECK_UNLOCK_F(res != PAGING_OK, "Failed to map kernel stack.", res);
   child->mmap.kernel_stack_bottom = kstack_vaddr;
   child->mmap.kernel_stack_top = kstack_vaddr + PAGE_SIZE - 1;
-  u_memcpy(out_child, child, sizeof(process_t));
+  interrupt_restore(eflags);
 
   kunlock(&process_fork_lock);
   return 0;
 }
+
+#define CHECK_RESTORE(err, msg, code) if ((err)) {              \
+    log_error("process", msg "\n"); interrupt_restore(eflags);  \
+    paging_set_cr3(cr3); return (code);                         \
+  }
 
 // Overwrite a process image.
 uint32_t process_load(process_t *process, process_image_t img)
 {
   CHECK(img.text_len == 0, "No text.", 1);
 
-  klock(&process_load_lock);
+  uint32_t eflags = interrupt_save_disable();
   uint32_t cr3 = paging_get_cr3();
 
   paging_set_cr3(process->cr3);
   uint32_t err = paging_clear_user_space();
-  CHECK_UNLOCK_L(err, "Failed to clear user address space.", err);
+  CHECK_RESTORE(err, "Failed to clear user address space.", err);
 
   uint32_t npages = page_align_up(img.text_len) >> PHYS_ADDR_OFFSET;
   page_table_entry_t flags; u_memset(&flags, 0, sizeof(flags));
@@ -285,11 +294,11 @@ uint32_t process_load(process_t *process, process_image_t img)
   flags.rw = 1;
   for (uint32_t i = 0; i < npages; ++i) {
     uint32_t paddr = pmm_alloc(1);
-    CHECK_UNLOCK_L(paddr == 0, "No memory.", ENOMEM);
+    CHECK_RESTORE(paddr == 0, "No memory.", ENOMEM);
     paging_result_t res = paging_map(
       (uint32_t)img.text_vaddr + (i << PHYS_ADDR_OFFSET), paddr, flags
       );
-    CHECK_UNLOCK_L(res != PAGING_OK, "Failed to map text pages.", res);
+    CHECK_RESTORE(res != PAGING_OK, "Failed to map text pages.", res);
   }
 
   u_memcpy((uint8_t *)img.text_vaddr, img.text, img.text_len);
@@ -297,21 +306,21 @@ uint32_t process_load(process_t *process, process_image_t img)
   npages = page_align_up(img.data_len) >> PHYS_ADDR_OFFSET;
   for (uint32_t i = 0; i < npages; ++i) {
     uint32_t paddr = pmm_alloc(1);
-    CHECK_UNLOCK_L(paddr == 0, "No memory.", ENOMEM);
+    CHECK_RESTORE(paddr == 0, "No memory.", ENOMEM);
     paging_result_t res = paging_map(
       (uint32_t)img.data_vaddr + (i << PHYS_ADDR_OFFSET), paddr, flags
       );
-    CHECK_UNLOCK_L(res != PAGING_OK, "Failed to map data pages.", res);
+    CHECK_RESTORE(res != PAGING_OK, "Failed to map data pages.", res);
   }
 
   u_memcpy((uint8_t *)img.data_vaddr, img.data, img.data_len);
 
   uint32_t stack_paddr = pmm_alloc(1);
-  CHECK_UNLOCK_L(stack_paddr == 0, "No memory.", ENOMEM);
+  CHECK_RESTORE(stack_paddr == 0, "No memory.", ENOMEM);
   uint32_t stack_vaddr = paging_prev_vaddr(1, KERNEL_START_VADDR);
-  CHECK_UNLOCK_L(stack_vaddr == 0, "No memory.", ENOMEM);
+  CHECK_RESTORE(stack_vaddr == 0, "No memory.", ENOMEM);
   paging_result_t res = paging_map(stack_vaddr, stack_paddr, flags);
-  CHECK_UNLOCK_L(res != PAGING_OK, "Failed to map stack pages.", res);
+  CHECK_RESTORE(res != PAGING_OK, "Failed to map stack pages.", res);
 
   paging_set_cr3(cr3);
 
@@ -321,11 +330,11 @@ uint32_t process_load(process_t *process, process_image_t img)
   process->mmap.data = img.data_vaddr;
   process->mmap.heap = img.data_vaddr + page_align_up(img.data_len);
   process->brk = process->mmap.heap;
-  process->regs.eip = img.entry;
-  process->regs.ebp = process->mmap.stack_top;
-  process->regs.esp = process->mmap.stack_top;
+  process->uregs.eip = img.entry;
+  process->uregs.ebp = process->mmap.stack_top;
+  process->uregs.esp = process->mmap.stack_top;
 
-  kunlock(&process_load_lock);
+  interrupt_restore(eflags);
   return 0;
 }
 
@@ -365,12 +374,24 @@ void process_finish(process_t *process)
 // Destroy a process.
 uint8_t process_destroy(process_t *process)
 {
-  uint32_t cr3 = paging_get_cr3();
-  paging_set_cr3(process->cr3);
-  uint8_t res = paging_clear_user_space();
-  CHECK(res, "Failed to clear user address space.", res);
-  paging_set_cr3(cr3);
-  pmm_free(process->cr3, 1);
+  klock(&process_schedule_lock);
+
+  if (process->is_thread == 0) {
+    uint32_t cr3 = paging_get_cr3();
+    uint32_t eflags = interrupt_save_disable();
+    paging_set_cr3(process->cr3);
+    uint8_t res = paging_clear_user_space();
+    if (res) {
+      log_error("process", "Failed to clear user address space.\n");
+      paging_set_cr3(cr3);
+      interrupt_restore(eflags);
+      kunlock(&process_schedule_lock);
+      return res;
+    }
+    paging_set_cr3(cr3);
+    interrupt_restore(eflags);
+    pmm_free(process->cr3, 1);
+  }
 
   for (
     uint32_t vaddr = process->mmap.kernel_stack_bottom;
@@ -380,7 +401,7 @@ uint8_t process_destroy(process_t *process)
   {
     pmm_free(paging_get_paddr(vaddr), 1);
     paging_result_t res = paging_unmap(vaddr);
-    CHECK(res != PAGING_OK, "paging_unmap failed.", res);
+    CHECK_UNLOCK_S(res != PAGING_OK, "paging_unmap failed.", res);
   }
 
   tree_node_t *tree_node = process->tree_node;
@@ -398,6 +419,8 @@ uint8_t process_destroy(process_t *process)
   kfree(tree_node);
   kfree(list_node);
   kfree(process);
+
+  kunlock(&process_schedule_lock);
 
   return 0;
 }

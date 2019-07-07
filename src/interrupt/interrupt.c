@@ -7,6 +7,7 @@
 
 #include <stdint.h>
 #include <pic/pic.h>
+#include <debug/log.h>
 #include "interrupt.h"
 
 // All registered interrupt handlers.
@@ -42,6 +43,12 @@ void forward_interrupt(
 
   if (registered_handlers[info.idt_index] == 0) {
     // TODO Handle this.
+    /* log_error( */
+    /*   "interrupt", */
+    /*   "unhandled interrupt %u, eip %x\n", */
+    /*   info.idt_index, */
+    /*   s_state.eip */
+    /*   ); */
     return;
   }
 

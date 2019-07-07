@@ -72,7 +72,9 @@ typedef struct process_s {
   uint8_t is_running;
   uint8_t is_thread;
   uint8_t is_finished;
-  process_registers_t regs;
+  uint8_t in_kernel;
+  process_registers_t uregs;
+  process_registers_t kregs;
   process_fds_t fds;
 
   uint32_t brk;

@@ -12,14 +12,15 @@ extern enter_usermode
 section .text
 
 interrupt_handler_syscall:
-    push esp
+    cli
+    pusha
+    mov ax, ds
     push eax
-    push ebx
-    push ecx
-    push edx
-    push ebp
-    push esi
-    push edi
+    mov ax, 0x10
+    mov ds, ax
+    mov es, ax
+    mov fs, ax
+    mov gs, ax
     call syscall_handler
     push eax
     call enter_usermode

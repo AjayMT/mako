@@ -24,6 +24,12 @@
 #include <debug/log.h>
 #include <util/util.h>
 
+#define STACK_CHK_GUARD 0xe2dee396
+
+uintptr_t __stack_chk_guard = STACK_CHK_GUARD;
+void __attribute__((noreturn)) __stack_chk_fail(void)
+{ asm volatile ("xchg %bx, %bx"); while (1); }
+
 void page_fault_handler(
   cpu_state_t cs, idt_info_t info, stack_state_t ss
   )
@@ -31,8 +37,8 @@ void page_fault_handler(
   uint32_t vaddr;
   asm("movl %%cr2, %0" : "=r"(vaddr));
   log_error(
-    "kmain", "eip %x: page fault %x vaddr %x cs %x\n",
-    ss.eip, info.error_code, vaddr, ss.cs
+    "kmain", "eip %x: page fault %x vaddr %x esp %x\n",
+    ss.eip, info.error_code, vaddr, cs.esp
     );
 }
 
@@ -109,37 +115,25 @@ void kmain(
   res = rd_init(rd_phys_start, rd_phys_end);
 
   ata_init();
+  res = ext2_init("/dev/hda");
 
   fs_node_t test_node;
   fs_open_node(&test_node, "/rd/test", 0);
-  /* uint8_t *test_text = kmalloc(test_node.length); */
-  /* fs_read(&test_node, 0, test_node.length, test_text); */
+  uint8_t *test_text = kmalloc(test_node.length);
+  fs_read(&test_node, 0, test_node.length, test_text);
 
   process_init();
 
-  /* process_image_t p; */
-  /* elf_load(&p, test_text); */
+  process_image_t p;
+  elf_load(&p, test_text);
 
-  /* process_t init; process_t child; */
-  /* process_create_init(&init, p); */
-  /* process_fork(&child, &init); */
-  /* process_schedule(&init); */
-  /* process_schedule(&child); */
+  process_t *init = kmalloc(sizeof(process_t));
+  process_create_init(init, p);
+  process_schedule(init);
 
-  /* kfree(test_text); */
-  /* kfree(p.text); */
-  /* kfree(p.data); */
-
-  res = ext2_init("/dev/hda");
-  log_debug("kmain", "ext2 init res: %u\n", res);
-
-  int32_t sres = fs_symlink("/ext2/d", "/ext2/lnk");
-  log_debug("kmain", "sres: %u\n", sres);
-
-  fs_node_t node;
-  res = fs_open_node(&node, "/ext2/d/hello.txt", 0);
-  log_debug("kmain", "res: %u\n", res);
-  fs_write(&node, 0, 5, (uint8_t *)"hello");
+  kfree(test_text);
+  kfree(p.text);
+  kfree(p.data);
 
   interrupt_restore(eflags);
 }

@@ -18,6 +18,7 @@ extern forward_interrupt
 %macro no_error_code_handler 1
 global interrupt_handler_%1
     interrupt_handler_%1:
+    cli
     push dword 0                ; Push 0 as the error code.
     push dword %1               ; Push the interrupt number.
     jmp  common_interrupt_handler
@@ -28,6 +29,7 @@ global interrupt_handler_%1
 %macro error_code_handler 1
 global interrupt_handler_%1
     interrupt_handler_%1:
+    cli
     push dword %1               ; Push the interrupt number
     jmp  common_interrupt_handler
 %endmacro
@@ -79,27 +81,27 @@ section .text
     ; Pushes register state to the stack, forwards the interrupt
     ; to an interrupt_handler_t and restores register state.
 common_interrupt_handler:
-    push esp                    ; -
-    push eax                    ;  |
-    push ebx                    ;  |
-    push ecx                    ;  |-> Save registers onto the stack.
-    push edx                    ;  |
-    push ebp                    ;  |
-    push esi                    ;  |
-    push edi                    ; -
+    pushad
+    mov ax, ds
+    push eax
 
-    call forward_interrupt      ; Forward the interrupt
+    mov ax, 0x10
+    mov ds, ax
+    mov es, ax
+    mov fs, ax
+    mov gs, ax
 
-    pop edi                     ; -
-    pop esi                     ;  |
-    pop ebp                     ;  |
-    pop edx                     ;  |-> Restore registers.
-    pop ecx                     ;  |
-    pop ebx                     ;  |
-    pop eax                     ;  |
-    pop esp                     ; -
+    call forward_interrupt
 
-    add esp, 8                  ; Since we pushed error code and interrupt number earlier.
+    pop eax
+    mov ds, ax
+    mov es, ax
+    mov fs, ax
+    mov gs, ax
+
+    popad
+    add esp, 8
+    sti
     iret
 
 enable_interrupts:

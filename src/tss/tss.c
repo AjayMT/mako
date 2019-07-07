@@ -18,6 +18,12 @@ void tss_init()
 {
   u_memset(&tss, 0, sizeof(tss_t));
   tss.iopb_offset = sizeof(tss_t);
+  tss.cs = 0xB;
+  tss.ss = 0x13;
+  tss.ds = 0x13;
+  tss.es = 0x13;
+  tss.fs = 0x13;
+  tss.gs = 0x13;
 }
 
 // Get the address of the TSS struct.
