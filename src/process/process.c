@@ -38,6 +38,7 @@
 static const uint32_t SCHEDULER_INTERVAL = 10;
 static const uint32_t USER_MODE_CS       = 0x18;
 static const uint32_t USER_MODE_DS       = 0x20;
+static const uint32_t ENV_VADDR          = KERNEL_START_VADDR - PAGE_SIZE;
 
 static inline uint32_t page_align_up(uint32_t addr)
 {
@@ -324,7 +325,8 @@ uint32_t process_load(process_t *process, process_image_t img)
 
   uint32_t stack_paddr = pmm_alloc(1);
   CHECK_RESTORE(stack_paddr == 0, "No memory.", ENOMEM);
-  uint32_t stack_vaddr = paging_prev_vaddr(1, KERNEL_START_VADDR);
+  // Leave one page between the stack and the kernel for environment variables.
+  uint32_t stack_vaddr = paging_prev_vaddr(1, KERNEL_START_VADDR - PAGE_SIZE);
   CHECK_RESTORE(stack_vaddr == 0, "No memory.", ENOMEM);
   paging_result_t res = paging_map(stack_vaddr, stack_paddr, flags);
   CHECK_RESTORE(res != PAGING_OK, "Failed to map stack pages.", res);
@@ -341,6 +343,61 @@ uint32_t process_load(process_t *process, process_image_t img)
   process->uregs.ebp = process->mmap.stack_top;
   process->uregs.esp = process->mmap.stack_top;
 
+  interrupt_restore(eflags);
+  return 0;
+}
+
+// Set a process's argv and envp.
+uint32_t process_set_env(process_t *p, char *argv[], char *envp[])
+{
+  uint32_t eflags = interrupt_save_disable();
+  uint32_t cr3 = paging_get_cr3();
+  paging_set_cr3(p->cr3);
+
+  uint32_t env_paddr = pmm_alloc(1);
+  CHECK_RESTORE(env_paddr == 0, "No memory.", ENOMEM);
+  page_table_entry_t flags; u_memset(&flags, 0, sizeof(flags));
+  flags.user = 1;
+  flags.rw = 1;
+  paging_result_t res = paging_map(ENV_VADDR, env_paddr, flags);
+  CHECK_RESTORE(res != PAGING_OK, "Failed to map env page.", res);
+
+  uint32_t argc = 0;
+  for (; argv[argc]; ++argc);
+  uint32_t argv_vaddr = ENV_VADDR + ((argc + 1) * sizeof(char *));
+  uint32_t argv_idx = 0;
+  uint32_t *ptr_ptr = (uint32_t *)ENV_VADDR;
+  uint32_t ptr = argv_vaddr;
+  for (; argv_idx < argc && ptr < ENV_VADDR + (PAGE_SIZE / 2); ++argv_idx) {
+    ptr_ptr = (uint32_t *)(ENV_VADDR + (argv_idx * (sizeof(char *))));
+    *ptr_ptr = ptr;
+    u_memcpy((char *)ptr, argv[argv_idx], u_strlen(argv[argv_idx]) + 1);
+    ptr += u_strlen(argv[argv_idx]) + 1;
+  }
+  ptr_ptr = (uint32_t *)(ENV_VADDR + (argc * (sizeof(char *))));
+  *ptr_ptr = 0;
+
+  uint32_t envc = 0;
+  for (; envp[envc]; ++envc);
+  uint32_t envp_vaddr = ENV_VADDR + (PAGE_SIZE / 2)
+    + ((envc + 1) * sizeof(char *));
+  uint32_t envp_idx = 0;
+  ptr_ptr = (uint32_t *)(ENV_VADDR + (PAGE_SIZE / 2));
+  ptr = envp_vaddr;
+  for (; envp_idx < envc && ptr < KERNEL_START_VADDR; ++envp_idx) {
+    ptr_ptr = (uint32_t *)(
+      ENV_VADDR + (PAGE_SIZE / 2) + (envp_idx * (sizeof(char *)))
+      );
+    *ptr_ptr = ptr;
+    u_memcpy((char *)ptr, envp[envp_idx], u_strlen(envp[envp_idx]) + 1);
+    ptr += u_strlen(envp[envp_idx]) + 1;
+  }
+  ptr_ptr = (uint32_t *)(
+    ENV_VADDR + (PAGE_SIZE / 2) + (envc * (sizeof(char *)))
+    );
+  *ptr_ptr = 0;
+
+  paging_set_cr3(cr3);
   interrupt_restore(eflags);
   return 0;
 }

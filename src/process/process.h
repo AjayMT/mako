@@ -113,6 +113,9 @@ uint32_t process_load(process_t *, process_image_t);
 // Fork a process.
 uint32_t process_fork(process_t *, process_t *);
 
+// Set a process's argv and envp.
+uint32_t process_set_env(process_t *p, char *argv[], char *envp[]);
+
 // Add a process to the scheduler queue.
 void process_schedule(process_t *);
 

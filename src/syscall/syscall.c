@@ -35,7 +35,8 @@ static void syscall_fork()
 
 static void syscall_execve(char *path, char *argv[], char *envp[])
 {
-  // TODO handle argv and envp
+  // TODO Handle shebang scripts.
+
   process_t *current = process_current();
   fs_node_t node;
   uint32_t res = fs_open_node(&node, path, O_RDONLY);
@@ -46,12 +47,43 @@ static void syscall_execve(char *path, char *argv[], char *envp[])
   if (rsize != node.length) { current->uregs.eax = -EAGAIN; return; }
 
   if (rsize >= 4 && elf_is_valid(buf)) {
+    uint32_t argc = 0;
+    for (; argv[argc]; ++argc);
+    char **kargv = kmalloc((argc + 1) * sizeof(char *));
+    if (kargv == NULL) { current->uregs.eax = -ENOMEM; return; }
+    for (uint32_t i = 0; i < argc; ++i) {
+      char *arg = kmalloc(u_strlen(argv[i]) + 1);
+      if (arg == NULL) { current->uregs.eax = -ENOMEM; return; }
+      u_memcpy(arg, argv[i], u_strlen(argv[i]) + 1);
+      kargv[i] = arg;
+    }
+    kargv[argc] = NULL;
+
+    uint32_t envc = 0;
+    for (; envp[envc]; ++envc);
+    char **kenvp = kmalloc((envc + 1) * sizeof(char *));
+    if (kenvp == NULL) { current->uregs.eax = -ENOMEM; return; }
+    for (uint32_t i = 0; i < envc; ++i) {
+      char *env = kmalloc(u_strlen(envp[i]) + 1);
+      if (env == NULL) { current->uregs.eax = -ENOMEM; return; }
+      u_memcpy(env, envp[i], u_strlen(envp[i]) + 1);
+      kenvp[i] = env;
+    }
+    kenvp[envc] = NULL;
+
     process_image_t p;
     u_memset(&p, 0, sizeof(process_image_t));
     res = elf_load(&p, buf);
     if (res) { current->uregs.eax = -res; return; }
     res = process_load(current, p);
     if (res) { current->uregs.eax = -res; return; }
+    res = process_set_env(current, kargv, kenvp);
+    if (res) { current->uregs.eax = -res; return; }
+
+    for (uint32_t i = 0; kargv[i]; ++i) kfree(kargv[i]);
+    kfree(kargv);
+    for (uint32_t i = 0; kenvp[i]; ++i) kfree(kenvp[i]);
+    kfree(kenvp);
     kfree(p.text);
     kfree(p.data);
     kfree(buf);
