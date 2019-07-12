@@ -55,12 +55,13 @@ typedef struct process_image_s {
   uint32_t data_vaddr;
 } process_image_t;
 
-// Resizable array of file descriptors.
-typedef struct process_fds_s {
-  fs_node_t *nodes;
-  uint32_t size;
-  uint32_t capacity;
-} process_fds_t;
+// File descriptor.
+typedef struct process_fd_s {
+  fs_node_t node;
+  uint32_t offset;
+  uint32_t free_device;
+  uint32_t refcount;
+} process_fd_t;
 
 // Process structure.
 typedef struct process_s {
@@ -75,7 +76,7 @@ typedef struct process_s {
   uint8_t in_kernel;
   process_registers_t uregs;
   process_registers_t kregs;
-  process_fds_t fds;
+  list_t *fds;
 
   uint32_t brk;
   uint32_t cr3;

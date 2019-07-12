@@ -9,6 +9,7 @@
 #define _PAGING_H_
 
 #include <stdint.h>
+#include <common/errno.h>
 
 // A single page table entry.
 // Bit-fields with descriptions ending in `?` are flags that we set,
@@ -47,10 +48,10 @@ typedef page_directory_entry_t *page_directory_t;
 
 // Result of paging_map and paging_unmap.
 typedef enum {
-  PAGING_OK,
-  PAGING_MAP_EXISTS,
-  PAGING_NO_MEMORY,
-  PAGING_NO_ACCESS
+  PAGING_OK         = 0,
+  PAGING_MAP_EXISTS = EAGAIN,
+  PAGING_NO_MEMORY  = ENOMEM,
+  PAGING_NO_ACCESS  = EPERM
 } paging_result_t;
 
 // Initialize paging.

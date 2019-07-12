@@ -7,7 +7,6 @@
 
 global enter_usermode
 global resume_kernel
-global jmp_eip
 
 section .data
 jmp_eip: dd 0

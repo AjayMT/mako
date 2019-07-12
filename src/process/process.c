@@ -198,6 +198,9 @@ uint32_t process_create_init(process_t *out_init, process_image_t img)
   CHECK(init->wd == NULL, "No memory.", ENOMEM);
   u_memcpy(init->wd, "/", u_strlen("/") + 1);
   init->is_running = 1;
+  init->fds = kmalloc(sizeof(list_t));
+  CHECK(init->fds == NULL, "No memory.", ENOMEM);
+  u_memset(init->fds, 0, sizeof(list_t));
 
   page_directory_t kernel_pd; uint32_t kernel_cr3;
   paging_get_kernel_pd(&kernel_pd, &kernel_cr3);
@@ -248,11 +251,15 @@ uint32_t process_fork(process_t *out_child, process_t *process)
   uint32_t err = paging_clone_process_directory(&(child->cr3), process->cr3);
   CHECK_UNLOCK_F(err, "Failed to clone page directory.", err);
 
-  fs_node_t *nodes = kmalloc(sizeof(fs_node_t) * process->fds.capacity);
-  CHECK_UNLOCK_F(process->fds.capacity && nodes == NULL, "No memory.", ENOMEM);
-  for (uint32_t i = 0; i < process->fds.size; ++i)
-    u_memcpy(nodes + i, process->fds.nodes + i, sizeof(fs_node_t));
-  child->fds.nodes = nodes;
+  list_t *fds = kmalloc(sizeof(list_t));
+  CHECK_UNLOCK_F(fds == NULL, "No memory.", ENOMEM);
+  u_memset(fds, 0, sizeof(list_t));
+  list_foreach(lchild, process->fds) {
+    process_fd_t *fd = lchild->value;
+    ++(fd->refcount);
+    list_push_back(fds, fd);
+  }
+  child->fds = fds;
 
   uint32_t eflags = interrupt_save_disable();
   uint32_t kstack_vaddr = paging_prev_vaddr(1, FIRST_PT_VADDR);
@@ -414,8 +421,19 @@ uint8_t process_destroy(process_t *process)
     }
   }
 
+  while (process->fds->size) {
+    list_node_t *head = process->fds->head;
+    process_fd_t *fd = head->value;
+    list_remove(process->fds, head, 0);
+    kfree(head);
+
+    --(fd->refcount);
+    if (fd->refcount) continue;
+    if (fd->free_device) kfree(fd->node.device);
+    kfree(fd);
+  }
+
   kfree(process->wd);
-  kfree(process->fds.nodes);
   kfree(tree_node);
   kfree(list_node);
   kfree(process);
