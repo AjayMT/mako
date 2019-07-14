@@ -19,6 +19,7 @@
 #include <elf/elf.h>
 #include <drivers/ata/ata.h>
 #include <ext2/ext2.h>
+#include <fpu/fpu.h>
 #include <common/multiboot.h>
 #include <common/constants.h>
 #include <debug/log.h>
@@ -91,7 +92,7 @@ void kmain(
 
   fb_clear();
   serial_init(SERIAL_COM1_BASE);
-
+  fpu_init();
   tss_init();
   uint32_t tss_vaddr = tss_get_vaddr();
   gdt_init(tss_vaddr);

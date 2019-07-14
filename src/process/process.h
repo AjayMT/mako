@@ -76,6 +76,7 @@ typedef struct process_s {
   uint8_t in_kernel;
   process_registers_t uregs;
   process_registers_t kregs;
+  uint8_t fpregs[512];
   list_t *fds;
 
   uint32_t brk;

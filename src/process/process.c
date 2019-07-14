@@ -16,6 +16,7 @@
 #include <fs/fs.h>
 #include <pmm/pmm.h>
 #include <paging/paging.h>
+#include <fpu/fpu.h>
 #include <util/util.h>
 #include <debug/log.h>
 #include <common/constants.h>
@@ -92,6 +93,8 @@ void update_current_process_registers(
 // Switch processes.
 void process_switch(process_t *process)
 {
+  fpu_save(current_process);
+  fpu_restore(process);
   current_process = process;
   tss_set_kernel_stack(
     SEGMENT_SELECTOR_KERNEL_DS, process->mmap.kernel_stack_top
