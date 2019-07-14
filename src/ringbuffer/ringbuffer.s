@@ -55,7 +55,7 @@ global ringbuffer_%1
     ; Perform the read/write operation and wake waiting readers/writers
     .finish_%1:
     push edx
-    push eax
+    push ecx
     push ebx
     call ringbuffer_finish_%1
     pop ebx
