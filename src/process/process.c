@@ -9,6 +9,7 @@
 #include <stdint.h>
 #include <interrupt/interrupt.h>
 #include <rtc/rtc.h>
+#include <pit/pit.h>
 #include <tss/tss.h>
 #include <ds/ds.h>
 #include <kheap/kheap.h>
@@ -56,6 +57,7 @@ static list_t *ready_queue = NULL;
 static list_t *sleep_queue = NULL;
 static volatile uint32_t process_fork_lock = 0;
 static volatile uint32_t process_schedule_lock = 0;
+static volatile uint32_t process_sleep_lock = 0;
 
 // Implemented in process.s.
 void resume_kernel(process_registers_t *);
@@ -116,6 +118,15 @@ uint32_t process_switch_next()
     list_remove(ready_queue, head, 0);
     process_t *p = head->value;
     kfree(head);
+
+    // Pretty sure this will never happen but
+    // anything's possible with bad code :)
+    if (p == current_process) continue;
+
+    if (p->list_node) {
+      list_remove(running_list, p->list_node, 0);
+      kfree(p->list_node);
+    }
     list_insert_after(running_list, insertion_node, p);
     p->list_node = insertion_node->next;
     insertion_node = insertion_node->next;
@@ -165,6 +176,17 @@ static void scheduler_interrupt_handler(
     current_process->list_node = running_list->head;
   }
 
+  while (sleep_queue->size) {
+    process_sleep_node_t *sleeper = sleep_queue->head->value;
+    uint32_t current_time = pit_get_time();
+    // Each RTC tick is approximately 7.8125 ms, but we're using ints.
+    if (sleeper->wake_time - current_time <= 8) {
+      sleeper->process->is_running = 1;
+      process_schedule(sleeper->process);
+      list_remove(sleep_queue, sleep_queue->head, 1);
+    } else break;
+  }
+
   process_switch_next();
 }
 
@@ -178,9 +200,38 @@ uint32_t process_init()
   ready_queue = kmalloc(sizeof(list_t));
   CHECK(ready_queue == NULL, "No memory.", ENOMEM);
   u_memset(ready_queue, 0, sizeof(list_t));
+  sleep_queue = kmalloc(sizeof(list_t));
+  CHECK(sleep_queue == NULL, "No memory.", ENOMEM);
+  u_memset(sleep_queue, 0, sizeof(list_t));
 
   rtc_set_handler(scheduler_interrupt_handler);
 
+  return 0;
+}
+
+// Add a process to the sleep queue.
+uint32_t process_sleep(process_t *p, uint32_t wake_time)
+{
+  klock(&process_sleep_lock);
+
+  process_sleep_node_t *sleeper = kmalloc(sizeof(process_sleep_node_t));
+  if (sleeper == NULL) {
+    return ENOMEM; kunlock(&process_sleep_lock);
+  }
+  sleeper->process = p;
+  sleeper->wake_time = wake_time;
+
+  list_node_t *position = NULL;
+  list_foreach(lchild, sleep_queue) {
+    process_sleep_node_t *node = lchild->value;
+    if (node->wake_time < sleeper->wake_time)
+      position = lchild;
+    else break;
+  }
+  if (position == NULL) list_push_back(sleep_queue, sleeper);
+  else list_insert_before(sleep_queue, position, sleeper);
+
+  kunlock(&process_sleep_lock);
   return 0;
 }
 

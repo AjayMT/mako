@@ -5,6 +5,8 @@
     ;
     ; Author: Ajay Tatachar <ajaymt2@illinois.edu>
 
+%include "common/constants.s"
+
 global interrupt_handler_syscall
 extern syscall_handler
 extern enter_usermode

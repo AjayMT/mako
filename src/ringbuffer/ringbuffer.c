@@ -42,7 +42,7 @@ void ringbuffer_close_write(ringbuffer_t *rb)
     list_node_t *head = rb->readers->head;
     process_t *p = head->value;
     p->is_running = 1;
-    // process_schedule(p);
+    process_schedule(p);
     list_remove(rb->readers, head, 0);
     kfree(head);
   }
@@ -88,7 +88,7 @@ uint32_t ringbuffer_finish_read(ringbuffer_t *rb, uint32_t size, uint8_t *buf)
     list_node_t *head = rb->writers->head;
     process_t *p = head->value;
     p->is_running = 1;
-    // process_schedule(p);
+    process_schedule(p);
     list_remove(rb->writers, head, 0);
     kfree(head);
   }
@@ -123,7 +123,7 @@ uint32_t ringbuffer_finish_write(
     list_node_t *head = rb->readers->head;
     process_t *p = head->value;
     p->is_running = 1;
-    // process_schedule(p);
+    process_schedule(p);
     list_remove(rb->readers, head, 0);
     kfree(head);
   }

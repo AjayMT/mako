@@ -7,6 +7,7 @@
 
 #include <process/process.h>
 #include <interrupt/interrupt.h>
+#include <pit/pit.h>
 #include <fs/fs.h>
 #include <elf/elf.h>
 #include <klock/klock.h>
@@ -15,6 +16,7 @@
 #include <common/errno.h>
 #include <debug/log.h>
 #include <util/util.h>
+#include <drivers/framebuffer/framebuffer.h>
 #include "syscall.h"
 
 typedef void (*syscall_t)();
@@ -92,9 +94,25 @@ static void syscall_execve(char *path, char *argv[], char *envp[])
   }
 }
 
+static void syscall_msleep(uint32_t duration)
+{
+  uint32_t eflags = interrupt_save_disable();
+  process_t *current = process_current();
+  current->uregs.eax = 0;
+  uint32_t wake_time = pit_get_time() + duration;
+  if (duration > 8) {
+    current->is_running = 0;
+    uint32_t res = process_sleep(current, wake_time);
+    if (res) { current->uregs.eax = -res; return; }
+  }
+  interrupt_restore(eflags);
+
+  while (wake_time > pit_get_time());
+}
+
 static void syscall_exit(uint32_t status)
 {
-  log_debug("syscall", "exiting %x\n", status);
+  fb_write("a", 1);
   process_finish(process_current());
   process_switch_next();
 }
@@ -102,7 +120,8 @@ static void syscall_exit(uint32_t status)
 static syscall_t syscall_table[] = {
   syscall_exit,
   syscall_fork,
-  syscall_execve
+  syscall_execve,
+  syscall_msleep,
 };
 
 process_registers_t *syscall_handler(cpu_state_t cs, stack_state_t ss)

@@ -13,7 +13,10 @@
 // Initialize the PIT.
 void pit_init();
 
-// Set interval.
+// Set interval (in milliseconds).
 void pit_set_interval(uint32_t);
+
+// Get the current time in milliseconds.
+uint32_t pit_get_time();
 
 #endif /* _PIT_H_ */

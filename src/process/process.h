@@ -87,14 +87,17 @@ typedef struct process_s {
   list_node_t *list_node;
 } process_t;
 
-// A node in the sleep delta queue.
+// A node in the sleep queue.
 typedef struct process_sleep_node_s {
-  uint32_t delta;
-  process_t process;
+  uint32_t wake_time;
+  process_t *process;
 } process_sleep_node_t;
 
 // Initialize the scheduler and other things.
 uint32_t process_init();
+
+// Add a process to the sleep queue.
+uint32_t process_sleep(process_t *, uint32_t);
 
 // Get current process.
 process_t *process_current();

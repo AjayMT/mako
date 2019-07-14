@@ -34,12 +34,16 @@ int32_t syscall3(uint32_t num, uint32_t a1, uint32_t a2, uint32_t a3)
 
 int main(int argc, char *unused[])
 {
-  int result = syscall0(1);
-  char *argv[] = { "hello", 0 };
-  char *envp[] = { "world", "PATH=/bin", 0 };
-  if (result == 0)
-    syscall3(2, (uint32_t)"/rd/test2", (uint32_t)argv, (uint32_t)envp);
+  if (syscall0(1) == 0) while (1);
 
-  // syscall1(0, 0xc0fffeee);
+  while (1) {
+    syscall1(3, 1000);
+    int result = syscall0(1);
+    char *argv[] = { "hello", 0 };
+    char *envp[] = { "world", "PATH=/bin", 0 };
+    if (result == 0)
+      syscall3(2, (uint32_t)"/rd/test2", (uint32_t)argv, (uint32_t)envp);
+  }
+
   return 0;
 }
