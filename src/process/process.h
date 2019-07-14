@@ -87,6 +87,12 @@ typedef struct process_s {
   list_node_t *list_node;
 } process_t;
 
+// A node in the sleep delta queue.
+typedef struct process_sleep_node_s {
+  uint32_t delta;
+  process_t process;
+} process_sleep_node_t;
+
 // Initialize the scheduler and other things.
 uint32_t process_init();
 

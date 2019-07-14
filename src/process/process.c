@@ -8,7 +8,7 @@
 #include <stddef.h>
 #include <stdint.h>
 #include <interrupt/interrupt.h>
-#include <pit/pit.h>
+#include <rtc/rtc.h>
 #include <tss/tss.h>
 #include <ds/ds.h>
 #include <kheap/kheap.h>
@@ -36,10 +36,9 @@
   }
 
 // Constants.
-static const uint32_t SCHEDULER_INTERVAL = 10;
-static const uint32_t USER_MODE_CS       = 0x18;
-static const uint32_t USER_MODE_DS       = 0x20;
-static const uint32_t ENV_VADDR          = KERNEL_START_VADDR - PAGE_SIZE;
+static const uint32_t USER_MODE_CS = 0x18;
+static const uint32_t USER_MODE_DS = 0x20;
+static const uint32_t ENV_VADDR    = KERNEL_START_VADDR - PAGE_SIZE;
 
 static inline uint32_t page_align_up(uint32_t addr)
 {
@@ -54,6 +53,7 @@ static process_t *current_process = NULL;
 static tree_node_t *process_tree = NULL;
 static list_t *running_list = NULL;
 static list_t *ready_queue = NULL;
+static list_t *sleep_queue = NULL;
 static volatile uint32_t process_fork_lock = 0;
 static volatile uint32_t process_schedule_lock = 0;
 
@@ -179,8 +179,7 @@ uint32_t process_init()
   CHECK(ready_queue == NULL, "No memory.", ENOMEM);
   u_memset(ready_queue, 0, sizeof(list_t));
 
-  pit_set_interval(SCHEDULER_INTERVAL);
-  register_interrupt_handler(32, scheduler_interrupt_handler);
+  rtc_set_handler(scheduler_interrupt_handler);
 
   return 0;
 }

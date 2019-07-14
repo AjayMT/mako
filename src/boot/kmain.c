@@ -7,6 +7,7 @@
 #include <idt/idt.h>
 #include <pic/pic.h>
 #include <pit/pit.h>
+#include <rtc/rtc.h>
 #include <interrupt/interrupt.h>
 #include <paging/paging.h>
 #include <pmm/pmm.h>
@@ -99,6 +100,7 @@ void kmain(
   idt_init();
   pic_init();
   pit_init();
+  rtc_init();
   keyboard_init();
 
   register_interrupt_handler(14, page_fault_handler);

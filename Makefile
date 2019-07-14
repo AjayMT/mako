@@ -16,7 +16,7 @@ ASM_OBJECTS = boot.s.o gdt.s.o idt.s.o interrupt.s.o paging.s.o \
 OBJECTS = boot.o gdt.o idt.o pic.o interrupt.o paging.o pmm.o  \
           debug.o util.o kheap.o fs.o ext2.o ds.o rd.o tss.o   \
           process.o pit.o elf.o syscall.o klock.o ringbuffer.o \
-          pipe.o fpu.o
+          pipe.o fpu.o rtc.o
 export
 
 all: kernel.elf
