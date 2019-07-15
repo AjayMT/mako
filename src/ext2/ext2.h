@@ -11,7 +11,7 @@
 #include <stdint.h>
 #include <fs/fs.h>
 
-#define EXT2_ROOT "/ext2"
+#define EXT2_ROOT "/"
 
 struct ext2_superblock_s {
   uint32_t inode_count;

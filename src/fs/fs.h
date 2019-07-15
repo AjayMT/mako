@@ -10,6 +10,7 @@
 
 #include <stdint.h>
 #include <stddef.h>
+#include <ds/ds.h>
 
 // The maximum length of a file name.
 #define FS_NAME_LEN 256
@@ -73,6 +74,7 @@ typedef struct fs_node_s {
   uint32_t inode;         // Inode number.
   uint32_t length;        // File size in bytes.
   void *device;           // Device object.
+  tree_node_t *tree_node; // (Optional) mount point tree node.
 
   uint32_t atime;         // Accessed time.
   uint32_t ctime;         // Created time.
@@ -98,12 +100,6 @@ struct dirent {
   char name[FS_NAME_LEN];
   uint32_t ino;
 };
-
-// VFS entry.
-typedef struct vfs_entry_s {
-  char name[FS_NAME_LEN];
-  fs_node_t *file;
-} vfs_entry_t;
 
 // Interface for all filesystems.
 void fs_open(fs_node_t *, uint32_t);

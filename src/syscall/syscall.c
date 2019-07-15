@@ -10,13 +10,14 @@
 #include <pit/pit.h>
 #include <fs/fs.h>
 #include <elf/elf.h>
+#include <paging/paging.h>
+#include <pmm/pmm.h>
 #include <klock/klock.h>
 #include <kheap/kheap.h>
 #include <common/constants.h>
 #include <common/errno.h>
 #include <debug/log.h>
 #include <util/util.h>
-#include <drivers/framebuffer/framebuffer.h>
 #include "syscall.h"
 
 typedef void (*syscall_t)();
@@ -112,9 +113,16 @@ static void syscall_msleep(uint32_t duration)
 
 static void syscall_exit(uint32_t status)
 {
-  fb_write("a", 1);
   process_finish(process_current());
   process_switch_next();
+}
+
+static void syscall_alloc(uint32_t npages)
+{
+}
+
+static void syscall_free(uint32_t vaddr, uint32_t npages)
+{
 }
 
 static syscall_t syscall_table[] = {
@@ -122,6 +130,8 @@ static syscall_t syscall_table[] = {
   syscall_fork,
   syscall_execve,
   syscall_msleep,
+  syscall_alloc,
+  syscall_free
 };
 
 process_registers_t *syscall_handler(cpu_state_t cs, stack_state_t ss)

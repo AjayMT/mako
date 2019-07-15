@@ -52,13 +52,47 @@ uint32_t fs_write(
 }
 struct dirent *fs_readdir(fs_node_t *node, uint32_t index)
 {
-  if (node && (node->flags & FS_DIRECTORY) && node->readdir)
+  if (node == NULL || (node->flags & FS_DIRECTORY) == 0)
+    return NULL;
+
+  if (node->tree_node) {
+    tree_node_t *tnode = node->tree_node;
+    if (index < tnode->children->size) {
+      list_foreach(lchild, tnode->children) {
+        tree_node_t *tchild = lchild->value;
+        fs_node_t *fschild = tchild->value;
+        if (index == 0) {
+          struct dirent *ent = kmalloc(sizeof(struct dirent));
+          if (ent == NULL) return NULL;
+          u_memcpy(ent->name, fschild->name, u_strlen(fschild->name));
+          ent->ino = fschild->inode;
+          return ent;
+        }
+        --index;
+      }
+    }
+  }
+
+  if (node->readdir)
     return node->readdir(node, index);
   return NULL;
 }
 fs_node_t *fs_finddir(fs_node_t *node, char *name)
 {
-  if (node && (node->flags & FS_DIRECTORY) && node->finddir)
+  if (node == NULL || (node->flags & FS_DIRECTORY) == 0)
+    return NULL;
+
+  if (node->tree_node) {
+    tree_node_t *tnode = node->tree_node;
+    list_foreach(lchild, tnode->children) {
+      tree_node_t *tchild = lchild->value;
+      fs_node_t *fschild = tchild->value;
+      if (u_strcmp(fschild->name, name) == 0)
+        return fschild;
+    }
+  }
+
+  if (node->finddir)
     return node->finddir(node, name);
   return NULL;
 }
@@ -304,41 +338,6 @@ int32_t fs_unlink(char *path)
   return 0;
 }
 
-// readdir for mountpoints.
-static struct dirent *vfs_readdir(fs_node_t *node, uint32_t idx)
-{
-  struct dirent *d = kmalloc(sizeof(struct dirent));
-  CHECK(d == NULL, "No memory.", NULL);
-
-  if (idx == 0) {
-    u_memcpy(d->name, ".", 2);
-    d->ino = 0;
-    return d;
-  } else if (idx == 1) {
-    u_memcpy(d->name, "..", 3);
-    d->ino = 1;
-    return d;
-  }
-
-  tree_node_t *tnode = node->device;
-  CHECK(tnode == NULL, "FS node without associated tree node.", NULL);
-  idx -= 2;
-  uint32_t child_idx = 0;
-  list_foreach(lchild, tnode->children) {
-    if (child_idx != idx) { ++child_idx; continue; }
-
-    tree_node_t *tchild = (tree_node_t *)lchild->value;
-    fs_node_t *cnode = tchild->value;
-    CHECK(cnode == NULL, "Tree node without associated FS node.", NULL);
-
-    u_memcpy(d->name, cnode->name, u_strlen(cnode->name) + 1);
-    d->ino = child_idx + 2;
-    return d;
-  }
-
-  return NULL;
-}
-
 static fs_node_t *vfs_node_create()
 {
   fs_node_t *node = kmalloc(sizeof(fs_node_t));
@@ -346,17 +345,16 @@ static fs_node_t *vfs_node_create()
   u_memset(node, 0, sizeof(fs_node_t));
   node->mask = 0555;
   node->flags = FS_DIRECTORY;
-  node->readdir = vfs_readdir;
   return node;
 }
 
 // Initialize the filesystem interface.
 uint32_t fs_init()
 {
-  vfs_entry_t *vfs_root = kmalloc(sizeof(vfs_entry_t));
-  CHECK(vfs_root == NULL, "No memory.", ENOMEM);
-  u_memset(vfs_root, 0, sizeof(vfs_entry_t));
-  fs_tree = tree_init(vfs_root);
+  fs_node_t *root = vfs_node_create();
+  CHECK(root == NULL, "No memory.", ENOMEM);
+  fs_tree = tree_init(root);
+  root->tree_node = fs_tree;
   return 0;
 }
 
@@ -388,7 +386,7 @@ uint32_t fs_mount(fs_node_t *local_root, const char *path)
     uint8_t found = 0;
     list_foreach(lchild, node->children) {
       tree_node_t *child = (tree_node_t *)(lchild->value);
-      vfs_entry_t *ent = (vfs_entry_t *)(child->value);
+      fs_node_t *ent = (fs_node_t *)(child->value);
       if (u_strcmp(ent->name, mpath + path_idx) == 0) {
         found = 1;
         node = child;
@@ -397,23 +395,27 @@ uint32_t fs_mount(fs_node_t *local_root, const char *path)
     }
 
     if (found == 0) {
-      vfs_entry_t *ent = kmalloc(sizeof(vfs_entry_t));
-      CHECK_UNLOCK(ent == NULL, "No memory.", ENOMEM);
-      u_memset(ent, 0, sizeof(vfs_entry_t));
-      u_memcpy(ent->name, mpath + path_idx, u_strlen(mpath + path_idx) + 1);
-      fs_node_t *vfs_node = vfs_node_create();
-      CHECK_UNLOCK(vfs_node == NULL, "Could not create VFS node.", ENOMEM);
-      u_memcpy(vfs_node->name, ent->name, u_strlen(ent->name) + 1);
-      tree_node_t *child = tree_init(ent);
-      vfs_node->device = child;
-      ent->file = vfs_node;
+      fs_node_t *vfs_node = NULL;
+      if (path_idx + u_strlen(mpath + path_idx) + 1 < path_len) {
+        vfs_node = vfs_node_create();
+        CHECK_UNLOCK(vfs_node == NULL, "Could not create VFS node.", ENOMEM);
+      } else vfs_node = local_root;
+      u_memcpy(
+        vfs_node->name, mpath + path_idx, u_strlen(mpath + path_idx) + 1
+        );
+      tree_node_t *child = tree_init(vfs_node);
+      vfs_node->tree_node = child;
       tree_insert(node, child);
       node = child;
     }
   }
 
-  vfs_entry_t *ent = (vfs_entry_t *)(node->value);
-  ent->file = local_root;
+  if (path_len <= 1) { // Mounting at the root.
+    node->value = local_root;
+    local_root->tree_node = node;
+    u_memcpy(local_root->name, "/", 2);
+  }
+
   kfree(mpath);
   kunlock(&fs_lock);
   return 0;
@@ -431,7 +433,7 @@ static fs_node_t *get_mount_point(
     found = 0;
     list_foreach(lchild, node->children) {
       tree_node_t *child = (tree_node_t *)(lchild->value);
-      vfs_entry_t *ent = (vfs_entry_t *)(child->value);
+      fs_node_t *ent = (fs_node_t *)(child->value);
       if (!ent) continue;
 
       if (u_strcmp(ent->name, path + path_idx) == 0) {
@@ -443,10 +445,10 @@ static fs_node_t *get_mount_point(
     }
   }
 
-  vfs_entry_t *ent = (vfs_entry_t *)(node->value);
+  fs_node_t *ent = (fs_node_t *)(node->value);
   if (!ent) return NULL;
   *idx_out = path_idx;
-  return ent->file;
+  return ent;
 }
 
 // Open the filesystem node at a path.

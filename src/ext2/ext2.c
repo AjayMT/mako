@@ -989,7 +989,7 @@ static void ext2_close(fs_node_t *node)
 static int32_t ext2_mkdir(fs_node_t *node, char *name, uint16_t mask)
 {
   ext2_fs_t *self = node->device;
-  fs_node_t *child = ext2_finddir(node, name);
+  fs_node_t *child = fs_finddir(node, name);
   kfree(child);
   if (child) return -EEXIST;
 
@@ -1069,7 +1069,7 @@ static int32_t ext2_create(fs_node_t *node, char *name, uint16_t mask)
 {
   ext2_fs_t *self = node->device;
 
-  fs_node_t *child = ext2_finddir(node, name);
+  fs_node_t *child = fs_finddir(node, name);
   kfree(child);
   if (child) return -EEXIST;
 
@@ -1214,7 +1214,7 @@ static int32_t ext2_chmod(fs_node_t *node, int32_t mask)
 static int32_t ext2_symlink(fs_node_t *node, char *value, char *name)
 {
   ext2_fs_t *self = node->device;
-  fs_node_t *child = ext2_finddir(node, name);
+  fs_node_t *child = fs_finddir(node, name);
   kfree(child);
   if (child) return -EEXIST;
 

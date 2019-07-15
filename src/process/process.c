@@ -216,7 +216,7 @@ uint32_t process_sleep(process_t *p, uint32_t wake_time)
 
   process_sleep_node_t *sleeper = kmalloc(sizeof(process_sleep_node_t));
   if (sleeper == NULL) {
-    return ENOMEM; kunlock(&process_sleep_lock);
+    kunlock(&process_sleep_lock); return ENOMEM;
   }
   sleeper->process = p;
   sleeper->wake_time = wake_time;
