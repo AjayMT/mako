@@ -34,7 +34,7 @@ void fs_open(fs_node_t *node, uint32_t flags)
 { if (node && node->open) node->open(node, flags); }
 void fs_close(fs_node_t *node)
 { if (node && node->close) node->close(node); }
-uint32_t fs_read(
+int32_t fs_read(
   fs_node_t *node, uint32_t offset, uint32_t size, uint8_t *buffer
   )
 {
@@ -42,7 +42,7 @@ uint32_t fs_read(
     return node->read(node, offset, size, buffer);
   return -ENODEV;
 }
-uint32_t fs_write(
+int32_t fs_write(
   fs_node_t *node, uint32_t offset, uint32_t size, uint8_t *buffer
   )
 {
@@ -103,6 +103,7 @@ int32_t fs_chmod(fs_node_t *node, int32_t mask)
 }
 int32_t fs_readlink(fs_node_t *node, char *buf, size_t bufsize)
 {
+  if (node && (node->flags & FS_SYMLINK) == 0) return -ENOTDIR;
   if (node && node->readlink) return node->readlink(node, buf, bufsize);
   return -ENODEV;
 }

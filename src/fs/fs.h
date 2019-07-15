@@ -104,8 +104,8 @@ struct dirent {
 // Interface for all filesystems.
 void fs_open(fs_node_t *, uint32_t);
 void fs_close(fs_node_t *);
-uint32_t fs_read(fs_node_t *, uint32_t, uint32_t, uint8_t *);
-uint32_t fs_write(fs_node_t *, uint32_t, uint32_t, uint8_t *);
+int32_t fs_read(fs_node_t *, uint32_t, uint32_t, uint8_t *);
+int32_t fs_write(fs_node_t *, uint32_t, uint32_t, uint8_t *);
 struct dirent *fs_readdir(fs_node_t *, uint32_t);
 fs_node_t *fs_finddir(fs_node_t *, char *);
 int32_t fs_chmod(fs_node_t *, int32_t);

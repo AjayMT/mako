@@ -7,7 +7,9 @@
 
 #include <stdint.h>
 #include <kheap/kheap.h>
+#include <process/process.h>
 #include <common/errno.h>
+#include <common/signal.h>
 #include <util/util.h>
 #include <debug/log.h>
 #include <fs/fs.h>
@@ -17,14 +19,6 @@
 #define CHECK(err, msg, code) if ((err)) {      \
     log_error("pipe", msg "\n"); return (code); \
   }
-
-typedef struct pipe_s {
-  fs_node_t *read_node;
-  fs_node_t *write_node;
-  ringbuffer_t *rb;
-  uint8_t read_closed;
-  uint8_t write_closed;
-} pipe_t;
 
 static const uint32_t PIPE_SIZE = 512;
 
@@ -58,7 +52,7 @@ static uint32_t pipe_write(
   uint32_t written_size = 0;
   while (written_size < size) {
     if (self->read_closed) {
-      // TODO Send SIGPIPE to the current process.
+      process_signal(process_current(), SIGPIPE);
       return written_size;
     }
     uint32_t w = ringbuffer_write(self->rb, 1, buf + written_size);
@@ -101,8 +95,8 @@ uint32_t pipe_create(fs_node_t *read_node, fs_node_t *write_node)
   write_node->write = pipe_write;
   read_node->close = pipe_close_read;
   write_node->close = pipe_close_write;
-  read_node->mask = 666;
-  write_node->mask = 666;
+  read_node->mask = 0666;
+  write_node->mask = 0666;
   read_node->flags |= FS_PIPE;
   write_node->flags |= FS_PIPE;
 

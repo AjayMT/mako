@@ -59,7 +59,7 @@ typedef struct process_image_s {
 typedef struct process_fd_s {
   fs_node_t node;
   uint32_t offset;
-  uint32_t free_device;
+  uint32_t is_pipe;
   uint32_t refcount;
 } process_fd_t;
 

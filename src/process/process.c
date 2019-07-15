@@ -15,6 +15,7 @@
 #include <kheap/kheap.h>
 #include <klock/klock.h>
 #include <fs/fs.h>
+#include <pipe/pipe.h>
 #include <pmm/pmm.h>
 #include <paging/paging.h>
 #include <fpu/fpu.h>
@@ -155,7 +156,6 @@ uint32_t process_switch_next()
       );
     next->uregs.eip = next->signal_eip;
     next->uregs.ebx = next->signal_pending;
-    next->signal_pending = 0;
   }
 
   process_switch(next);
@@ -579,10 +579,14 @@ uint8_t process_destroy(process_t *process)
     process_fd_t *fd = head->value;
     list_remove(process->fds, head, 0);
     kfree(head);
-
+    if (fd == NULL) continue;
     --(fd->refcount);
     if (fd->refcount) continue;
-    if (fd->free_device) kfree(fd->node.device);
+    if (fd->is_pipe) {
+      pipe_t *p = fd->node.device;
+      if (&(fd->node) == p->read_node && p->write_closed) kfree(p);
+      if (&(fd->node) == p->write_node && p->read_closed) kfree(p);
+    }
     kfree(fd);
   }
 

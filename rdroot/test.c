@@ -47,5 +47,8 @@ int main(int argc, char *unused[])
 
   syscall3(8, pid, 12, 0);
 
+  int fd = syscall3(10, (uint32_t)"/hello.txt", 0x200, 0666);
+  syscall3(13, fd, (uint32_t)"hello world!", 12);
+
   return 0;
 }
