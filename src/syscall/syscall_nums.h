@@ -1,0 +1,37 @@
+
+// syscall_nums.h
+//
+// Syscall numbers.
+//
+// Author: Ajay Tatachar <ajaymt2@illinois.edu>
+
+#ifndef _SYSCALL_NUMS_H_
+#define _SYSCALL_NUMS_H_
+
+#define SYSCALL_EXIT            0
+#define SYSCALL_FORK            1
+#define SYSCALL_EXECVE          2
+#define SYSCALL_MSLEEP          3
+#define SYSCALL_PAGEALLOC       4
+#define SYSCALL_PAGEFREE        5
+#define SYSCALL_SIGNAL_REGISTER 6
+#define SYSCALL_SIGNAL_RESUME   7
+#define SYSCALL_SIGNAL_SEND     8
+#define SYSCALL_GETPID          9
+#define SYSCALL_OPEN            10
+#define SYSCALL_CLOSE           11
+#define SYSCALL_READ            12
+#define SYSCALL_WRITE           13
+#define SYSCALL_READDIR         14
+#define SYSCALL_CHMOD           15
+#define SYSCALL_READLINK        16
+#define SYSCALL_UNLINK          17
+#define SYSCALL_SYMLINK         18
+#define SYSCALL_MKDIR           19
+#define SYSCALL_PIPE            20
+#define SYSCALL_MOVEFD          21
+#define SYSCALL_CHDIR           22
+#define SYSCALL_GETCWD          23
+#define SYSCALL_WAIT            24
+
+#endif /* _SYSCALL_NUMS_H_ */

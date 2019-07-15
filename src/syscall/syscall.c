@@ -383,13 +383,13 @@ static void syscall_movefd(uint32_t fdn1, uint32_t fdn2)
   list_node_t *lnode = find_fd(fdn1);
   if (lnode == NULL) { current->uregs.eax = -EBADF; return; }
   process_fd_t *fd1 = lnode->value;
-  lnode = find_fd(fdn2);
-  if (lnode == NULL) { current->uregs.eax = -EBADF; return; }
-  process_fd_t *fd2 = lnode->value;
+  list_node_t *lnode2 = find_fd(fdn2);
+  if (lnode2 == NULL) { current->uregs.eax = -EBADF; return; }
+  process_fd_t *fd2 = lnode2->value;
 
   syscall_close(fdn2);
-  lnode->value = fd1;
-  ++(fd1->refcount);
+  lnode->value = NULL;
+  lnode2->value = fd1;
 
   interrupt_restore(eflags);
 }
@@ -470,57 +470,4 @@ process_registers_t *syscall_handler(cpu_state_t cs, stack_state_t ss)
   disable_interrupts();
   current->in_kernel = 0;
   return &(current->uregs);
-}
-
-int32_t syscall0(uint32_t num)
-{
-  int32_t ret;
-  asm volatile ("movl %0, %%eax" : : "r"(num));
-  asm volatile ("int $0x80");
-  asm volatile ("movl %%eax, %0" : "=r"(ret));
-  return ret;
-}
-int32_t syscall1(uint32_t num, uint32_t a1)
-{
-  int32_t ret;
-  asm volatile ("movl %0, %%ebx" : : "r"(a1));
-  asm volatile ("movl %0, %%eax" : : "r"(num));
-  asm volatile ("int $0x80");
-  asm volatile ("movl %%eax, %0" : "=r"(ret));
-  return ret;
-}
-int32_t syscall2(uint32_t num, uint32_t a1, uint32_t a2)
-{
-  int32_t ret;
-  asm volatile ("movl %0, %%ecx" : : "r"(a2));
-  asm volatile ("movl %0, %%ebx" : : "r"(a1));
-  asm volatile ("movl %0, %%eax" : : "r"(num));
-  asm volatile ("int $0x80");
-  asm volatile ("movl %%eax, %0" : "=r"(ret));
-  return ret;
-}
-int32_t syscall3(uint32_t num, uint32_t a1, uint32_t a2, uint32_t a3)
-{
-  int32_t ret;
-  asm volatile ("movl %0, %%edx" : : "r"(a3));
-  asm volatile ("movl %0, %%ecx" : : "r"(a2));
-  asm volatile ("movl %0, %%ebx" : : "r"(a1));
-  asm volatile ("movl %0, %%eax" : : "r"(num));
-  asm volatile ("int $0x80");
-  asm volatile ("movl %%eax, %0" : "=r"(ret));
-  return ret;
-}
-int32_t syscall4(
-  uint32_t num, uint32_t a1, uint32_t a2, uint32_t a3, uint32_t a4
-  )
-{
-  int32_t ret;
-  asm volatile ("movl %0, %%esi" : : "r"(a4));
-  asm volatile ("movl %0, %%edx" : : "r"(a3));
-  asm volatile ("movl %0, %%ecx" : : "r"(a2));
-  asm volatile ("movl %0, %%ebx" : : "r"(a1));
-  asm volatile ("movl %0, %%eax" : : "r"(num));
-  asm volatile ("int $0x80");
-  asm volatile ("movl %%eax, %0" : "=r"(ret));
-  return ret;
 }

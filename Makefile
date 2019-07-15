@@ -21,6 +21,9 @@ export
 
 all: kernel.elf
 
+libc.a: $(shell find src -type f)
+	$(MAKE) out=${PWD}/libc.a -C src/libc
+
 kernel.elf: $(OBJECTS) $(ASM_OBJECTS) $(DRIVER_OBJECTS)
 	$(LD) $(LDFLAGS) $(OBJECTS) $(ASM_OBJECTS) $(DRIVER_OBJECTS) -o kernel.elf
 
@@ -58,6 +61,6 @@ qemu: mako.iso
 
 .PHONY: clean
 clean:
-	rm -rf *.o kernel.elf                                     \
+	rm -rf *.o *.a kernel.elf                                 \
 	       iso/boot/kernel.elf mako.iso bochslog.txt com1.out \
-	       iso/modules/rd
+	       iso/modules/rd src/libc/*.o
