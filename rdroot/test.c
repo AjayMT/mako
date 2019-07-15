@@ -36,14 +36,16 @@ int main(int argc, char *unused[])
 {
   if (syscall0(1) == 0) while (1);
 
-  while (1) {
-    syscall1(3, 1000);
-    int result = syscall0(1);
-    char *argv[] = { "hello", 0 };
-    char *envp[] = { "world", "PATH=/bin", 0 };
-    if (result == 0)
-      syscall3(2, (uint32_t)"/rd/test2", (uint32_t)argv, (uint32_t)envp);
+  unsigned int pid = syscall0(1);
+  if (pid == 0) {
+    char *argv[] = { 0 };
+    char *envp[] = { 0 };
+    syscall3(2, (uint32_t)"/rd/test2", (uint32_t)argv, (uint32_t)envp);
   }
+
+  syscall1(3, 1000);
+
+  syscall3(8, pid, 12, 0);
 
   return 0;
 }

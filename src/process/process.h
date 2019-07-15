@@ -79,9 +79,12 @@ typedef struct process_s {
   uint8_t fpregs[512];
   list_t *fds;
 
-  uint32_t brk;
   uint32_t cr3;
   process_mmap_t mmap;
+
+  uint32_t signal_pending;
+  uint32_t signal_eip;
+  process_registers_t saved_signal_regs;
 
   tree_node_t *tree_node;
   list_node_t *list_node;
@@ -96,8 +99,14 @@ typedef struct process_sleep_node_s {
 // Initialize the scheduler and other things.
 uint32_t process_init();
 
+// Find a process with a specific PID.
+process_t *process_from_pid(uint32_t);
+
 // Add a process to the sleep queue.
 uint32_t process_sleep(process_t *, uint32_t);
+
+// Send a signal to a process.
+void process_signal(process_t *, uint32_t);
 
 // Get current process.
 process_t *process_current();

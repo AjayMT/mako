@@ -149,6 +149,15 @@ uint32_t process_switch_next()
   uint32_t res = paging_copy_kernel_space(next->cr3);
   CHECK(res, "Failed to copy kernel address space.", res);
 
+  if (next->signal_pending && next->in_kernel == 0) {
+    u_memcpy(
+      &(next->saved_signal_regs), &(next->uregs), sizeof(process_registers_t)
+      );
+    next->uregs.eip = next->signal_eip;
+    next->uregs.ebx = next->signal_pending;
+    next->signal_pending = 0;
+  }
+
   process_switch(next);
 
   return 0;
@@ -209,6 +218,30 @@ uint32_t process_init()
   return 0;
 }
 
+static process_t *findpid(tree_node_t *node, uint32_t pid)
+{
+  if (node == NULL) return NULL;
+
+  process_t *p = node->value;
+  if (p->pid == pid) return p;
+  list_foreach(lchild, node->children) {
+    tree_node_t *tchild = lchild->value;
+    process_t *res = findpid(tchild, pid);
+    if (res) return res;
+  }
+
+  return NULL;
+}
+
+// Find a process with a specific PID.
+process_t *process_from_pid(uint32_t pid)
+{
+  klock(&process_schedule_lock);
+  process_t *p = findpid(process_tree, pid);
+  kunlock(&process_schedule_lock);
+  return p;
+}
+
 // Add a process to the sleep queue.
 uint32_t process_sleep(process_t *p, uint32_t wake_time)
 {
@@ -233,6 +266,15 @@ uint32_t process_sleep(process_t *p, uint32_t wake_time)
 
   kunlock(&process_sleep_lock);
   return 0;
+}
+
+// Send a signal to a process.
+void process_signal(process_t *p, uint32_t signum)
+{
+  if (signum == 0) return;
+  p->signal_pending = signum;
+  if (p->signal_eip == 0) process_finish(p);
+  if (p == current_process) process_switch_next();
 }
 
 // Get current process.
@@ -391,7 +433,8 @@ uint32_t process_load(process_t *process, process_image_t img)
   process->mmap.stack_top = stack_vaddr + PAGE_SIZE - 1;
   process->mmap.data = img.data_vaddr;
   process->mmap.heap = img.data_vaddr + page_align_up(img.data_len);
-  process->brk = process->mmap.heap;
+  if (process->mmap.heap == 0)
+    process->mmap.heap = img.text_vaddr + page_align_up(img.text_len);
   process->uregs.eip = img.entry;
   process->uregs.ebp = process->mmap.stack_top;
   process->uregs.esp = process->mmap.stack_top;

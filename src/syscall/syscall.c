@@ -117,12 +117,72 @@ static void syscall_exit(uint32_t status)
   process_switch_next();
 }
 
-static void syscall_alloc(uint32_t npages)
+static void syscall_pagealloc(uint32_t npages)
 {
+  if (npages == 0) return;
+  process_t *current = process_current();
+  uint32_t eflags = interrupt_save_disable();
+  uint32_t vaddr = paging_next_vaddr(npages, current->mmap.heap);
+  if (vaddr == 0) { current->uregs.eax = 0; return; }
+
+  page_table_entry_t flags; u_memset(&flags, 0, sizeof(flags));
+  flags.rw = 1; flags.user = 1;
+  uint32_t err = 0;
+  uint32_t i = 0;
+  for (; i < npages; ++i) {
+    uint32_t paddr = pmm_alloc(1);
+    if (paddr == 0) { err = ENOMEM; break; }
+    paging_result_t res = paging_map(vaddr + (i * PAGE_SIZE), paddr, flags);
+    if (res != PAGING_OK) { err = res; break; }
+  }
+
+  if (err) {
+    for (uint32_t k = 0; k < i; ++k) {
+      uint32_t paddr = paging_get_paddr(vaddr + (k * PAGE_SIZE));
+      if (paddr) pmm_free(paddr, 1);
+      paging_unmap(vaddr + (k * PAGE_SIZE));
+    }
+    current->uregs.eax = 0;
+    return;
+  }
+
+  current->uregs.eax = vaddr;
+  interrupt_restore(eflags);
 }
 
-static void syscall_free(uint32_t vaddr, uint32_t npages)
+static void syscall_pagefree(uint32_t vaddr, uint32_t npages)
 {
+  process_t *current = process_current();
+  uint32_t eflags = interrupt_save_disable();
+
+  for (uint32_t i = 0; i < npages; ++i) {
+    uint32_t paddr = paging_get_paddr(vaddr + (i * PAGE_SIZE));
+    if (paddr) { pmm_free(paddr, 1); }
+    paging_result_t res = paging_unmap(vaddr + (i * PAGE_SIZE));
+    if (res != PAGING_OK) { current->uregs.eax = -res; return; }
+  }
+
+  current->uregs.eax = 0;
+  interrupt_restore(eflags);
+}
+
+static void syscall_signal_register(uint32_t eip)
+{ process_current()->signal_eip = eip; }
+
+static void syscall_signal_resume()
+{
+  process_t *current = process_current();
+  u_memcpy(
+    &(current->uregs),
+    &(current->saved_signal_regs),
+    sizeof(process_registers_t)
+    );
+}
+
+static void syscall_signal_send(uint32_t pid, uint32_t signum)
+{
+  process_t *target = process_from_pid(pid);
+  process_signal(target, signum);
 }
 
 static syscall_t syscall_table[] = {
@@ -130,8 +190,11 @@ static syscall_t syscall_table[] = {
   syscall_fork,
   syscall_execve,
   syscall_msleep,
-  syscall_alloc,
-  syscall_free
+  syscall_pagealloc,
+  syscall_pagefree,
+  syscall_signal_register,
+  syscall_signal_resume,
+  syscall_signal_send
 };
 
 process_registers_t *syscall_handler(cpu_state_t cs, stack_state_t ss)
