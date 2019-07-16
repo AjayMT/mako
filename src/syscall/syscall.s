@@ -15,7 +15,7 @@ section .text
 
 interrupt_handler_syscall:
     cli
-    pusha
+    pushad
     mov ax, ds
     push eax
     mov ax, 0x10

@@ -10,6 +10,7 @@
 #include <process/process.h>
 #include <interrupt/interrupt.h>
 #include <util/util.h>
+#include <debug/log.h>
 #include "ringbuffer.h"
 
 ringbuffer_t *ringbuffer_create(uint32_t size)
@@ -80,8 +81,8 @@ uint32_t ringbuffer_finish_read(ringbuffer_t *rb, uint32_t size, uint8_t *buf)
     size = ringbuffer_check_read(rb);
 
   for (uint32_t i = 0; i < size; ++i) {
-    rb->read_idx = (rb->read_idx + i) % rb->size;
     buf[i] = rb->buffer[rb->read_idx];
+    rb->read_idx = (rb->read_idx + 1) % rb->size;
   }
 
   while (rb->writers->size) {
@@ -115,8 +116,8 @@ uint32_t ringbuffer_finish_write(
     size = ringbuffer_check_write(rb);
 
   for (uint32_t i = 0; i < size; ++i) {
-    rb->write_idx = (rb->write_idx + i) % rb->size;
     rb->buffer[rb->write_idx] = buf[i];
+    rb->write_idx = (rb->write_idx + 1) % rb->size;
   }
 
   while (rb->readers->size) {

@@ -13,6 +13,7 @@ extern ringbuffer_finish_read
 extern ringbuffer_check_write
 extern ringbuffer_wait_write
 extern ringbuffer_finish_write
+extern debug
 
 %macro ringbuffer_io 1
 global ringbuffer_%1
@@ -25,9 +26,13 @@ global ringbuffer_%1
     .check_%1:
     pushfd
     cli
+    push ecx
+    push edx
     push ebx
     call ringbuffer_check_%1
     pop ebx
+    pop edx
+    pop ecx
     or eax, [ebx + 12]
     cmp eax, 0
     jne .finish_%1

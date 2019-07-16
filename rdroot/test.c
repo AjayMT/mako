@@ -4,21 +4,23 @@
 
 int main(int argc, char *unused[])
 {
-  if (_syscall0(1) == 0) while (1);
+  if (_syscall0(SYSCALL_FORK) == 0) while (1);
 
-  unsigned int pid = _syscall0(1);
+  int readfd, writefd;
+  _syscall2(SYSCALL_PIPE, (uint32_t)&readfd, (uint32_t)&writefd);
+  unsigned int pid = _syscall0(SYSCALL_FORK);
   if (pid == 0) {
-    char *argv[] = { 0 };
-    char *envp[] = { 0 };
-    _syscall3(2, (uint32_t)"/rd/test2", (uint32_t)argv, (uint32_t)envp);
+    char buf[128];
+    _syscall3(SYSCALL_READ, readfd, (uint32_t)buf, 5);
+    _syscall3(SYSCALL_OPEN, (uint32_t)buf, 0x200, 0666);
+
+    /* char *argv[] = { 0 }; */
+    /* char *envp[] = { 0 }; */
+    /* _syscall3(2, (uint32_t)"/rd/test2", (uint32_t)argv, (uint32_t)envp); */
   }
 
-  _syscall1(3, 1000);
-
-  _syscall3(8, pid, 12, 0);
-
-  int fd = _syscall3(10, (uint32_t)"/hello.txt", 0x200, 0666);
-  _syscall3(13, fd, (uint32_t)"hello world!", 12);
+  _syscall1(SYSCALL_MSLEEP, 100);
+  _syscall3(SYSCALL_WRITE, writefd, (uint32_t)"asdfg", 5);
 
   return 0;
 }
