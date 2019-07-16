@@ -32,18 +32,6 @@ uintptr_t __stack_chk_guard = STACK_CHK_GUARD;
 void __attribute__((noreturn)) __stack_chk_fail(void)
 { asm volatile ("xchg %bx, %bx"); while (1); }
 
-void page_fault_handler(
-  cpu_state_t cs, idt_info_t info, stack_state_t ss
-  )
-{
-  uint32_t vaddr;
-  asm("movl %%cr2, %0" : "=r"(vaddr));
-  log_error(
-    "kmain", "eip %x: page fault %x vaddr %x esp %x\n",
-    ss.eip, info.error_code, vaddr, cs.esp
-    );
-}
-
 void gp_fault_handler(
   cpu_state_t cs, idt_info_t info, stack_state_t ss
   )
@@ -103,7 +91,6 @@ void kmain(
   rtc_init();
   keyboard_init();
 
-  register_interrupt_handler(14, page_fault_handler);
   register_interrupt_handler(13, gp_fault_handler);
 
   uint32_t res;

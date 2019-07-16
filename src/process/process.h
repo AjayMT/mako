@@ -69,6 +69,7 @@ typedef struct process_s {
   uint32_t gid;
   char name[PROCESS_NAME_LEN];
   char *wd;
+  list_t *fds;
 
   uint8_t is_running;
   uint8_t is_thread;
@@ -77,13 +78,14 @@ typedef struct process_s {
   process_registers_t uregs;
   process_registers_t kregs;
   uint8_t fpregs[512];
-  list_t *fds;
 
   uint32_t cr3;
   process_mmap_t mmap;
 
   uint32_t signal_pending;
   uint32_t signal_eip;
+  uint8_t exited;
+  uint32_t exit_status;
   process_registers_t saved_signal_regs;
 
   tree_node_t *tree_node;

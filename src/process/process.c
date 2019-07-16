@@ -22,6 +22,7 @@
 #include <util/util.h>
 #include <debug/log.h>
 #include <common/constants.h>
+#include <common/signal.h>
 #include <common/errno.h>
 #include "process.h"
 
@@ -163,6 +164,45 @@ uint32_t process_switch_next()
   return 0;
 }
 
+// Page fault handler.
+static void page_fault_handler(
+  cpu_state_t cs, idt_info_t info, stack_state_t ss
+  )
+{
+  uint32_t vaddr;
+  asm("movl %%cr2, %0" : "=r"(vaddr));
+  log_error(
+    "kmain", "eip %x: page fault %x vaddr %x esp %x\n",
+    ss.eip, info.error_code, vaddr, cs.esp
+    );
+
+  if (ss.cs == (USER_MODE_CS | 3)) {
+    uint32_t stb = current_process->mmap.stack_bottom;
+    if (vaddr < stb && stb - vaddr < PAGE_SIZE) {
+      uint32_t paddr = pmm_alloc(1);
+      if (paddr == 0) goto crash;
+      uint32_t vaddr = paging_prev_vaddr(1, stb);
+      if (stb - vaddr != PAGE_SIZE) goto crash;
+      page_table_entry_t flags; u_memset(&flags, 0, sizeof(flags));
+      flags.rw = 1; flags.user = 1;
+      paging_result_t res = paging_map(vaddr, paddr, flags);
+      if (res != PAGING_OK) goto crash;
+      current_process->mmap.stack_bottom = vaddr;
+      return;
+    }
+
+  crash:
+    process_signal(current_process, SIGSEGV);
+    return;
+  }
+
+  // Yikes, kernel page fault.
+  process_finish(current_process);
+  current_process->exited = 0;
+  current_process->signal_pending = SIGSEGV;
+  process_switch_next();
+}
+
 // Interrupt handler that switches processes.
 static void scheduler_interrupt_handler(
   cpu_state_t cstate, idt_info_t info, stack_state_t sstate
@@ -214,6 +254,7 @@ uint32_t process_init()
   u_memset(sleep_queue, 0, sizeof(list_t));
 
   rtc_set_handler(scheduler_interrupt_handler);
+  register_interrupt_handler(14, page_fault_handler);
 
   return 0;
 }
