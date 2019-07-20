@@ -246,6 +246,7 @@ static void get_heap(size_t size)
     .magic = BLOCK_MAGIC
   };
   *((block_front_t *)vaddr) = new_front;
+  if (biggest) biggest->bigger = (block_front_t *)vaddr;
   biggest = (block_front_t *)vaddr;
   sort_down(biggest);
 }
