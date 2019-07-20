@@ -5,8 +5,8 @@
 //
 // Author: Ajay Tatachar <ajaymt2@illinois.edu>
 
-#ifndef _SIGNAL_H_
-#define _SIGNAL_H_
+#ifndef __SIGNAL_H_
+#define __SIGNAL_H_
 
 #define SIGHUP      1
 #define SIGINT      2
@@ -37,4 +37,6 @@
 #define SIGTTOUT    27
 #define SIGVTALRM   28
 
-#endif /* _SIGNAL_H_ */
+#define NUM_SIGNALS 28
+
+#endif /* __SIGNAL_H_ */

@@ -33,5 +33,10 @@
 #define SYSCALL_CHDIR           22
 #define SYSCALL_GETCWD          23
 #define SYSCALL_WAIT            24
+#define SYSCALL_FSTAT           25
+#define SYSCALL_LSTAT           26
+#define SYSCALL_LSEEK           27
+#define SYSCALL_THREAD          28
+#define SYSCALL_DUP             29
 
 #endif /* _SYSCALL_NUMS_H_ */

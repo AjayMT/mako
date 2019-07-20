@@ -185,13 +185,13 @@ int32_t fs_symlink(char *src, char *dst)
   CHECK(res, "Could not resolve path.", -res);
 
   char *basename = dstpath + u_strlen(dstpath) - 1;
-  for (; *basename != FS_PATH_SEP && basename >= dstpath; --basename);
+  for (; *basename != FS_PATH_SEP && basename > dstpath; --basename);
   if (*basename == FS_PATH_SEP) ++basename;
 
-  char *parent_path = kmalloc(basename - dstpath);
+  char *parent_path = kmalloc(basename - dstpath + 1);
   CHECK(parent_path == NULL, "No memory.", -ENOMEM);
   u_memcpy(parent_path, dstpath, basename - dstpath);
-  parent_path[basename - dstpath - 1] = '\0';
+  parent_path[basename - dstpath] = '\0';
 
   fs_node_t *parent = kmalloc(sizeof(fs_node_t));
   CHECK(parent == NULL, "No memory.", -ENOMEM);
@@ -228,13 +228,13 @@ int32_t fs_mkdir(char *path, uint16_t mask)
   CHECK(res, "Could not resolve path.", -res);
 
   char *basename = rpath + u_strlen(rpath) - 1;
-  for (; *basename != FS_PATH_SEP && basename >= rpath; --basename);
+  for (; *basename != FS_PATH_SEP && basename > rpath; --basename);
   if (*basename == FS_PATH_SEP) ++basename;
 
-  char *parent_path = kmalloc(basename - rpath);
+  char *parent_path = kmalloc(basename - rpath + 1);
   CHECK(parent_path == NULL, "No memory.", -ENOMEM);
   u_memcpy(parent_path, rpath, basename - rpath);
-  parent_path[basename - rpath - 1] = '\0';
+  parent_path[basename - rpath] = '\0';
 
   fs_node_t *parent = kmalloc(sizeof(fs_node_t));
   CHECK(parent == NULL, "No memory.", -ENOMEM);
@@ -268,13 +268,13 @@ int32_t fs_create(char *path, uint16_t mask)
   CHECK(res, "Could not resolve path.", -res);
 
   char *basename = rpath + u_strlen(rpath) - 1;
-  for (; *basename != FS_PATH_SEP && basename >= rpath; --basename);
+  for (; *basename != FS_PATH_SEP && basename > rpath; --basename);
   if (*basename == FS_PATH_SEP) ++basename;
 
-  char *parent_path = kmalloc(basename - rpath);
+  char *parent_path = kmalloc(basename - rpath + 1);
   CHECK(parent_path == NULL, "No memory.", -ENOMEM);
   u_memcpy(parent_path, rpath, basename - rpath);
-  parent_path[basename - rpath - 1] = '\0';
+  parent_path[basename - rpath] = '\0';
 
   fs_node_t *parent = kmalloc(sizeof(fs_node_t));
   CHECK(parent == NULL, "No memory.", -ENOMEM);
@@ -307,13 +307,13 @@ int32_t fs_unlink(char *path)
   CHECK(res, "Could not resolve path.", -res);
 
   char *basename = rpath + u_strlen(rpath) - 1;
-  for (; *basename != FS_PATH_SEP && basename >= rpath; --basename);
+  for (; *basename != FS_PATH_SEP && basename > rpath; --basename);
   if (*basename == FS_PATH_SEP) ++basename;
 
-  char *parent_path = kmalloc(basename - rpath);
+  char *parent_path = kmalloc(basename - rpath + 1);
   CHECK(parent_path == NULL, "No memory.", -ENOMEM);
   u_memcpy(parent_path, rpath, basename - rpath);
-  parent_path[basename - rpath - 1] = '\0';
+  parent_path[basename - rpath] = '\0';
 
   fs_node_t *parent = kmalloc(sizeof(fs_node_t));
   CHECK(parent == NULL, "No memory.", -ENOMEM);
@@ -474,7 +474,7 @@ uint32_t fs_open_node(fs_node_t *out_node, const char *path, uint32_t flags)
 
   fs_node_t *node = mount_point;
   while (path_idx < path_len) {
-    if (node->flags & FS_SYMLINK) {
+    if ((node->flags & FS_SYMLINK) && (flags & O_NOFOLLOW) == 0) {
       char *target = kmalloc(1024);
       CHECK(target == NULL, "No memory.", ENOMEM);
 
@@ -517,7 +517,7 @@ uint32_t fs_open_node(fs_node_t *out_node, const char *path, uint32_t flags)
     path_idx += u_strlen(mpath + path_idx) + 1;
   }
 
-  fs_open(node, flags);
+  fs_open(node, flags & (~O_CREAT));
   u_memcpy(out_node, node, sizeof(fs_node_t));
   kfree(mpath);
   return 0;

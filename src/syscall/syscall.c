@@ -19,6 +19,8 @@
 #include <common/errno.h>
 #include <debug/log.h>
 #include <util/util.h>
+#include <sys/wait.h>
+#include <sys/stat.h>
 #include "syscall.h"
 
 typedef void (*syscall_t)();
@@ -29,7 +31,7 @@ static void syscall_fork()
   process_t *child = kmalloc(sizeof(process_t));
   if (child == NULL) { current->uregs.eax = -ENOMEM; return; }
 
-  uint32_t res = process_fork(child, current);
+  uint32_t res = process_fork(child, current, 0);
   if (res) { current->uregs.eax = -res; return; }
 
   child->uregs.eax = 0;
@@ -39,8 +41,6 @@ static void syscall_fork()
 
 static void syscall_execve(char *path, char *argv[], char *envp[])
 {
-  // TODO Handle shebang scripts.
-
   process_t *current = process_current();
   fs_node_t node;
   uint32_t res = fs_open_node(&node, path, O_RDONLY);
@@ -95,7 +95,7 @@ static void syscall_execve(char *path, char *argv[], char *envp[])
     return;
   }
 
-  if (buf[0] != '#' || buf[1] != '!') {
+  if (rsize < 2 || buf[0] != '#' || buf[1] != '!') {
     kfree(buf); current->uregs.eax = -ENOEXEC; return;
   }
 
@@ -104,7 +104,7 @@ static void syscall_execve(char *path, char *argv[], char *envp[])
   uint32_t line_len = 0;
   for (; buf[line_len] && buf[line_len] != '\n'; ++line_len);
   for (uint32_t i = 0; i < line_len; ++i)
-    if (buf[i] == ' ') buf[i] = '\0';
+    if (buf[i] == ' ' && i > 2) buf[i] = '\0';
 
   char **new_argv = kmalloc((argc + line_len) * (sizeof(char *)));
   if (new_argv == NULL) { current->uregs.eax = -ENOMEM; return; }
@@ -121,7 +121,8 @@ static void syscall_execve(char *path, char *argv[], char *envp[])
     ++new_argv_idx;
   }
 
-  syscall_execve((char *)buf + 2, new_argv, envp);
+  uint8_t buf_offset = buf[2] == ' ' ? 3 : 2;
+  syscall_execve((char *)buf + buf_offset, new_argv, envp);
   kfree(new_argv);
   kfree(buf);
 }
@@ -144,7 +145,10 @@ static void syscall_msleep(uint32_t duration)
 
 static void syscall_exit(uint32_t status)
 {
-  process_finish(process_current());
+  process_t *current = process_current();
+  process_finish(current);
+  current->exited = 1;
+  current->exit_status = status;
   process_switch_next();
 }
 
@@ -300,11 +304,13 @@ static void syscall_read(uint32_t fdnum, uint8_t *buf, uint32_t size)
 static void syscall_write(uint32_t fdnum, uint8_t *buf, uint32_t size)
 {
   process_t *current = process_current();
+
   list_node_t *lnode = find_fd(fdnum);
   if (lnode == NULL) { current->uregs.eax = -EBADF; return; }
   process_fd_t *fd = lnode->value;
   int32_t res = fs_write(&(fd->node), fd->offset, size, buf);
   if (res < 0) { current->uregs.eax = res; return; }
+
   fd->offset += res;
   current->uregs.eax = res;
 }
@@ -325,7 +331,7 @@ static void syscall_chmod(char *path, uint32_t mode)
 {
   process_t *current = process_current();
   fs_node_t node;
-  uint32_t res = fs_open_node(&node, path, 0);
+  uint32_t res = fs_open_node(&node, path, O_RDONLY);
   if (res) { current->uregs.eax = -res; return; }
   current->uregs.eax = fs_chmod(&node, mode);
 }
@@ -334,7 +340,7 @@ static void syscall_readlink(char *path, char *buf, uint32_t bufsize)
 {
   process_t *current = process_current();
   fs_node_t node;
-  uint32_t res = fs_open_node(&node, path, 0);
+  uint32_t res = fs_open_node(&node, path, O_RDONLY);
   if (res) { current->uregs.eax = -res; return; }
   current->uregs.eax = fs_readlink(&node, buf, bufsize);
 }
@@ -388,6 +394,10 @@ static void syscall_movefd(uint32_t fdn1, uint32_t fdn2)
   process_fd_t *fd2 = lnode2->value;
 
   syscall_close(fdn2);
+  if (current->uregs.eax != 0) {
+    interrupt_restore(eflags); return;
+  }
+
   lnode->value = NULL;
   lnode2->value = fd1;
 
@@ -398,7 +408,7 @@ static void syscall_chdir(char *path)
 {
   process_t *current = process_current();
   fs_node_t node;
-  uint32_t res = fs_open_node(&node, path, 0);
+  uint32_t res = fs_open_node(&node, path, O_RDONLY);
   if (res) { current->uregs.eax = -res; return; }
   if ((node.flags & FS_DIRECTORY) == 0) {
     current->uregs.eax = -ENOTDIR; return;
@@ -415,13 +425,99 @@ static void syscall_getcwd(char *buf, uint32_t bufsize)
   u_memcpy(buf, process_current()->wd, bufsize);
 }
 
-static void syscall_wait(uint32_t pid)
+static void syscall_wait(uint32_t pid, struct _wait_result *w)
 {
   process_t *current = process_current();
   process_t *target = process_from_pid(pid);
   if (target == NULL) { current->uregs.eax = -ESRCH; return; }
   while (target->is_finished == 0);
+  w->exited = target->exited;
+  w->status = target->exit_status;
+  w->signal = target->signal_pending;
   current->uregs.eax = pid;
+}
+
+static void syscall_fstat(uint32_t fdnum, struct stat *st)
+{
+  process_t *current = process_current();
+  list_node_t *lnode = find_fd(fdnum);
+  if (lnode == NULL) { current->uregs.eax = -EBADF; return; }
+
+  process_fd_t *fd = lnode->value;
+  u_memset(st, 0, sizeof(struct stat));
+  st->st_dev = fd->node.flags;
+  st->st_ino = fd->node.inode;
+  st->st_mode = fd->node.mask;
+  st->st_nlink = 1;
+  st->st_uid = fd->node.uid;
+  st->st_gid = fd->node.gid;
+  st->st_size = fd->node.length;
+  st->st_atime = fd->node.atime;
+  st->st_mtime = fd->node.mtime;
+  st->st_ctime = fd->node.ctime;
+  st->st_blksize = 1024;
+  current->uregs.eax = 0;
+}
+
+static void syscall_lstat(char *path, struct stat *st)
+{
+  process_t *current = process_current();
+  fs_node_t node;
+  uint32_t res = fs_open_node(&node, path, O_NOFOLLOW);
+  if (res) { current->uregs.eax = -res; return; }
+  u_memset(st, 0, sizeof(struct stat));
+  st->st_dev = node.flags;
+  st->st_ino = node.inode;
+  st->st_mode = node.mask;
+  st->st_nlink = 1;
+  st->st_uid = node.uid;
+  st->st_gid = node.gid;
+  st->st_size = node.length;
+  st->st_atime = node.atime;
+  st->st_mtime = node.mtime;
+  st->st_ctime = node.ctime;
+  st->st_blksize = 1024;
+  current->uregs.eax = 0;
+}
+
+static void syscall_lseek(uint32_t fd, int32_t offset, uint32_t whence)
+{
+  process_t *current = process_current();
+  list_node_t *lnode = find_fd(fd);
+  if (lnode == NULL) { current->uregs.eax = -EBADF; return; }
+  process_fd_t *pfd = lnode->value;
+  if (whence == 1) pfd->offset += offset;
+  else if (whence == 2) pfd->offset = pfd->node.length + offset;
+  else pfd->offset = offset;
+  current->uregs.eax = pfd->offset;
+}
+
+static void syscall_thread(uint32_t eip)
+{
+  process_t *current = process_current();
+  process_t *child = kmalloc(sizeof(process_t));
+  if (child == NULL) { current->uregs.eax = -ENOMEM; return; }
+
+  uint32_t res = process_fork(child, current, 1);
+  if (res) { current->uregs.eax = -res; return; }
+
+  child->uregs.eip = eip;
+  child->uregs.eax = 0;
+  current->uregs.eax = child->pid;
+  process_schedule(child);
+}
+
+static void syscall_dup(uint32_t fdnum)
+{
+  process_t *current = process_current();
+  list_node_t *lnode = find_fd(fdnum);
+  if (lnode == NULL) { current->uregs.eax = -EBADF; return; }
+  uint32_t eflags = interrupt_save_disable();
+  process_fd_t *fd1 = lnode->value;
+  ++(fd1->refcount);
+  list_push_back(current->fds, fd1);
+  current->uregs.eax = current->fds->size - 1;
+  interrupt_restore(eflags);
 }
 
 static syscall_t syscall_table[] = {
@@ -449,7 +545,12 @@ static syscall_t syscall_table[] = {
   syscall_movefd,
   syscall_chdir,
   syscall_getcwd,
-  syscall_wait
+  syscall_wait,
+  syscall_fstat,
+  syscall_lstat,
+  syscall_lseek,
+  syscall_thread,
+  syscall_dup
 };
 
 process_registers_t *syscall_handler(cpu_state_t cs, stack_state_t ss)

@@ -52,7 +52,9 @@ uint8_t elf_load(process_image_t *img, uint8_t *buf)
       CHECK(img->text == NULL, "No memory.", ENOMEM);
       u_memcpy(img->text, buf + phdr->p_offset, phdr->p_filesz);
       if (phdr->p_memsz > phdr->p_filesz)
-        u_memset(img->text + phdr->p_memsz, 0, phdr->p_filesz);
+        u_memset(
+          img->text + phdr->p_filesz, 0, phdr->p_memsz - phdr->p_filesz
+          );
       continue;
     }
 
@@ -63,7 +65,9 @@ uint8_t elf_load(process_image_t *img, uint8_t *buf)
     CHECK(img->data == NULL, "No memory.", ENOMEM);
     u_memcpy(img->data, buf + phdr->p_offset, phdr->p_filesz);
     if (phdr->p_memsz > phdr->p_filesz)
-      u_memset(img->data + phdr->p_memsz, 0, phdr->p_filesz);
+      u_memset(
+        img->data + phdr->p_filesz, 0, phdr->p_memsz - phdr->p_filesz
+        );
   }
 
   return 0;

@@ -132,7 +132,7 @@ uint32_t process_create_init(process_t *, process_image_t);
 uint32_t process_load(process_t *, process_image_t);
 
 // Fork a process.
-uint32_t process_fork(process_t *, process_t *);
+uint32_t process_fork(process_t *, process_t *, uint8_t);
 
 // Set a process's argv and envp.
 uint32_t process_set_env(process_t *p, char *argv[], char *envp[]);

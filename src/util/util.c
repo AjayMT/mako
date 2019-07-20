@@ -9,17 +9,26 @@
 #include <stdint.h>
 #include "util.h"
 
-void *u_memset(void *b, char c, size_t len)
+void *u_memset(void *dest, int32_t c, size_t n)
 {
-  for (size_t i = 0; i < len; ++i) ((char *)b)[i] = c;
-  return b;
+  asm volatile(
+    "cld; rep stosb"
+    : "=c"((int){0})
+    : "D"(dest), "a"(c), "c"(n)
+    : "flags", "memory"
+    );
+  return dest;
 }
 
-void *u_memcpy(void *dst, const void *src, size_t n)
+void *u_memcpy(void *dest, const void *src, size_t n)
 {
-  for (size_t i = 0; i < n; ++i)
-    ((char *)dst)[i] = ((char *)src)[i];
-  return dst;
+  asm volatile (
+    "cld; rep movsb"
+    : "=c"((int){0})
+    : "D"(dest), "S"(src), "c"(n)
+    : "flags", "memory"
+    );
+  return dest;
 }
 
 size_t u_strlen(const char *s)

@@ -172,31 +172,34 @@ static void page_fault_handler(
   uint32_t vaddr;
   asm("movl %%cr2, %0" : "=r"(vaddr));
   log_error(
-    "kmain", "eip %x: page fault %x vaddr %x esp %x\n",
-    ss.eip, info.error_code, vaddr, cs.esp
+    "kmain", "eip %x: page fault %x vaddr %x esp %x pid %u\n",
+    ss.eip, info.error_code, vaddr, cs.esp, current_process->pid
     );
 
   if (ss.cs == (USER_MODE_CS | 3)) {
     uint32_t stb = current_process->mmap.stack_bottom;
     if (vaddr < stb && stb - vaddr < PAGE_SIZE) {
       uint32_t paddr = pmm_alloc(1);
-      if (paddr == 0) goto crash;
-      uint32_t vaddr = paging_prev_vaddr(1, stb);
-      if (stb - vaddr != PAGE_SIZE) goto crash;
+      if (paddr == 0) goto die;
+      uint32_t vaddr = stb - PAGE_SIZE;
       page_table_entry_t flags; u_memset(&flags, 0, sizeof(flags));
       flags.rw = 1; flags.user = 1;
       paging_result_t res = paging_map(vaddr, paddr, flags);
-      if (res != PAGING_OK) goto crash;
+      if (res != PAGING_OK) goto die;
       current_process->mmap.stack_bottom = vaddr;
+      log_info(
+        "process", "grew the stack to %x for process %u",
+        vaddr, current_process->pid
+        );
       return;
     }
 
-  crash:
     process_signal(current_process, SIGSEGV);
     return;
   }
 
   // Yikes, kernel page fault.
+die:
   process_finish(current_process);
   current_process->exited = 0;
   current_process->signal_pending = SIGSEGV;
@@ -229,7 +232,7 @@ static void scheduler_interrupt_handler(
     process_sleep_node_t *sleeper = sleep_queue->head->value;
     uint32_t current_time = pit_get_time();
     // Each RTC tick is approximately 7.8125 ms, but we're using ints.
-    if (sleeper->wake_time - current_time <= 8) {
+    if ((int32_t)(sleeper->wake_time - current_time) <= 8) {
       sleeper->process->is_running = 1;
       process_schedule(sleeper->process);
       list_remove(sleep_queue, sleep_queue->head, 1);
@@ -295,7 +298,7 @@ uint32_t process_sleep(process_t *p, uint32_t wake_time)
   sleeper->process = p;
   sleeper->wake_time = wake_time;
 
-  list_node_t *position = NULL;
+  list_node_t *position = sleep_queue->head;
   list_foreach(lchild, sleep_queue) {
     process_sleep_node_t *node = lchild->value;
     if (node->wake_time < sleeper->wake_time)
@@ -370,13 +373,16 @@ uint32_t process_create_init(process_t *out_init, process_image_t img)
 }
 
 // Fork a process.
-uint32_t process_fork(process_t *out_child, process_t *process)
+uint32_t process_fork(
+  process_t *out_child, process_t *process, uint8_t is_thread
+  )
 {
   klock(&process_fork_lock);
 
   process_t *child = out_child;
   u_memcpy(child, process, sizeof(process_t));
   child->in_kernel = 0;
+  child->is_thread = is_thread;
   child->wd = kmalloc(u_strlen(process->wd) + 1);
   CHECK_UNLOCK_F(child->wd == NULL, "No memory.", ENOMEM);
   u_memcpy(child->wd, process->wd, u_strlen(process->wd) + 1);
@@ -385,8 +391,38 @@ uint32_t process_fork(process_t *out_child, process_t *process)
   child->tree_node = node;
   tree_insert(process->tree_node, node);
   child->list_node = NULL;
-  uint32_t err = paging_clone_process_directory(&(child->cr3), process->cr3);
-  CHECK_UNLOCK_F(err, "Failed to clone page directory.", err);
+  if (is_thread == 0) {
+    uint32_t err = paging_clone_process_directory(&(child->cr3), process->cr3);
+    CHECK_UNLOCK_F(err, "Failed to clone page directory.", err);
+  } else {
+    uint32_t eflags = interrupt_save_disable();
+    uint32_t cr3 = paging_get_cr3();
+    paging_set_cr3(process->cr3);
+
+    uint32_t stack_vaddr = paging_prev_vaddr(1, process->mmap.text);
+    uint32_t err = ENOMEM;
+    if (stack_vaddr == 0) {
+    fail:
+      paging_set_cr3(cr3);
+      interrupt_restore(eflags);
+      return err;
+    }
+    uint32_t stack_paddr = pmm_alloc(1);
+    if (stack_paddr == 0) { err = ENOMEM; goto fail; }
+
+    page_table_entry_t flags; u_memset(&flags, 0, sizeof(flags));
+    flags.rw = 1; flags.user = 1;
+    paging_result_t res = paging_map(stack_vaddr, stack_paddr, flags);
+    if (res != PAGING_OK) { err = res; goto fail; }
+
+    child->mmap.stack_top = stack_vaddr + PAGE_SIZE - 1;
+    child->mmap.stack_bottom = stack_vaddr;
+    child->uregs.ebp = child->mmap.stack_top;
+    child->uregs.esp = child->uregs.ebp;
+
+    paging_set_cr3(cr3);
+    interrupt_restore(eflags);
+  }
 
   list_t *fds = kmalloc(sizeof(list_t));
   CHECK_UNLOCK_F(fds == NULL, "No memory.", ENOMEM);
@@ -467,6 +503,13 @@ uint32_t process_load(process_t *process, process_image_t img)
   paging_result_t res = paging_map(stack_vaddr, stack_paddr, flags);
   CHECK_RESTORE(res != PAGING_OK, "Failed to map stack pages.", res);
 
+  uint32_t env_paddr = pmm_alloc(1);
+  CHECK_RESTORE(env_paddr == 0, "No memory.", ENOMEM);
+  flags.user = 1;
+  flags.rw = 1;
+  res = paging_map(ENV_VADDR, env_paddr, flags);
+  CHECK_RESTORE(res != PAGING_OK, "Failed to map env page.", res);
+
   paging_set_cr3(cr3);
 
   process->mmap.text = img.text_vaddr;
@@ -477,7 +520,6 @@ uint32_t process_load(process_t *process, process_image_t img)
   if (process->mmap.heap == 0)
     process->mmap.heap = img.text_vaddr + page_align_up(img.text_len);
   process->uregs.eip = img.entry;
-  process->uregs.ebp = process->mmap.stack_top;
   process->uregs.esp = process->mmap.stack_top;
 
   interrupt_restore(eflags);
@@ -490,14 +532,6 @@ uint32_t process_set_env(process_t *p, char *argv[], char *envp[])
   uint32_t eflags = interrupt_save_disable();
   uint32_t cr3 = paging_get_cr3();
   paging_set_cr3(p->cr3);
-
-  uint32_t env_paddr = pmm_alloc(1);
-  CHECK_RESTORE(env_paddr == 0, "No memory.", ENOMEM);
-  page_table_entry_t flags; u_memset(&flags, 0, sizeof(flags));
-  flags.user = 1;
-  flags.rw = 1;
-  paging_result_t res = paging_map(ENV_VADDR, env_paddr, flags);
-  CHECK_RESTORE(res != PAGING_OK, "Failed to map env page.", res);
 
   uint32_t argc = 0;
   for (; argv[argc]; ++argc);
@@ -554,18 +588,19 @@ void process_finish(process_t *process)
 
   process->is_finished = 1;
   tree_node_t *node = process->tree_node;
-  list_foreach(lchild, node->children) {
-    tree_node_t *tchild = lchild->value;
+  list_node_t *current = node->children->head;
+  list_node_t *next = current ? current->next : NULL;
+  for (; current; current = next) {
+    next = current->next;
+    tree_node_t *tchild = current->value;
     process_t *child_process = tchild->value;
 
     // Threads just die, child processes become children of init.
     if (child_process->is_thread) process_finish(child_process);
     else {
-      list_node_t *next = lchild->next;
-      list_remove(node->children, lchild, 0);
+      list_remove(node->children, current, 0);
       tree_insert(process_tree, tchild);
-      kfree(lchild);
-      lchild = next;
+      kfree(current);
     }
   }
 
@@ -592,6 +627,22 @@ uint8_t process_destroy(process_t *process)
     paging_set_cr3(cr3);
     interrupt_restore(eflags);
     pmm_free(process->cr3, 1);
+  } else {
+    uint32_t eflags = interrupt_save_disable();
+    uint32_t cr3 = paging_get_cr3();
+    paging_set_cr3(process->cr3);
+    for (
+      uint32_t vaddr = process->mmap.stack_bottom;
+      vaddr < process->mmap.stack_top;
+      vaddr += PAGE_SIZE
+      )
+    {
+      uint32_t paddr = paging_get_paddr(vaddr);
+      if (paddr) pmm_free(paddr, 1);
+      paging_unmap(vaddr);
+    }
+    paging_set_cr3(cr3);
+    interrupt_restore(eflags);
   }
 
   for (

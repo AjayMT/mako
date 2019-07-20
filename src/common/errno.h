@@ -5,8 +5,8 @@
 //
 // Based on Darwin/FreeBSD's <sys/errno.h>.
 
-#ifndef _ERRNO_H_
-#define _ERRNO_H_
+#ifndef __ERRNO_H_
+#define __ERRNO_H_
 
 #define EPERM   1
 #define ENOENT  2
@@ -44,4 +44,4 @@
 #define ERANGE  34
 #define EAGAIN  35
 
-#endif /* _ERRNO_H_ */
+#endif /* __ERRNO_H_ */

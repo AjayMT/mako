@@ -30,7 +30,7 @@
 // Constants.
 static const uint32_t SIZE_UNIT         = 8;
 static const uint32_t SIZE_UNIT_OFFSET  = 3;
-static const uint64_t BLOCK_MAGIC       = 0xDEADDEAD;
+static const uint32_t BLOCK_MAGIC       = 0xDEADDEAD;
 
 // The back of every block stores its size and three flags:
 //   `free`: whether the block is free
@@ -62,7 +62,7 @@ struct block_front_s {
   struct block_front_s *bigger;
   struct block_front_s *smaller;
   block_back_t *info;
-  uint64_t magic;
+  uint32_t magic;
 } __attribute__((packed));
 typedef struct block_front_s block_front_t;
 
@@ -381,6 +381,7 @@ void kfree(void *ptr)
 
   if (block->bigger == NULL && block->smaller == NULL) {
     block->smaller = biggest;
+    if (biggest) biggest->bigger = block;
     biggest = block;
     sort_down(block);
   } else sort_up(block);

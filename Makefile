@@ -2,7 +2,7 @@
 CC = i386-elf-gcc
 CFLAGS = -g -nostdlib -fstack-protector-explicit \
          -ffreestanding -Wno-unused -Wall -Wextra -Werror \
-         -lgcc -I${PWD}/src/ -c
+         -Wno-implicit-fallthrough -lgcc -I${PWD}/src/ -c
 LD = i386-elf-ld
 LDFLAGS = -T link.ld -melf_i386
 AS = nasm
@@ -20,6 +20,17 @@ OBJECTS = boot.o gdt.o idt.o pic.o interrupt.o paging.o pmm.o  \
 export
 
 all: kernel.elf
+
+crt: crt0.o crti.o crtn.o
+
+crt0.o: src/libc/crt0.s
+	$(AS) $(ASFLAGS) src/libc/crt0.s -o crt0.o
+
+crti.o: src/libc/crti.s
+	$(AS) $(ASFLAGS) src/libc/crti.s -o crti.o
+
+crtn.o: src/libc/crtn.s
+	$(AS) $(ASFLAGS) src/libc/crtn.s -o crtn.o
 
 libc.a: $(shell find src -type f)
 	$(MAKE) out=${PWD}/libc.a -C src/libc

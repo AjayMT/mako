@@ -107,19 +107,8 @@ void kmain(
   ata_init();
   res = ext2_init("/dev/hda");
 
-  fs_node_t *root = kmalloc(sizeof(fs_node_t));
-  res = fs_open_node(root, "/", 0);
-  log_debug("kmain", "res %u\n", res);
-  uint32_t index = 0;
-  struct dirent *d = fs_readdir(root, index);
-  while (d) {
-    log_debug("kmain", "ent: %s\n", d->name);
-    ++index;
-    d = fs_readdir(root, index);
-  }
-
   fs_node_t test_node;
-  fs_open_node(&test_node, "/rd/test", 0);
+  res = fs_open_node(&test_node, "/rd/test", 0);
   uint8_t *test_text = kmalloc(test_node.length);
   fs_read(&test_node, 0, test_node.length, test_text);
 

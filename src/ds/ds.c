@@ -16,10 +16,12 @@
 
 static void list_destroy_nodes(list_node_t *head)
 {
-  if (head == NULL) return;
-  list_destroy_nodes(head->next);
-  kfree(head->value);
-  kfree(head);
+  while (head) {
+    list_node_t *next = head->next;
+    kfree(head->value);
+    kfree(head);
+    head = next;
+  }
 }
 
 void list_destroy(list_t *list)
