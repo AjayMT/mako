@@ -9,6 +9,7 @@
 #include <errno.h>
 #include <sys/types.h>
 #include <_syscall.h>
+#include <stdlib.h>
 #include <mako.h>
 
 int32_t pipe(uint32_t *readfd, uint32_t *writefd)
@@ -34,9 +35,22 @@ int32_t pagefree(uint32_t vaddr, uint32_t npages)
   return res;
 }
 
-pid_t thread(thread_t t)
+static void thread_start()
 {
-  int32_t res = _syscall1(SYSCALL_THREAD, (uint32_t)t);
+  uint32_t ebx, ecx;
+  asm volatile ("movl %%ebx, %0" : "=r"(ebx));
+  asm volatile ("movl %%ecx, %0" : "=r"(ecx));
+  thread_t t = (thread_t)ebx;
+  t((void *)ecx);
+  exit(0);
+}
+
+void _init_thread()
+{ _syscall1(SYSCALL_THREAD_REGISTER, (uint32_t)thread_start); }
+
+pid_t thread(thread_t t, void *data)
+{
+  int32_t res = _syscall2(SYSCALL_THREAD, (uint32_t)t, (uint32_t)data);
   if (res < 0) { errno = -res; res = -1; }
   return res;
 }

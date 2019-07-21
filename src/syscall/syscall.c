@@ -492,7 +492,7 @@ static void syscall_lseek(uint32_t fd, int32_t offset, uint32_t whence)
   current->uregs.eax = pfd->offset;
 }
 
-static void syscall_thread(uint32_t eip)
+static void syscall_thread(uint32_t eip, uint32_t data)
 {
   process_t *current = process_current();
   process_t *child = kmalloc(sizeof(process_t));
@@ -501,7 +501,9 @@ static void syscall_thread(uint32_t eip)
   uint32_t res = process_fork(child, current, 1);
   if (res) { current->uregs.eax = -res; return; }
 
-  child->uregs.eip = eip;
+  child->uregs.eip = child->thread_start;
+  child->uregs.ebx = eip;
+  child->uregs.ecx = data;
   child->uregs.eax = 0;
   current->uregs.eax = child->pid;
   process_schedule(child);
@@ -519,6 +521,9 @@ static void syscall_dup(uint32_t fdnum)
   current->uregs.eax = current->fds->size - 1;
   interrupt_restore(eflags);
 }
+
+static void syscall_thread_register(uint32_t start)
+{ process_current()->thread_start = start; }
 
 static syscall_t syscall_table[] = {
   syscall_exit,
@@ -550,7 +555,8 @@ static syscall_t syscall_table[] = {
   syscall_lstat,
   syscall_lseek,
   syscall_thread,
-  syscall_dup
+  syscall_dup,
+  syscall_thread_register
 };
 
 process_registers_t *syscall_handler(cpu_state_t cs, stack_state_t ss)

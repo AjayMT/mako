@@ -4,17 +4,19 @@
 #include <unistd.h>
 #include <mako.h>
 
-void thread_func()
+void thread_func(void *num)
 {
+  uint32_t duration = *((uint32_t *)num);
   while (1) {
     printf("child\n");
-    msleep(400);
+    msleep(duration);
   }
 }
 
 int main(int argc, char const *argv[])
 {
-  thread(thread_func);
+  uint32_t child_sleep = 400;
+  thread(thread_func, &child_sleep);
 
   while (1) {
     printf("parent\n");

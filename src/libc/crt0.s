@@ -8,6 +8,7 @@
 global _start
 extern _init_sig
 extern _init_stdio
+extern _init_thread
 extern exit
 extern environ
 extern main
@@ -36,6 +37,7 @@ _start:
 
     call _init
     call _init_sig
+    call _init_thread
     call _init_stdio
     push dword environ
     push dword ARGV_VADDR

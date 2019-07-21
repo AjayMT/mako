@@ -78,6 +78,7 @@ typedef struct process_s {
   process_registers_t uregs;
   process_registers_t kregs;
   uint8_t fpregs[512];
+  uint32_t thread_start;
 
   uint32_t cr3;
   process_mmap_t mmap;
