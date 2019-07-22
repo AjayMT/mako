@@ -105,6 +105,7 @@ static void syscall_execve(char *path, char *argv[], char *envp[])
   for (; buf[line_len] && buf[line_len] != '\n'; ++line_len);
   for (uint32_t i = 0; i < line_len; ++i)
     if (buf[i] == ' ' && i > 2) buf[i] = '\0';
+  buf[line_len] = '\0';
 
   char **new_argv = kmalloc((argc + line_len) * (sizeof(char *)));
   if (new_argv == NULL) { current->uregs.eax = -ENOMEM; return; }

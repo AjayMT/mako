@@ -10,7 +10,7 @@ LIBC_OBJECTS = _syscall.o heap.o dirent.o fcntl.o errno.o stdio.o  \
 all: $(out)
 
 $(out): $(LIBC_OBJECTS) setjmp.o
-	$(AR) $(ARFLAGS) $(out) $(LIBC_OBJECTS)
+	$(AR) $(ARFLAGS) $(out) $(LIBC_OBJECTS) setjmp.o
 
 setjmp.o: c/setjmp.s
 	$(AS) $(ASFLAGS) c/setjmp.s -o setjmp.o

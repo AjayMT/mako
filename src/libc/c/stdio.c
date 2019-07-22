@@ -49,7 +49,7 @@ void _init_stdio()
   if (errno) { errno = 0; stderr->offset = 0; }
 }
 
-uint32_t parse_mode(char *mode)
+uint32_t parse_mode(const char *mode)
 {
   uint32_t flags = 0;
   if (strchr(mode, 'r')) flags |= O_RDONLY;
@@ -58,7 +58,7 @@ uint32_t parse_mode(char *mode)
   return flags;
 }
 
-FILE *fopen(char *path, char *mode)
+FILE *fopen(const char *path, const char *mode)
 {
   uint32_t mode_flags = parse_mode(mode);
   int32_t fd = open(path, mode_flags);
@@ -76,6 +76,17 @@ FILE *fopen(char *path, char *mode)
   f->offset = 0;
   f->ungetcd = EOF;
   return f;
+}
+
+FILE *freopen(const char *path, const char *mode, FILE *stream)
+{
+  FILE *f = fopen(path, mode);
+  if (f == NULL) return NULL;
+
+  fclose(stream);
+  memcpy(stream, f, sizeof(FILE));
+  free(f);
+  return stream;
 }
 
 int32_t fclose(FILE *f)
@@ -129,7 +140,7 @@ size_t fread(void *ptr, size_t size, size_t nitems, FILE *stream)
   return read_size / size;
 }
 
-size_t fwrite(void *ptr, size_t size, size_t nitems, FILE *stream)
+size_t fwrite(const void *ptr, size_t size, size_t nitems, FILE *stream)
 {
   size_t total_size = nitems * size;
   if (total_size == 0) return 0;
@@ -153,7 +164,7 @@ void clearerr(FILE *stream)
 void rewind(FILE *stream)
 { clearerr(stream); fseek(stream, 0, SEEK_SET); }
 
-FILE *popen(char *command, char *mode)
+FILE *popen(const char *command, const char *mode)
 {
   uint32_t mode_flags = parse_mode(mode);
   if (mode_flags != O_RDONLY || mode_flags != O_WRONLY)
@@ -211,6 +222,9 @@ int32_t ungetc(int32_t c, FILE *stream)
   return c;
 }
 
+int32_t fputs(const char *s, FILE *stream)
+{ return fwrite(s, strlen(s), 1, stream); }
+
 void perror(char *s)
 {
   if (s && s[0]) fprintf(stderr, "%s: ", s);
@@ -237,6 +251,9 @@ char *tmpnam(char *s)
 // TODO implement buffering.
 int32_t setvbuf(FILE *stream, char *buf, int32_t type, size_t size)
 { return EOF; }
+
+int32_t remove(const char *path)
+{ return unlink(path); }
 
 // TODO implement renaming.
 int32_t rename(const char *old, const char *new)

@@ -57,7 +57,7 @@ char *getcwd(char *buf, size_t size)
   return buf;
 }
 
-size_t write(uint32_t fd, void *buf, size_t count)
+size_t write(uint32_t fd, const void *buf, size_t count)
 {
   int32_t res = _syscall3(SYSCALL_WRITE, fd, (uint32_t)buf, count);
   if (res < 0) { errno = -res; res = -1; }

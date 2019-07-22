@@ -9,6 +9,8 @@
 #include <string.h>
 #include <stdint.h>
 
+// === TODO actually implement stubbed functions ===
+
 double exp(double x) {
   return pow(2.71828182846, x);
 }
@@ -540,4 +542,45 @@ double frexp(double x, int *exp) {
   double out;
   memcpy(&out, &out_double, sizeof(double));
   return out;
+}
+
+double acos(double x) {
+  return 0.0;
+}
+
+double asin(double x) {
+  return 0.0;
+}
+
+double cosh(double x) {
+  return 0.0;
+}
+
+double ldexp(double a, int exp) {
+  double out = a;
+  while (exp) {
+    out *= 2.0;
+    exp--;
+  }
+  return out;
+}
+
+double log(double x) {
+  return 0.0;
+}
+
+double log10(double x) {
+  return 0.0;
+}
+
+double log2(double x) {
+  return 0.0;
+}
+
+double sinh(double x) {
+  return 0.0;
+}
+
+double tanh(double x) {
+  return 0.0;
 }

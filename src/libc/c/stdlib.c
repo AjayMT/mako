@@ -91,8 +91,6 @@ void abort()
 int32_t system(const char *command)
 { return -1; }
 
-int32_t abs(int32_t i)
-{ return i < 0 ? -i : i; }
 int64_t labs(int64_t i)
 { return i < 0 ? -i : i; }
 

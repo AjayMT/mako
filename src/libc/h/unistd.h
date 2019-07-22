@@ -17,7 +17,7 @@ int32_t close(uint32_t fd);
 pid_t fork();
 int32_t execve(const char *path, char *argv[], char *envp[]);
 char *getcwd(char *buf, size_t size);
-size_t write(uint32_t fd, void *buf, size_t count);
+size_t write(uint32_t fd, const void *buf, size_t count);
 size_t read(uint32_t fd, const void *buf, size_t count);
 int32_t symlink(const char *target, const char *linkpath);
 size_t readlink(const char *pathname, char *buf, size_t bufsize);

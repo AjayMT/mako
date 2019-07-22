@@ -377,3 +377,13 @@ int32_t sprintf(char * buf, const char *fmt, ...) {
   va_end(args);
   return out;
 }
+
+int32_t snprintf(char * buf, size_t size, const char * fmt, ...) {
+  /* XXX This is bad. */
+  (void)size;
+  va_list args;
+  va_start(args, fmt);
+  int32_t out = xvasprintf(buf, fmt, args);
+  va_end(args);
+  return out;
+}

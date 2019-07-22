@@ -15,13 +15,7 @@ void thread_func(void *num)
 
 int main(int argc, char const *argv[])
 {
-  uint32_t child_sleep = 400;
-  thread(thread_func, &child_sleep);
-
-  while (1) {
-    printf("parent\n");
-    msleep(1000);
-  }
+  printf("argc %d argv[0] %s\n", argc, argv[0]);
 
   return 0;
 }

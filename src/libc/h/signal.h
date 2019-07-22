@@ -12,7 +12,9 @@
 #include <sys/types.h>
 #include <_signal.h>
 
-typedef void (*sig_t)(int32_t);
+#define SIG_DFL NULL
+
+typedef void (*sig_t)(int);
 typedef int32_t sig_atomic_t;
 
 void _init_sig();

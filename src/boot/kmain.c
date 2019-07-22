@@ -42,6 +42,12 @@ void gp_fault_handler(
     );
 }
 
+uint32_t debug_write(fs_node_t *n, size_t offset, size_t size, uint8_t *buf)
+{
+  log_debug("procdebug", "%s", (char *)buf);
+  return size;
+}
+
 void kmain(
   uint32_t mb_info_addr,
   uint32_t mb_magic_number,
@@ -124,6 +130,11 @@ void kmain(
   kfree(test_text);
   kfree(p.text);
   kfree(p.data);
+
+  fs_node_t *debug_node = kmalloc(sizeof(fs_node_t));
+  u_memset(debug_node, 0, sizeof(fs_node_t));
+  debug_node->write = debug_write;
+  fs_mount(debug_node, "/dev/debug");
 
   interrupt_restore(eflags);
 }

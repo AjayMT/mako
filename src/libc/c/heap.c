@@ -375,9 +375,9 @@ void *realloc(void *ptr, size_t size)
   char *p = malloc(size);
   if (p == NULL) return NULL;
 
-  block_front_t *block = (block_front_t*)
+  block_front_t *block = (block_front_t *)
     ((uint32_t)ptr - sizeof(block_front_t));
-  if (size < get_size(block)) size = get_size(block);
+  if (size > get_size(block)) size = get_size(block);
   memcpy(p, (char *)ptr, size);
 
   return p;
