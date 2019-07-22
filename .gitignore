@@ -1,0 +1,8 @@
+*.o
+*.elf
+*.iso
+bochslog.txt
+*.out
+iso/modules/rd
+hda.img
+*.a
