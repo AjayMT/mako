@@ -22,6 +22,7 @@ static void handle_sig()
   if (ebx == SIGKILL || ebx == SIGSTOP) exit(0);
   if (signal_handler_table[ebx])
     signal_handler_table[ebx](ebx);
+  else exit(1);
   _syscall0(SYSCALL_SIGNAL_RESUME);
 }
 

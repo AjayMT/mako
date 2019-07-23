@@ -55,10 +55,9 @@ void rewind(FILE *stream);
 FILE *popen(const char *command, const char *mode);
 int32_t pclose(FILE *stream);
 
-int32_t printf(const char *format, ...);
-int32_t fprintf(FILE *stream, const char *format, ...);
-int32_t sprintf(char *str, const char *format, ...);
-int32_t snprintf(char * buf, size_t size, const char * fmt, ...);
+#include <_printf.h>
+
+int32_t fprintf(FILE *stream, const char *fmt, ...);
 
 int32_t fputc(int32_t c, FILE *stream);
 int32_t putc(int32_t c, FILE *stream);

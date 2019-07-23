@@ -371,14 +371,26 @@ void *realloc(void *ptr, size_t size)
   if (ptr == NULL) return malloc(size);
   if (*((uint32_t *)((uint32_t)ptr - sizeof(uint32_t))) != BLOCK_MAGIC)
     return malloc(size);
+  if (size == 0) size = MIN_SIZE;
+
+  block_front_t *block = (block_front_t *)
+    ((uint32_t)ptr - sizeof(block_front_t));
+
+  if (block->info->next && size > get_size(block)) {
+    block_front_t *nb = next_block(block);
+    uint32_t nsize = get_size(block) + get_size(nb)
+      + sizeof(block_front_t) + sizeof(block_back_t);
+    if (nb->info->free && nsize >= size) {
+      merge_block(block); return ptr;
+    }
+  }
 
   char *p = malloc(size);
   if (p == NULL) return NULL;
 
-  block_front_t *block = (block_front_t *)
-    ((uint32_t)ptr - sizeof(block_front_t));
   if (size > get_size(block)) size = get_size(block);
   memcpy(p, (char *)ptr, size);
+  free(ptr);
 
   return p;
 }

@@ -57,7 +57,7 @@ longjmp:
 .zero:
     mov [edi], eax
     mov ebp, [edi + 24]
-    mov esp, [edi + 24]
+    mov esp, [edi + 28]
     push dword [edi + 32]
     mov eax, [edi]
     mov ebx, [edi + 4]

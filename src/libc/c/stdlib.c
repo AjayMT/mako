@@ -107,7 +107,7 @@ static uint32_t rand_seed = 0x420;
 int32_t rand()
 {
   rand_seed = (rand_seed + 1) % RAND_MAX;
-  return rand_seed;
+  return abs(rand_seed);
 }
 void srand(uint32_t seed)
 { rand_seed = seed; }

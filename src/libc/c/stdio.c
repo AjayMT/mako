@@ -7,6 +7,7 @@
 
 #include <stdint.h>
 #include <stddef.h>
+#include <stdarg.h>
 #include <sys/types.h>
 #include <string.h>
 #include <errno.h>
@@ -188,6 +189,8 @@ int32_t putc(int32_t c, FILE *stream)
 { return fputc(c, stream); }
 int32_t putchar(int32_t c)
 { return putc(c, stdout); }
+void _putchar(char c)
+{ putchar(c); }
 
 int32_t fgetc(FILE *stream)
 {
@@ -235,6 +238,17 @@ char *strerror(int32_t errnum)
   static char temp[256];
   sprintf(temp, "%d", errnum);
   return temp;
+}
+
+int32_t fprintf(FILE *stream, const char *fmt, ...)
+{
+  static char buffer[512];
+  va_list args;
+  va_start(args, fmt);
+  int32_t size = vsnprintf(buffer, 512, fmt, args);
+  va_end(args);
+  int32_t out = fwrite(buffer, 1, strlen(buffer), stream);
+  return out;
 }
 
 FILE *tmpfile()

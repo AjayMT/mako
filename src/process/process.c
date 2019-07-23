@@ -173,7 +173,7 @@ static void page_fault_handler(
   asm("movl %%cr2, %0" : "=r"(vaddr));
   log_error(
     "kmain", "eip %x: page fault %x vaddr %x esp %x pid %u\n",
-    ss.eip, info.error_code, vaddr, cs.esp, current_process->pid
+    ss.eip, info.error_code, vaddr, ss.user_esp, current_process->pid
     );
 
   if (ss.cs == (USER_MODE_CS | 3)) {

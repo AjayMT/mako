@@ -67,7 +67,7 @@ bochs: mako.iso
 	bochs -f bochsrc.txt -q
 
 qemu: mako.iso
-	qemu-system-i386 -serial file:com1.out -cdrom mako.iso \
+	qemu-system-i386 -serial file:com1.out -cdrom mako.iso -m 256M \
 	                 -drive format=raw,file=hda.img -d cpu_reset
 
 .PHONY: clean
