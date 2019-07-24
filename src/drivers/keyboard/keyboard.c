@@ -196,8 +196,8 @@ static void keyboard_handle_interrupt(
     keyboard_buffer.tail = keyboard_buffer.buffer;
 
   // for debugging
-  char c = scan_code_to_ascii(code);
-  if (c != -1) fb_write(&c, 1);
+  // char c = scan_code_to_ascii(code);
+  // if (c != -1) fb_write(&c, 1);
 }
 
 // Initialize the keyboard.

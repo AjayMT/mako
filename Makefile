@@ -52,16 +52,7 @@ rd: make_rd.py $(shell find rdroot -type f)
 
 mako.iso: kernel.elf rd
 	cp kernel.elf iso/boot/kernel.elf
-	mkisofs -R                              \
-	        -b boot/grub/stage2_eltorito    \
-	        -no-emul-boot                   \
-	        -boot-load-size 4               \
-	        -A os                           \
-	        -input-charset utf8             \
-	        -quiet                          \
-	        -boot-info-table                \
-	        -o mako.iso                     \
-	        iso
+	i386-elf-grub-mkrescue -o mako.iso iso
 
 bochs: mako.iso
 	bochs -f bochsrc.txt -q

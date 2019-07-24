@@ -85,7 +85,6 @@ void kmain(
   enable_interrupts();
   uint32_t eflags = interrupt_save_disable();
 
-  fb_clear();
   serial_init(SERIAL_COM1_BASE);
   fpu_init();
   tss_init();
@@ -112,6 +111,22 @@ void kmain(
 
   ata_init();
   res = ext2_init("/dev/hda");
+
+  uint32_t video_vaddr = paging_next_vaddr(500, KERNEL_START_VADDR);
+  page_table_entry_t flags; u_memset(&flags, 0, sizeof(flags));
+  flags.rw = 1;
+  for (uint32_t i = 0; i < 500; ++i)
+    paging_map(video_vaddr + (i << 12), 0xFD000000 + (i << 12), flags);
+  uint8_t *video = (uint8_t *)video_vaddr;
+  uint8_t *where = video;
+  for (uint32_t i = 0; i < 100; ++i) {
+    for (uint32_t j = 0; j < 100; ++j) {
+      where[j*4] = 255;
+      where[j*4 + 1] = 255;
+      where[j*4 + 2] = 255;
+    }
+    where += 3200;
+  }
 
   fs_node_t test_node;
   res = fs_open_node(&test_node, "/rd/test", 0);

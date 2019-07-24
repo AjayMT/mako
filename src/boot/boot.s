@@ -15,7 +15,8 @@ extern kernel_end               ; end address of the kernel exported from link.l
 
     MOD_ALIGN equ 1               ; align loaded modules on page boundaries
     MEMINFO equ 2                 ; provide memory map
-    FLAGS equ MOD_ALIGN | MEMINFO ; multiboot flags
+    GRAPHICS equ 4                ; Set graphics mode
+    FLAGS equ MOD_ALIGN | MEMINFO | GRAPHICS
     MAGIC equ 0x1BADB002          ; magic constant for multiboot
     CHECKSUM equ -(MAGIC + FLAGS) ; magic + checksum + flags = 0
 
@@ -41,6 +42,17 @@ align 4
     dd MAGIC
     dd FLAGS
     dd CHECKSUM
+    dd 0
+    dd 0
+    dd 0
+    dd 0
+    dd 0
+
+    ; Request linear graphics mode.
+    dd 0
+    dd 0
+    dd 0
+    dd 32
 
 section .text
 loader:                         ; entry point called by GRUB
