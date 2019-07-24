@@ -39,5 +39,6 @@
 #define SYSCALL_THREAD          28
 #define SYSCALL_DUP             29
 #define SYSCALL_THREAD_REGISTER 30
+#define SYSCALL_YIELD           31
 
 #endif /* _SYSCALL_NUMS_H_ */

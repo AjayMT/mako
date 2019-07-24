@@ -335,8 +335,10 @@ void *kmalloc(size_t size)
   if (size == 0) return NULL;
   if (biggest == NULL || get_size(biggest) < size) {
     get_heap(size);
-    if (biggest == NULL || get_size(biggest) < size)
+    if (biggest == NULL || get_size(biggest) < size) {
+      interrupt_restore(flags);
       return NULL;
+    }
   }
 
   if (get_size(biggest) - size < MIN_SIZE)

@@ -12,7 +12,6 @@
 #include <stdlib.h>
 
 // This is adapted from the kernel's heap implementation, see `src/kheap`.
-// Not thread safe!
 
 // This is a relatively simple worst-fit allocator. It maintains
 // a list of free blocks of memory, always sorted from largest to
@@ -74,6 +73,9 @@ static const uint32_t MIN_SIZE = sizeof(block_front_t)
 
 // The largest available block and head of the size list.
 static block_front_t *biggest = NULL;
+
+// Lock for synchronisation.
+static volatile uint32_t heap_lock = 0;
 
 // Utility functions.
 static inline uint32_t page_align_up(uint32_t addr)
@@ -309,12 +311,16 @@ static void release_heap(block_front_t *block)
 // Allocate memory.
 void *malloc(size_t size)
 {
+  thread_lock(&heap_lock);
+
   size = block_align_up(size);
   if (size == 0) return NULL;
   if (biggest == NULL || get_size(biggest) < size) {
     get_heap(size);
-    if (biggest == NULL || get_size(biggest) < size)
+    if (biggest == NULL || get_size(biggest) < size) {
+      thread_unlock(&heap_lock);
       return NULL;
+    }
   }
 
   if (get_size(biggest) - size < MIN_SIZE)
@@ -327,6 +333,7 @@ void *malloc(size_t size)
 
   if (biggest) sort_down(biggest);
 
+  thread_unlock(&heap_lock);
   return (void *)((uint32_t)ret + sizeof(block_front_t));
 }
 
@@ -336,6 +343,8 @@ void free(void *ptr)
   if (ptr == NULL) return;
   if (*((uint32_t *)((uint32_t)ptr - sizeof(uint32_t))) != BLOCK_MAGIC)
     return;
+
+  thread_lock(&heap_lock);
 
   block_front_t *block = (block_front_t*)
     ((uint32_t)ptr - sizeof(block_front_t));
@@ -363,6 +372,7 @@ void free(void *ptr)
   } else sort_up(block);
 
   release_heap(block);
+  thread_unlock(&heap_lock);
 }
 
 // Resize or create an allocation.
@@ -373,6 +383,8 @@ void *realloc(void *ptr, size_t size)
     return malloc(size);
   if (size == 0) size = MIN_SIZE;
 
+  thread_lock(&heap_lock);
+
   block_front_t *block = (block_front_t *)
     ((uint32_t)ptr - sizeof(block_front_t));
 
@@ -381,9 +393,13 @@ void *realloc(void *ptr, size_t size)
     uint32_t nsize = get_size(block) + get_size(nb)
       + sizeof(block_front_t) + sizeof(block_back_t);
     if (nb->info->free && nsize >= size) {
-      merge_block(block); return ptr;
+      merge_block(block);
+      thread_unlock(&heap_lock);
+      return ptr;
     }
   }
+
+  thread_unlock(&heap_lock);
 
   char *p = malloc(size);
   if (p == NULL) return NULL;

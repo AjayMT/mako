@@ -61,3 +61,15 @@ int32_t msleep(uint32_t duration)
   if (res < 0) { errno = -res; res = -1; }
   return res;
 }
+
+void yield()
+{ _syscall0(SYSCALL_YIELD); }
+
+void thread_lock(thread_lock_t l)
+{
+  while (__sync_lock_test_and_set(l, 1)) yield();
+}
+
+void thread_unlock(thread_lock_t l)
+{ __sync_lock_release(l); }
+

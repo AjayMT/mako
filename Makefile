@@ -1,6 +1,6 @@
 
 CC = i386-elf-gcc
-CFLAGS = -g -nostdlib -fstack-protector-explicit \
+CFLAGS = -g -nostdlib -fstack-protector-explicit -finline-small-functions \
          -ffreestanding -Wno-unused -Wall -Wextra -Werror \
          -Wno-implicit-fallthrough -lgcc -I${PWD}/src/ -c
 LD = i386-elf-ld

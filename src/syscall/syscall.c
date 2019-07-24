@@ -526,6 +526,9 @@ static void syscall_dup(uint32_t fdnum)
 static void syscall_thread_register(uint32_t start)
 { process_current()->thread_start = start; }
 
+static void syscall_yield()
+{ process_switch_next(); }
+
 static syscall_t syscall_table[] = {
   syscall_exit,
   syscall_fork,
@@ -557,7 +560,8 @@ static syscall_t syscall_table[] = {
   syscall_lseek,
   syscall_thread,
   syscall_dup,
-  syscall_thread_register
+  syscall_thread_register,
+  syscall_yield
 };
 
 process_registers_t *syscall_handler(cpu_state_t cs, stack_state_t ss)
