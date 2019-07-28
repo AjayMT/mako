@@ -10,9 +10,7 @@
 
 #include <stdint.h>
 
-extern const uint32_t KEYBOARD_INTERRUPT_INDEX;
-
 // Initialize the keyboard driver.
-void keyboard_init();
+uint32_t keyboard_init();
 
 #endif /* _KEYBOARD_H_ */

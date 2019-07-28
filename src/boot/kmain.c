@@ -1,5 +1,4 @@
 
-#include <drivers/framebuffer/framebuffer.h>
 #include <drivers/serial/serial.h>
 #include <drivers/keyboard/keyboard.h>
 #include <tss/tss.h>
@@ -21,6 +20,7 @@
 #include <drivers/ata/ata.h>
 #include <ext2/ext2.h>
 #include <fpu/fpu.h>
+#include <ui/ui.h>
 #include <common/multiboot.h>
 #include <common/constants.h>
 #include <debug/log.h>
@@ -94,7 +94,6 @@ void kmain(
   pic_init();
   pit_init();
   rtc_init();
-  keyboard_init();
 
   register_interrupt_handler(13, gp_fault_handler);
 
@@ -112,21 +111,14 @@ void kmain(
   ata_init();
   res = ext2_init("/dev/hda");
 
-  uint32_t video_vaddr = paging_next_vaddr(500, KERNEL_START_VADDR);
+  res = keyboard_init();
+
+  uint32_t video_vaddr = paging_next_vaddr(469, KERNEL_START_VADDR);
   page_table_entry_t flags; u_memset(&flags, 0, sizeof(flags));
   flags.rw = 1;
-  for (uint32_t i = 0; i < 500; ++i)
+  for (uint32_t i = 0; i < 469; ++i)
     paging_map(video_vaddr + (i << 12), 0xFD000000 + (i << 12), flags);
-  uint8_t *video = (uint8_t *)video_vaddr;
-  uint8_t *where = video;
-  for (uint32_t i = 0; i < 100; ++i) {
-    for (uint32_t j = 0; j < 100; ++j) {
-      where[j*4] = 255;
-      where[j*4 + 1] = 255;
-      where[j*4 + 2] = 255;
-    }
-    where += 3200;
-  }
+  res = ui_init(video_vaddr);
 
   fs_node_t test_node;
   res = fs_open_node(&test_node, "/rd/test", 0);

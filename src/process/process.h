@@ -84,10 +84,17 @@ typedef struct process_s {
   process_mmap_t mmap;
 
   uint32_t signal_pending;
+  uint32_t next_signal;
   uint32_t signal_eip;
   uint8_t exited;
   uint32_t exit_status;
   process_registers_t saved_signal_regs;
+
+  uint32_t ui_eip;
+  uint32_t ui_event_buffer;
+  list_t *ui_event_queue;
+  uint8_t ui_event_pending;
+  process_registers_t saved_ui_regs;
 
   tree_node_t *tree_node;
   list_node_t *list_node;
@@ -143,8 +150,5 @@ void process_schedule(process_t *);
 
 // Mark a process as finished, deal with children.
 void process_finish(process_t *);
-
-// Destroy a process.
-uint8_t process_destroy(process_t *);
 
 #endif /* _PROCESS_H_ */

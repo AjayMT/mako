@@ -1,7 +1,7 @@
 
 CC = i386-elf-gcc
 CFLAGS = -ffreestanding -nostdlib -I../src/ \
-         -I../src/libc/h -c
+         -I../src/libc/h -I../src/libui/h -c
 AS = nasm
 ASFLAGS = -f elf32
 LD = i386-elf-ld
@@ -15,11 +15,11 @@ all: test test2
 
 test: test.o
 	$(LD) $(LDFLAGS) ../crt0.o ../crti.o $(CRTBEGIN_OBJ) \
-	                 test.o $(CRTEND_OBJ) ../crtn.o -o test -lc -lgcc
+	                 test.o $(CRTEND_OBJ) ../crtn.o -o test -lc -lui -lgcc
 
 test2: test2.o
 	$(LD) $(LDFLAGS) ../crt0.o ../crti.o $(CRTBEGIN_OBJ) \
-	                 test2.o $(CRTEND_OBJ) ../crtn.o -o test2 -lc -lgcc
+	                 test2.o $(CRTEND_OBJ) ../crtn.o -o test2 -lc -lui -lgcc
 
 test.o: test.c
 	$(CC) $(CFLAGS) test.c -o test.o

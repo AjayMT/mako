@@ -21,6 +21,7 @@
 #include <util/util.h>
 #include <sys/wait.h>
 #include <sys/stat.h>
+#include <ui/ui.h>
 #include "syscall.h"
 
 typedef void (*syscall_t)();
@@ -527,7 +528,62 @@ static void syscall_thread_register(uint32_t start)
 { process_current()->thread_start = start; }
 
 static void syscall_yield()
-{ process_switch_next(); }
+{
+  disable_interrupts();
+  process_current()->in_kernel = 0;
+  process_switch_next();
+}
+
+static void syscall_ui_register(uint32_t eip, uint32_t buffer)
+{
+  process_t *current = process_current();
+  current->ui_eip = eip;
+  current->ui_event_buffer = buffer;
+  current->uregs.eax = 0;
+}
+
+static void syscall_ui_make_responder()
+{
+  process_t *current = process_current();
+  current->uregs.eax = -ui_make_responder(current);
+}
+
+static void syscall_ui_split(ui_split_type_t type)
+{
+  process_t *current = process_current();
+  current->uregs.eax = -ui_split(current, type);
+}
+
+static void syscall_ui_resume()
+{
+  process_t *current = process_current();
+  u_memcpy(
+    &(current->uregs), &(current->saved_ui_regs), sizeof(process_registers_t)
+    );
+  current->ui_event_pending = 0;
+  list_pop_front(current->ui_event_queue);
+}
+
+static void syscall_ui_swap_buffers(uint32_t buf)
+{
+  process_t *current = process_current();
+  current->uregs.eax = -ui_swap_buffers(current, buf);
+}
+
+static void syscall_ui_wait()
+{
+  disable_interrupts();
+  process_t *current = process_current();
+  current->is_running = 0;
+  current->in_kernel = 0;
+  process_switch_next();
+}
+
+static void syscall_ui_yield()
+{
+  process_t *current = process_current();
+  current->uregs.eax = -ui_yield(current);
+}
 
 static syscall_t syscall_table[] = {
   syscall_exit,
@@ -561,7 +617,14 @@ static syscall_t syscall_table[] = {
   syscall_thread,
   syscall_dup,
   syscall_thread_register,
-  syscall_yield
+  syscall_yield,
+  syscall_ui_register,
+  syscall_ui_make_responder,
+  syscall_ui_split,
+  syscall_ui_resume,
+  syscall_ui_swap_buffers,
+  syscall_ui_wait,
+  syscall_ui_yield
 };
 
 process_registers_t *syscall_handler(cpu_state_t cs, stack_state_t ss)
@@ -581,5 +644,35 @@ process_registers_t *syscall_handler(cpu_state_t cs, stack_state_t ss)
 
   disable_interrupts();
   current->in_kernel = 0;
+
+  if (current->next_signal && current->signal_pending == 0) {
+    u_memcpy(
+      &(current->saved_signal_regs), &(current->uregs), sizeof(process_registers_t)
+      );
+    current->signal_pending = current->next_signal;
+    current->next_signal = 0;
+    current->uregs.eip = current->signal_eip;
+    current->uregs.ebx = current->signal_pending;
+  } else if (
+    current->ui_event_queue->size
+    && current->ui_event_pending == 0
+    && current->ui_eip
+    && current->ui_event_buffer
+    )
+  {
+    ui_event_t *next_event = current->ui_event_queue->head->value;
+    uint32_t cr3 = paging_get_cr3();
+    paging_set_cr3(current->cr3);
+    u_memcpy(
+      (ui_event_t *)current->ui_event_buffer, next_event, sizeof(ui_event_t)
+      );
+    paging_set_cr3(cr3);
+    u_memcpy(
+      &(current->saved_ui_regs), &(current->uregs), sizeof(process_registers_t)
+      );
+    current->uregs.eip = current->ui_eip;
+    current->ui_event_pending = 1;
+  }
+
   return &(current->uregs);
 }

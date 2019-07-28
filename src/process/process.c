@@ -19,6 +19,7 @@
 #include <pmm/pmm.h>
 #include <paging/paging.h>
 #include <fpu/fpu.h>
+#include <ui/ui.h>
 #include <util/util.h>
 #include <debug/log.h>
 #include <common/constants.h>
@@ -108,6 +109,9 @@ void process_switch(process_t *process)
   else enter_usermode(&(process->uregs));
 }
 
+// Destroy a process.
+static uint32_t process_destroy(process_t *);
+
 // Switch to next scheduled process.
 uint32_t process_switch_next()
 {
@@ -141,7 +145,7 @@ uint32_t process_switch_next()
     if (next == NULL) next = running_list->head;
     process_t *p = lnode->value;
     if (p->is_finished) {
-      uint8_t res = process_destroy(p);
+      uint32_t res = process_destroy(p);
       CHECK(res, "Failed to destroy process.", res);
     } else if (p->is_running) break;
     lnode = next;
@@ -151,12 +155,37 @@ uint32_t process_switch_next()
   uint32_t res = paging_copy_kernel_space(next->cr3);
   CHECK(res, "Failed to copy kernel address space.", res);
 
-  if (next->signal_pending && next->in_kernel == 0) {
+  if (
+    next->next_signal && next->in_kernel == 0 && next->signal_pending == 0
+    )
+  {
     u_memcpy(
       &(next->saved_signal_regs), &(next->uregs), sizeof(process_registers_t)
       );
+    next->signal_pending = next->next_signal;
+    next->next_signal = 0;
     next->uregs.eip = next->signal_eip;
     next->uregs.ebx = next->signal_pending;
+  } else if (
+    next->ui_event_queue->size
+    && next->ui_event_pending == 0
+    && next->in_kernel == 0
+    && next->ui_eip
+    && next->ui_event_buffer
+    )
+  {
+    ui_event_t *next_event = next->ui_event_queue->head->value;
+    uint32_t cr3 = paging_get_cr3();
+    paging_set_cr3(next->cr3);
+    u_memcpy(
+      (ui_event_t *)next->ui_event_buffer, next_event, sizeof(ui_event_t)
+      );
+    paging_set_cr3(cr3);
+    u_memcpy(
+      &(next->saved_ui_regs), &(next->uregs), sizeof(process_registers_t)
+      );
+    next->uregs.eip = next->ui_eip;
+    next->ui_event_pending = 1;
   }
 
   process_switch(next);
@@ -316,7 +345,7 @@ uint32_t process_sleep(process_t *p, uint32_t wake_time)
 void process_signal(process_t *p, uint32_t signum)
 {
   if (signum == 0) return;
-  p->signal_pending = signum;
+  p->next_signal = signum;
   if (p->signal_eip == 0) process_finish(p);
   if (p == current_process) process_switch_next();
 }
@@ -341,6 +370,9 @@ uint32_t process_create_init(process_t *out_init, process_image_t img)
   init->fds = kmalloc(sizeof(list_t));
   CHECK(init->fds == NULL, "No memory.", ENOMEM);
   u_memset(init->fds, 0, sizeof(list_t));
+  init->ui_event_queue = kmalloc(sizeof(list_t));
+  CHECK(init->ui_event_queue == NULL, "No memory.", ENOMEM);
+  u_memset(init->ui_event_queue, 0, sizeof(list_t));
 
   page_directory_t kernel_pd; uint32_t kernel_cr3;
   paging_get_kernel_pd(&kernel_pd, &kernel_cr3);
@@ -392,6 +424,11 @@ uint32_t process_fork(
   tree_insert(process->tree_node, node);
   child->list_node = NULL;
   if (is_thread == 0) {
+    child->ui_event_queue = kmalloc(sizeof(list_t));
+    CHECK_UNLOCK_F(child->ui_event_queue == NULL, "No memory.", ENOMEM);
+    u_memset(child->ui_event_queue, 0, sizeof(list_t));
+    child->ui_eip = 0; child->ui_event_buffer = 0; child->ui_event_pending = 0;
+
     uint32_t err = paging_clone_process_directory(&(child->cr3), process->cr3);
     CHECK_UNLOCK_F(err, "Failed to clone page directory.", err);
   } else {
@@ -577,16 +614,18 @@ uint32_t process_set_env(process_t *p, char *argv[], char *envp[])
 void process_schedule(process_t *process)
 {
   klock(&process_schedule_lock);
+  uint32_t eflags = interrupt_save_disable();
   list_push_back(ready_queue, process);
+  interrupt_restore(eflags);
   kunlock(&process_schedule_lock);
 }
 
 // Mark a process as finished, deal with children.
 void process_finish(process_t *process)
 {
-  klock(&process_schedule_lock);
+  if (process->ui_eip) ui_kill(process);
 
-  process->is_finished = 1;
+  klock(&process_schedule_lock);
   tree_node_t *node = process->tree_node;
   list_node_t *current = node->children->head;
   list_node_t *next = current ? current->next : NULL;
@@ -596,39 +635,36 @@ void process_finish(process_t *process)
     process_t *child_process = tchild->value;
 
     // Threads just die, child processes become children of init.
-    if (child_process->is_thread) process_finish(child_process);
-    else {
+    if (child_process->is_thread) {
+      kunlock(&process_schedule_lock);
+      process_finish(child_process);
+      klock(&process_schedule_lock);
+    } else {
       list_remove(node->children, current, 0);
       tree_insert(process_tree, tchild);
       kfree(current);
     }
   }
+  process->is_finished = 1;
 
   kunlock(&process_schedule_lock);
 }
 
 // Destroy a process.
-uint8_t process_destroy(process_t *process)
+static uint32_t process_destroy(process_t *process)
 {
-  klock(&process_schedule_lock);
-
   if (process->is_thread == 0) {
     uint32_t cr3 = paging_get_cr3();
-    uint32_t eflags = interrupt_save_disable();
     paging_set_cr3(process->cr3);
     uint8_t res = paging_clear_user_space();
     if (res) {
       log_error("process", "Failed to clear user address space.\n");
       paging_set_cr3(cr3);
-      interrupt_restore(eflags);
-      kunlock(&process_schedule_lock);
       return res;
     }
     paging_set_cr3(cr3);
-    interrupt_restore(eflags);
     pmm_free(process->cr3, 1);
   } else {
-    uint32_t eflags = interrupt_save_disable();
     uint32_t cr3 = paging_get_cr3();
     paging_set_cr3(process->cr3);
     for (
@@ -642,7 +678,6 @@ uint8_t process_destroy(process_t *process)
       paging_unmap(vaddr);
     }
     paging_set_cr3(cr3);
-    interrupt_restore(eflags);
   }
 
   for (
@@ -653,7 +688,7 @@ uint8_t process_destroy(process_t *process)
   {
     pmm_free(paging_get_paddr(vaddr), 1);
     paging_result_t res = paging_unmap(vaddr);
-    CHECK_UNLOCK_S(res != PAGING_OK, "paging_unmap failed.", res);
+    CHECK(res != PAGING_OK, "paging_unmap failed.", res);
   }
 
   tree_node_t *tree_node = process->tree_node;
@@ -682,12 +717,12 @@ uint8_t process_destroy(process_t *process)
     kfree(fd);
   }
 
+  kfree(process->fds);
+  list_destroy(process->ui_event_queue);
   kfree(process->wd);
   kfree(tree_node);
   kfree(list_node);
   kfree(process);
-
-  kunlock(&process_schedule_lock);
 
   return 0;
 }
