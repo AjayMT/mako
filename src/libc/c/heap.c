@@ -350,12 +350,14 @@ void free(void *ptr)
     ((uint32_t)ptr - sizeof(block_front_t));
   if (block->info->free) return;
   block->info->free = 1;
+  uint8_t in_list = 0;
 
   if (block->info->prev) {
     block_front_t *pb = previous_block(block);
     if (pb->info->free) {
       merge_block(pb);
       block = pb;
+      in_list = 1;
     }
   }
 
@@ -364,7 +366,7 @@ void free(void *ptr)
     if (nb->info->free) merge_block(block);
   }
 
-  if (block->bigger == NULL && block->smaller == NULL) {
+  if (!in_list) {
     block->smaller = biggest;
     if (biggest) biggest->bigger = block;
     biggest = block;
