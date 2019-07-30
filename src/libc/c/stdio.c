@@ -263,6 +263,8 @@ char *tmpnam(char *s)
 }
 
 // TODO implement buffering.
+int32_t setbuf(FILE *stream, char *buf)
+{ return EOF; }
 int32_t setvbuf(FILE *stream, char *buf, int32_t type, size_t size)
 { return EOF; }
 

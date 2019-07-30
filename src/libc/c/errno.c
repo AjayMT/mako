@@ -8,4 +8,4 @@
 #include <stdint.h>
 #include <errno.h>
 
-int32_t errno = 0;
+int errno = 0;

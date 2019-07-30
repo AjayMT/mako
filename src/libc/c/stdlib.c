@@ -81,6 +81,8 @@ int32_t unsetenv(const char *name)
   return 0;
 }
 
+int32_t atexit(void *f)
+{ return 0; }
 void _fini();
 void exit(int32_t status)
 { _fini(); _syscall1(SYSCALL_EXIT, (uint32_t)status); }

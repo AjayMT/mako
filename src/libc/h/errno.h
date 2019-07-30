@@ -8,9 +8,8 @@
 #ifndef _ERRNO_H_
 #define _ERRNO_H_
 
-#include <stdint.h>
 #include <_errno.h>
 
-extern int32_t errno;
+extern int errno;
 
 #endif /* _ERRNO_H_ */

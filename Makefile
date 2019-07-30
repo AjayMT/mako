@@ -4,7 +4,7 @@ CFLAGS = -g -nostdlib -fstack-protector-explicit -finline-small-functions \
          -ffreestanding -Wno-unused -Wall -Wextra -Werror \
          -Wno-implicit-fallthrough -lgcc -I${PWD}/src/ -c
 LD = i386-elf-ld
-LDFLAGS = -T link.ld -melf_i386
+LDFLAGS = -T link.ld
 AS = nasm
 ASFLAGS = -g -I${PWD}/src/ -f elf
 
@@ -20,6 +20,13 @@ OBJECTS = boot.o gdt.o idt.o pic.o interrupt.o paging.o pmm.o  \
 export
 
 all: kernel.elf
+
+sysroot: crt libc.a libui.a
+	cp -rH src/libc/h/* sysroot/usr/include
+	cp -rH src/libui/h/* sysroot/usr/include
+	cp libc.a sysroot/usr/lib
+	cp libui.a sysroot/usr/lib
+	cp crt{0,i,n}.o sysroot/usr/lib
 
 crt: crt0.o crti.o crtn.o
 
@@ -69,4 +76,5 @@ qemu: mako.iso
 clean:
 	rm -rf *.o *.a kernel.elf                                 \
 	       iso/boot/kernel.elf mako.iso bochslog.txt com1.out \
-	       iso/modules/rd src/libc/*.o src/libui/*.o
+	       iso/modules/rd src/libc/*.o src/libui/*.o          \
+	       sysroot/usr/include/{*,sys/*}.h sysroot/usr/lib/*.{a,o}

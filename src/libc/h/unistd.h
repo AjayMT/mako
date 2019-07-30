@@ -15,7 +15,9 @@
 pid_t getpid();
 int32_t close(uint32_t fd);
 pid_t fork();
-int32_t execve(const char *path, char *argv[], char *envp[]);
+int32_t execve(const char *path, char *const argv[], char *const envp[]);
+int32_t execv(const char *path, char *const argv[]);
+int32_t execvp(const char *path, char *const argv[]);
 char *getcwd(char *buf, size_t size);
 size_t write(uint32_t fd, const void *buf, size_t count);
 size_t read(uint32_t fd, const void *buf, size_t count);

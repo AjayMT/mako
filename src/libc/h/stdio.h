@@ -79,6 +79,7 @@ char *tmpnam(char *s);
 #define _IOLBF 1
 #define _IOFBF 2
 
+int32_t setbuf(FILE *stream, char *buf);
 int32_t setvbuf(FILE *stream, char *buf, int32_t type, size_t size);
 
 int32_t remove(const char *path);

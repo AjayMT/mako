@@ -34,7 +34,7 @@ pid_t fork()
   return res;
 }
 
-int32_t execve(const char *path, char *argv[], char *envp[])
+int32_t execve(const char *path, char *const argv[], char *const envp[])
 {
   char *largv[] = { NULL };
   char *lenvp[] = { NULL };
@@ -46,6 +46,11 @@ int32_t execve(const char *path, char *argv[], char *envp[])
   if (res < 0) { errno = -res; res = -1; }
   return res;
 }
+
+int32_t execv(const char *path, char *const argv[])
+{ return execve(path, argv, environ); }
+int32_t execvp(const char *path, char *const argv[])
+{ return execve(path, argv, environ); }
 
 char *getcwd(char *buf, size_t size)
 {

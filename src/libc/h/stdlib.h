@@ -20,6 +20,7 @@ int32_t unsetenv(const char *name);
 #define EXIT_SUCCESS 0
 #define EXIT_FAILURE 1
 
+int32_t atexit(void *);
 void exit(int32_t status);
 void abort();
 int32_t system(const char *command);
