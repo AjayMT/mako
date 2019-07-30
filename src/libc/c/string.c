@@ -75,6 +75,14 @@ char *strdup(const char *s)
 
 char *strcpy(char *dest, const char *src)
 { return memcpy(dest, src, strlen(src) + 1); }
+char *strncpy(char *dest, const char *src, size_t len)
+{
+  size_t slen = strlen(src);
+  size_t min = slen < len ? slen : len;
+  memcpy(dest, src, min);
+  if (slen < len) memset(dest + slen, 0, len - slen);
+  return dest;
+}
 
 char *strchr(const char *s, int32_t c)
 {

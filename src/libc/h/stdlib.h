@@ -48,4 +48,11 @@ uint64_t strtoull(const char *str, char **endptr, int32_t base);
 int32_t rand();
 void srand(uint32_t seed);
 
+void qsort(
+  void *base,
+  size_t n,
+  size_t width,
+  int (*cmp)(const void *, const void *)
+  );
+
 #endif /* _STDLIB_H_ */

@@ -20,6 +20,7 @@ int32_t memcmp(const void *p1, const void *p2, size_t n);
 
 char *strdup(const char *s);
 char *strcpy(char *dest, const char *src);
+char *strncpy(char *dest, const char *src, size_t len);
 char *strchr(const char *s, int32_t c);
 char *strrchr(const char *s, int32_t c);
 char *strpbrk(const char *s, const char *b);
