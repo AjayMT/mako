@@ -826,7 +826,7 @@ static uint32_t ext2_read(
   uint32_t end_post_offset = end - (end_block * self->block_size);
   uint32_t size_to_read = end - offset;
 
-  uint8_t *blk_buf = kmalloc(sizeof(self->block_size));
+  uint8_t *blk_buf = kmalloc(self->block_size);
   CHECK(blk_buf == NULL, "No memory.", 0);
   if (start_block == end_block) {
     res = read_inode_block(self, &inode, start_block, blk_buf);
