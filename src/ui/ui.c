@@ -192,8 +192,136 @@ uint32_t ui_make_responder(process_t *p)
   return 0;
 }
 
+#define CHECK_UNLOCK(err, msg, code) if ((err)) {           \
+    log_error("ui", msg "\n"); kunlock(&free_windows_lock); \
+    kunlock(&responders_lock); return (code);               \
+  }
+
 uint32_t ui_kill(process_t *p)
 {
+  ui_responder_t *r = responder_from_process(p);
+  if (r == NULL) return EINVAL;
+
+  klock(&responders_lock);
+  klock(&free_windows_lock);
+
+  list_t *h_expd_l = kmalloc(sizeof(list_t));
+  CHECK_UNLOCK(h_expd_l == NULL, "No memory.", ENOMEM);
+  u_memset(h_expd_l, 0, sizeof(list_t));
+
+  list_t *h_expd_r = kmalloc(sizeof(list_t));
+  CHECK_UNLOCK(h_expd_r == NULL, "No memory.", ENOMEM);
+  u_memset(h_expd_r, 0, sizeof(list_t));
+
+  uint32_t h_expd_l_span = 0;
+  uint32_t h_expd_r_span = 0;
+  list_foreach(lnode, responders) {
+    if (h_expd_l_span == r->window.h || h_expd_r_span == r->window.h)
+      break;
+
+    ui_responder_t *o = node->value;
+    if (o == r) continue;
+
+    uint8_t align = o->window.y >= r->window.y
+      && o->window.y + o->window.h <= r->window.y + r->window.h;
+    if (!align) continue;
+
+    uint8_t left = o->window.x + o->window.w == r->window.x;
+    uint8_t right = r->window.x + r->window.w == o->window.x;
+    if (left) {
+      h_expd_l_span += o->window.h;
+      list_push_back(h_expd_l, o);
+    } else if (right) {
+      h_expd_r_span += o->window.h;
+      list_push_back(h_expd_r, r);
+    }
+  }
+
+  list_t *h_expd = NULL;
+  if (h_expd_l_span == r->window.h) h_expd = h_expd_l;
+  if (h_expd_r_span == r->window.h) h_expd = h_expd_r;
+  if (h_expd) {
+    while (h_expd->head) {
+      ui_responder_t *o = head->value;
+      list_remove(h_expd, head, 0);
+      kfree(head);
+      o->window.w += r->window.w;
+      if (h_expd == h_expd_r) o->window.x = r->window.x;
+      ui_dispatch_resize_event(o);
+    }
+    list_node_t *head = NULL;
+    while (head = h_expd_r->head) {
+      list_remove(h_expd_r, head, 0); kfree(head);
+    }
+    list_destroy(h_expd_r);
+    while (head = h_expd_l->head) {
+      list_remove(h_expd_l, head, 0); kfree(head);
+    }
+    list_destroy(h_expd_l);
+    goto success;
+  }
+
+  list_t *v_expd_u = kmalloc(sizeof(list_t));
+  CHECK_UNLOCK(v_expd_u == NULL, "No memory.", ENOMEM);
+  u_memset(v_expd_u, 0, sizeof(list_t));
+
+  list_t *v_expd_d = kmalloc(sizeof(list_t));
+  CHECK_UNLOCK(v_expd_d == NULL, "No memory.", ENOMEM);
+  u_memset(v_expd_d, 0, sizeof(list_t));
+
+  uint32_t v_expd_u_span = 0;
+  uint32_t v_expd_d_span = 0;
+  list_foreach(lnode, responders) {
+    if (v_expd_u_span == r->window.w || v_expd_d_span == r->window.w)
+      break;
+
+    ui_responder_t *o = node->value;
+    if (o == r) continue;
+
+    uint8_t align = o->window.x >= r->window.x
+      && o->window.x + o->window.w <= r->window.x + r->window.w;
+    if (!align) continue;
+
+    uint8_t up = o->window.y + o->window.h == r->window.y;
+    uint8_t down = r->window.y + r->window.h == o->window.y;
+    if (up) {
+      v_expd_u_span += o->window.w;
+      list_push_back(v_expd_u, o);
+    } else if (down) {
+      v_expd_d_span += o->window.w;
+      list_push_back(v_expd_d, r);
+    }
+  }
+
+  list_t *v_expd = NULL;
+  if (v_expd_u_span == r->window.w) v_expd = v_expd_u;
+  if (v_expd_d_span == r->window.w) v_expd = v_expd_d;
+  if (v_expd) {
+    while (v_expd->head) {
+      ui_responder_t *o = head->value;
+      list_remove(v_expd, head, 0);
+      kfree(head);
+      o->window.h += r->window.h;
+      if (v_expd == v_expd_d) o->window.y = r->window.y;
+      ui_dispatch_resize_event(o);
+    }
+    list_node_t *head = NULL;
+    while (head = v_expd_d->head) {
+      list_remove(v_expd_d, head, 0); kfree(head);
+    }
+    list_destroy(v_expd_d);
+    while (head = v_expd_u->head) {
+      list_remove(v_expd_u, head, 0); kfree(head);
+    }
+    list_destroy(v_expd_u);
+    goto success;
+  }
+
+success:
+  list_remove(responders, r, 1);
+  kunlock(&free_windows_lock);
+  kunlock(&responders_lock);
+
   return 0;
 }
 
