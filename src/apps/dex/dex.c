@@ -8,12 +8,55 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <stddef.h>
+#include <string.h>
+#include <stdlib.h>
 #include <mako.h>
 #include <ui.h>
+#include "SDL_picofont.h"
 
+static const uint32_t BG_COLOR    = 0xffffff;
+static const uint32_t TEXT_COLOR  = 0;
+static const uint32_t YIELD_COLOR = 0x222222;
+
+// Window state.
 static uint32_t *ui_buf = NULL;
 static uint32_t window_w = 0;
 static uint32_t window_h = 0;
+
+// Directory state.
+static char *current_path = NULL;
+static uint32_t top_idx = 0;
+static uint32_t cursor_idx = 0;
+
+__attribute__((always_inline))
+static inline uint32_t round(double d)
+{ return (uint32_t)d + (d - (uint32_t)d >= 0.5); }
+
+static void render_text(const char *text, uint32_t x, uint32_t y)
+{
+  uint32_t len = strlen(text);
+  FNT_xy dim = FNT_Generate(text, len, 0, NULL);
+  uint32_t w = dim.x;
+  uint32_t h = dim.y;
+  uint8_t *pixels = malloc(w * h);
+  memset(pixels, 0, w * h);
+  FNT_Generate(text, len, w, pixels);
+
+  for (uint32_t i = 0; i < w; ++i)
+    for (uint32_t j = 0; j < h * 1.5; ++j)
+      if (pixels[(round(j / 1.5) * w) + i])
+        ui_buf[((y + j) * window_w) + x + i] = TEXT_COLOR;
+
+  free(pixels);
+}
+
+static void render_dirname()
+{
+  render_text(current_path, 5, 5);
+  uint32_t *line_row = ui_buf + ((10 + 12) * window_w);
+  for (uint32_t i = 0; i < window_w; ++i)
+    line_row[i] = TEXT_COLOR;
+}
 
 static void ui_handler(ui_event_t ev)
 {
@@ -27,12 +70,9 @@ static void ui_handler(ui_event_t ev)
     window_w = ev.width;
     window_h = ev.height;
 
-    uint32_t *pos = ui_buf;
-    for (uint32_t i = 0; i < ev.height; ++i) {
-      for (uint32_t j = 0; j < ev.width; ++j)
-        pos[j] = ((i*i) + (j*j)) < 10000 ? 0x442288 : 0xffffff;
-      pos += ev.width;
-    }
+    memset(ui_buf, BG_COLOR, window_w * window_h * 4);
+    render_dirname();
+
     ui_swap_buffers((uint32_t)ui_buf);
 
     return;
@@ -50,6 +90,8 @@ static void ui_handler(ui_event_t ev)
 
 int main(int argc, char *argv[])
 {
+  if (argc > 1) current_path = strdup(argv[1]);
+
   ui_init();
   ui_set_handler(ui_handler);
   ui_acquire_window();

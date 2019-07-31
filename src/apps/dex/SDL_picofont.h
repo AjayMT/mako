@@ -15,6 +15,9 @@
 extern "C" {
 #endif /* __cplusplus */
 
+#define FNT_FONTHEIGHT 8
+#define FNT_FONTWIDTH 8
+
 typedef struct
 {
 	int x;

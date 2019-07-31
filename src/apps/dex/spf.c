@@ -18,9 +18,6 @@ extern "C" {
 
 #include <string.h>
 
-#define FNT_FONTHEIGHT 8
-#define FNT_FONTWIDTH 8
-
 FNT_xy FNT_Generate(const char* text, unsigned int len, unsigned int w, unsigned char* pixels)
 {
 	unsigned int i, x, y, col, row, stop;
