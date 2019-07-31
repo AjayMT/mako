@@ -41,11 +41,12 @@ static const uint8_t CONTROL_RESET     = 4;
 
 // Command/status register.
 static const uint8_t COMMAND_IDENTIFY  = 0xEC;
-static const uint8_t COMMAND_DMA_READ  = 0xC8;
-static const uint8_t COMMAND_DMA_WRITE = 0xCA;
+static const uint8_t COMMAND_DMA_READ  = 0x25;
+static const uint8_t COMMAND_DMA_WRITE = 0x35;
 static const uint8_t STATUS_ERR        = 1;
 static const uint8_t STATUS_DRQ        = 8;
 static const uint8_t STATUS_BSY        = 0x80;
+static const uint8_t STATUS_DRDY       = 0x40;
 
 static pci_dev_t ata_pci_device;
 static ata_dev_t primary_master;
@@ -84,17 +85,24 @@ static uint8_t ata_read_sector(
   CHECK_UNLOCK(wait_status(dev, -1) & STATUS_ERR, "Error status.", 1);
 
   // Select drive.
-  outb(
-    dev->ports.drive,
-    0xE0 | (dev->is_slave << 4) | ((block & 0xF000000) >> 24)
-    );
+  outb(dev->ports.control_alt_status, 0);
+  outb(dev->ports.drive, 0xE0 | (dev->is_slave << 4));
+  wait_io(dev);
 
   // Set sector count and LBA registers.
+  outb(dev->ports.sector_count, 0);
+  outb(dev->ports.lba_1, (block & 0xFF000000) >> 24);
+  outb(dev->ports.lba_2, (block & 0xFF00000000) >> 32);
+  outb(dev->ports.lba_3, (block & 0xFF0000000000) >> 40);
   outb(dev->ports.sector_count, 1);
   outb(dev->ports.lba_1, block & 0xFF);
   outb(dev->ports.lba_2, (block & 0xFF00) >> 8);
   outb(dev->ports.lba_3, (block & 0xFF0000) >> 16);
-  CHECK_UNLOCK(wait_status(dev, -1) & STATUS_ERR, "Error status.", 1);
+  while (1) {
+    uint8_t status = inb(dev->ports.command_status);
+    if (!(status & STATUS_BSY) && (status & STATUS_DRDY))
+      break;
+  }
 
   // Set the command register to the READ DMA command.
   outb(dev->ports.command_status, COMMAND_DMA_READ);
@@ -209,17 +217,23 @@ static uint8_t ata_write_sector(
   CHECK_UNLOCK(wait_status(dev, -1) & STATUS_ERR, "Error status.", 1);
 
   // Select drive.
-  outb(
-    dev->ports.drive,
-    0xE0 | (dev->is_slave << 4) | ((block & 0xF000000) >> 24)
-    );
+  outb(dev->ports.control_alt_status, 0);
+  outb(dev->ports.drive, 0xE0 | (dev->is_slave << 4));
 
   // Set sector count and LBA registers.
+  outb(dev->ports.sector_count, 0);
+  outb(dev->ports.lba_1, (block & 0xFF000000) >> 24);
+  outb(dev->ports.lba_2, (block & 0xFF00000000) >> 32);
+  outb(dev->ports.lba_3, (block & 0xFF0000000000) >> 40);
   outb(dev->ports.sector_count, 1);
   outb(dev->ports.lba_1, block & 0xFF);
   outb(dev->ports.lba_2, (block & 0xFF00) >> 8);
   outb(dev->ports.lba_3, (block & 0xFF0000) >> 16);
-  CHECK_UNLOCK(wait_status(dev, -1) & STATUS_ERR, "Error status.", 1);
+  while (1) {
+    uint8_t status = inb(dev->ports.command_status);
+    if (!(status & STATUS_BSY) && (status & STATUS_DRDY))
+      break;
+  }
 
   // Set the command register to the WRITE DMA command.
   outb(dev->ports.command_status, COMMAND_DMA_WRITE);
@@ -354,7 +368,7 @@ static uint8_t ata_dev_init(ata_dev_t *dev, uint8_t is_primary)
   dev->ports.lba_3 = dev->ports.data + 5;
   dev->ports.drive = dev->ports.data + 6;
   dev->ports.command_status = dev->ports.data + 7;
-  dev->ports.control_alt_status = is_primary ? 0x3F6 : 0x376;
+  dev->ports.control_alt_status = dev->ports.data + 0xC;
 
   dev->ports.busmaster_command = pci_config_read(
     ata_pci_device, PCI_BAR4, 4
