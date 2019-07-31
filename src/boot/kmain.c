@@ -138,6 +138,10 @@ void kmain(
   debug_node->write = debug_write;
   fs_mount(debug_node, "/dev/debug");
 
+  fs_node_t *null_node = kmalloc(sizeof(fs_node_t));
+  u_memset(null_node, 0, sizeof(fs_node_t));
+  fs_mount(null_node, "/dev/null");
+
   fs_node_t init_node;
   res = fs_open_node(&init_node, "/bin/init", 0);
   uint8_t *init_text = kmalloc(init_node.length);
