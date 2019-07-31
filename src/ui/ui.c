@@ -215,7 +215,7 @@ uint32_t ui_kill(process_t *p)
 
   uint32_t h_expd_l_span = 0;
   uint32_t h_expd_r_span = 0;
-  list_foreach(lnode, responders) {
+  list_foreach(node, responders) {
     if (h_expd_l_span == r->window.h || h_expd_r_span == r->window.h)
       break;
 
@@ -241,7 +241,8 @@ uint32_t ui_kill(process_t *p)
   if (h_expd_l_span == r->window.h) h_expd = h_expd_l;
   if (h_expd_r_span == r->window.h) h_expd = h_expd_r;
   if (h_expd) {
-    while (h_expd->head) {
+    list_node_t *head = NULL;
+    while ((head = h_expd->head)) {
       ui_responder_t *o = head->value;
       list_remove(h_expd, head, 0);
       kfree(head);
@@ -249,12 +250,11 @@ uint32_t ui_kill(process_t *p)
       if (h_expd == h_expd_r) o->window.x = r->window.x;
       ui_dispatch_resize_event(o);
     }
-    list_node_t *head = NULL;
-    while (head = h_expd_r->head) {
+    while ((head = h_expd_r->head)) {
       list_remove(h_expd_r, head, 0); kfree(head);
     }
     list_destroy(h_expd_r);
-    while (head = h_expd_l->head) {
+    while ((head = h_expd_l->head)) {
       list_remove(h_expd_l, head, 0); kfree(head);
     }
     list_destroy(h_expd_l);
@@ -271,7 +271,7 @@ uint32_t ui_kill(process_t *p)
 
   uint32_t v_expd_u_span = 0;
   uint32_t v_expd_d_span = 0;
-  list_foreach(lnode, responders) {
+  list_foreach(node, responders) {
     if (v_expd_u_span == r->window.w || v_expd_d_span == r->window.w)
       break;
 
@@ -297,7 +297,8 @@ uint32_t ui_kill(process_t *p)
   if (v_expd_u_span == r->window.w) v_expd = v_expd_u;
   if (v_expd_d_span == r->window.w) v_expd = v_expd_d;
   if (v_expd) {
-    while (v_expd->head) {
+    list_node_t *head = NULL;
+    while ((head = v_expd->head)) {
       ui_responder_t *o = head->value;
       list_remove(v_expd, head, 0);
       kfree(head);
@@ -305,12 +306,11 @@ uint32_t ui_kill(process_t *p)
       if (v_expd == v_expd_d) o->window.y = r->window.y;
       ui_dispatch_resize_event(o);
     }
-    list_node_t *head = NULL;
-    while (head = v_expd_d->head) {
+    while ((head = v_expd_d->head)) {
       list_remove(v_expd_d, head, 0); kfree(head);
     }
     list_destroy(v_expd_d);
-    while (head = v_expd_u->head) {
+    while ((head = v_expd_u->head)) {
       list_remove(v_expd_u, head, 0); kfree(head);
     }
     list_destroy(v_expd_u);
@@ -318,7 +318,7 @@ uint32_t ui_kill(process_t *p)
   }
 
 success:
-  list_remove(responders, r, 1);
+  list_remove(responders, r->list_node, 1);
   kunlock(&free_windows_lock);
   kunlock(&responders_lock);
 
