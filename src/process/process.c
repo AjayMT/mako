@@ -30,13 +30,9 @@
 #define CHECK(err, msg, code) if ((err)) {          \
     log_error("process", msg "\n"); return (code);  \
   }
-#define CHECK_UNLOCK_F(err, msg, code) if ((err)) {                 \
-    log_error("process", msg "\n"); kunlock(&process_fork_lock);    \
+#define CHECK_UNLOCK(err, msg, code) if ((err)) {                   \
+    log_error("process", msg "\n"); kunlock(&process_tree_lock);    \
     return (code);                                                  \
-  }
-#define CHECK_UNLOCK_S(err, msg, code) if ((err)) {                     \
-    log_error("process", msg "\n"); kunlock(&process_schedule_lock);    \
-    return (code);                                                      \
   }
 
 // Constants.
@@ -58,9 +54,8 @@ static tree_node_t *process_tree = NULL;
 static list_t *running_list = NULL;
 static list_t *ready_queue = NULL;
 static list_t *sleep_queue = NULL;
-static volatile uint32_t process_fork_lock = 0;
-static volatile uint32_t process_schedule_lock = 0;
-static volatile uint32_t process_sleep_lock = 0;
+static volatile uint32_t process_tree_lock = 0;
+static volatile uint32_t sleep_queue_lock = 0;
 
 // Implemented in process.s.
 void resume_kernel(process_registers_t *);
@@ -309,20 +304,20 @@ static process_t *findpid(tree_node_t *node, uint32_t pid)
 // Find a process with a specific PID.
 process_t *process_from_pid(uint32_t pid)
 {
-  klock(&process_schedule_lock);
+  klock(&process_tree_lock);
   process_t *p = findpid(process_tree, pid);
-  kunlock(&process_schedule_lock);
+  kunlock(&process_tree_lock);
   return p;
 }
 
 // Add a process to the sleep queue.
 uint32_t process_sleep(process_t *p, uint32_t wake_time)
 {
-  klock(&process_sleep_lock);
+  klock(&sleep_queue_lock);
 
   process_sleep_node_t *sleeper = kmalloc(sizeof(process_sleep_node_t));
   if (sleeper == NULL) {
-    kunlock(&process_sleep_lock); return ENOMEM;
+    kunlock(&sleep_queue_lock); return ENOMEM;
   }
   sleeper->process = p;
   sleeper->wake_time = wake_time;
@@ -337,7 +332,7 @@ uint32_t process_sleep(process_t *p, uint32_t wake_time)
   if (position == NULL) list_push_back(sleep_queue, sleeper);
   else list_insert_before(sleep_queue, position, sleeper);
 
-  kunlock(&process_sleep_lock);
+  kunlock(&sleep_queue_lock);
   return 0;
 }
 
@@ -409,14 +404,14 @@ uint32_t process_fork(
   process_t *out_child, process_t *process, uint8_t is_thread
   )
 {
-  klock(&process_fork_lock);
+  klock(&process_tree_lock);
 
   process_t *child = out_child;
   u_memcpy(child, process, sizeof(process_t));
   child->in_kernel = 0;
   child->is_thread = is_thread;
   child->wd = kmalloc(u_strlen(process->wd) + 1);
-  CHECK_UNLOCK_F(child->wd == NULL, "No memory.", ENOMEM);
+  CHECK_UNLOCK(child->wd == NULL, "No memory.", ENOMEM);
   u_memcpy(child->wd, process->wd, u_strlen(process->wd) + 1);
   child->pid = ++next_pid;
   tree_node_t *node = tree_init(child);
@@ -425,12 +420,12 @@ uint32_t process_fork(
   child->list_node = NULL;
   if (is_thread == 0) {
     child->ui_event_queue = kmalloc(sizeof(list_t));
-    CHECK_UNLOCK_F(child->ui_event_queue == NULL, "No memory.", ENOMEM);
+    CHECK_UNLOCK(child->ui_event_queue == NULL, "No memory.", ENOMEM);
     u_memset(child->ui_event_queue, 0, sizeof(list_t));
     child->ui_eip = 0; child->ui_event_buffer = 0; child->ui_event_pending = 0;
 
     uint32_t err = paging_clone_process_directory(&(child->cr3), process->cr3);
-    CHECK_UNLOCK_F(err, "Failed to clone page directory.", err);
+    CHECK_UNLOCK(err, "Failed to clone page directory.", err);
   } else {
     uint32_t eflags = interrupt_save_disable();
     uint32_t cr3 = paging_get_cr3();
@@ -442,6 +437,7 @@ uint32_t process_fork(
     fail:
       paging_set_cr3(cr3);
       interrupt_restore(eflags);
+      kunlock(&process_tree_lock);
       return err;
     }
     uint32_t stack_paddr = pmm_alloc(1);
@@ -462,7 +458,7 @@ uint32_t process_fork(
   }
 
   list_t *fds = kmalloc(sizeof(list_t));
-  CHECK_UNLOCK_F(fds == NULL, "No memory.", ENOMEM);
+  CHECK_UNLOCK(fds == NULL, "No memory.", ENOMEM);
   u_memset(fds, 0, sizeof(list_t));
   list_foreach(lchild, process->fds) {
     process_fd_t *fd = lchild->value;
@@ -473,18 +469,18 @@ uint32_t process_fork(
 
   uint32_t eflags = interrupt_save_disable();
   uint32_t kstack_vaddr = paging_prev_vaddr(1, FIRST_PT_VADDR);
-  CHECK_UNLOCK_F(kstack_vaddr == 0, "No memory.", ENOMEM);
+  CHECK_UNLOCK(kstack_vaddr == 0, "No memory.", ENOMEM);
   uint32_t kstack_paddr = pmm_alloc(1);
-  CHECK_UNLOCK_F(kstack_paddr == 0, "No memory.", ENOMEM);
+  CHECK_UNLOCK(kstack_paddr == 0, "No memory.", ENOMEM);
   page_table_entry_t flags; u_memset(&flags, 0, sizeof(flags));
   flags.rw = 1;
   paging_result_t res = paging_map(kstack_vaddr, kstack_paddr, flags);
-  CHECK_UNLOCK_F(res != PAGING_OK, "Failed to map kernel stack.", res);
+  CHECK_UNLOCK(res != PAGING_OK, "Failed to map kernel stack.", res);
   child->mmap.kernel_stack_bottom = kstack_vaddr;
   child->mmap.kernel_stack_top = kstack_vaddr + PAGE_SIZE - 1;
   interrupt_restore(eflags);
 
-  kunlock(&process_fork_lock);
+  kunlock(&process_tree_lock);
   return 0;
 }
 
@@ -613,11 +609,9 @@ uint32_t process_set_env(process_t *p, char *argv[], char *envp[])
 // Add a process to the scheduler queue.
 void process_schedule(process_t *process)
 {
-  klock(&process_schedule_lock);
   uint32_t eflags = interrupt_save_disable();
   list_push_back(ready_queue, process);
   interrupt_restore(eflags);
-  kunlock(&process_schedule_lock);
 }
 
 // Mark a process as finished, deal with children.
@@ -625,7 +619,7 @@ void process_finish(process_t *process)
 {
   if (process->ui_eip) ui_kill(process);
 
-  klock(&process_schedule_lock);
+  klock(&process_tree_lock);
   tree_node_t *node = process->tree_node;
   list_node_t *current = node->children->head;
   list_node_t *next = current ? current->next : NULL;
@@ -636,9 +630,9 @@ void process_finish(process_t *process)
 
     // Threads just die, child processes become children of init.
     if (child_process->is_thread) {
-      kunlock(&process_schedule_lock);
+      kunlock(&process_tree_lock);
       process_finish(child_process);
-      klock(&process_schedule_lock);
+      klock(&process_tree_lock);
     } else {
       list_remove(node->children, current, 0);
       tree_insert(process_tree, tchild);
@@ -647,7 +641,7 @@ void process_finish(process_t *process)
   }
   process->is_finished = 1;
 
-  kunlock(&process_schedule_lock);
+  kunlock(&process_tree_lock);
 }
 
 // Destroy a process.
