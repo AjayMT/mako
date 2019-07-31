@@ -21,9 +21,9 @@ APPS = dex
 BIN = init
 export
 
-all: kernel.elf sysroot
+all: kernel.elf 
 
-apps: sysroot $(APPS) $(BIN)
+user: sysroot $(APPS) $(BIN)
 
 sysroot: crt libc.a libui.a
 	cp -rH src/libc/h/* sysroot/usr/include
@@ -88,4 +88,5 @@ clean:
 	rm -rf *.o *.a kernel.elf                                      \
 	       iso/boot/kernel.elf mako.iso bochslog.txt com1.out      \
 	       iso/modules/rd src/libc/*.o src/libui/*.o               \
-	       sysroot/usr/include/{*,sys/*}.h sysroot/usr/lib/*.{a,o}
+	       sysroot/usr/include/{*,sys/*}.h sysroot/usr/lib/*.{a,o} \
+	       $(APPS) $(BIN)
