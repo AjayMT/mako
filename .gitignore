@@ -1,3 +1,4 @@
+!.gitkeep
 *.o
 *.elf
 *.iso
@@ -8,3 +9,7 @@ hda.img
 *.a
 sysroot/usr/include/*.h
 sysroot/usr/include/sys/*.h
+sysroot/bin/*
+sysroot/apps/*
+dex
+init

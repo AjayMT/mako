@@ -42,6 +42,18 @@ void gp_fault_handler(
     );
 }
 
+void page_fault_handler(
+  cpu_state_t cs, idt_info_t info, stack_state_t ss
+  )
+{
+  uint32_t cr2;
+  asm volatile ("movl %%cr2, %0" : "=r"(cr2));
+  log_error(
+    "kmain", "eip %x: page fault %x vaddr %x\n",
+    ss.eip, info.error_code, cr2
+    );
+}
+
 uint32_t debug_write(fs_node_t *n, size_t offset, size_t size, uint8_t *buf)
 {
   log_debug("procdebug", "%s", (char *)buf);
@@ -96,6 +108,7 @@ void kmain(
   rtc_init();
 
   register_interrupt_handler(13, gp_fault_handler);
+  register_interrupt_handler(14, page_fault_handler);
 
   uint32_t res;
   res = pmm_init(mb_info, kphys_start, kphys_end, rd_phys_start, rd_phys_end);
@@ -108,7 +121,7 @@ void kmain(
   fs_init();
   res = rd_init(rd_phys_start, rd_phys_end);
 
-  ata_init();
+  res = ata_init();
   res = ext2_init("/dev/hda");
 
   res = keyboard_init();
@@ -120,28 +133,28 @@ void kmain(
     paging_map(video_vaddr + (i << 12), 0xFD000000 + (i << 12), flags);
   res = ui_init(video_vaddr);
 
-  fs_node_t test_node;
-  res = fs_open_node(&test_node, "/rd/test", 0);
-  uint8_t *test_text = kmalloc(test_node.length);
-  fs_read(&test_node, 0, test_node.length, test_text);
+  fs_node_t *debug_node = kmalloc(sizeof(fs_node_t));
+  u_memset(debug_node, 0, sizeof(fs_node_t));
+  debug_node->write = debug_write;
+  fs_mount(debug_node, "/dev/debug");
+
+  fs_node_t init_node;
+  res = fs_open_node(&init_node, "/bin/init", 0);
+  uint8_t *init_text = kmalloc(init_node.length);
+  fs_read(&init_node, 0, init_node.length, init_text);
 
   process_init();
 
   process_image_t p;
-  elf_load(&p, test_text);
+  res = elf_load(&p, init_text);
 
   process_t *init = kmalloc(sizeof(process_t));
   process_create_init(init, p);
   process_schedule(init);
 
-  kfree(test_text);
+  kfree(init_text);
   kfree(p.text);
   kfree(p.data);
-
-  fs_node_t *debug_node = kmalloc(sizeof(fs_node_t));
-  u_memset(debug_node, 0, sizeof(fs_node_t));
-  debug_node->write = debug_write;
-  fs_mount(debug_node, "/dev/debug");
 
   interrupt_restore(eflags);
 }

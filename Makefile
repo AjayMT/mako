@@ -17,9 +17,13 @@ OBJECTS = boot.o gdt.o idt.o pic.o interrupt.o paging.o pmm.o  \
           debug.o util.o kheap.o fs.o ext2.o ds.o rd.o tss.o   \
           process.o pit.o elf.o syscall.o klock.o ringbuffer.o \
           pipe.o fpu.o rtc.o ui.o
+APPS = dex
+BIN = init
 export
 
-all: kernel.elf
+all: kernel.elf sysroot
+
+apps: sysroot $(APPS) $(BIN)
 
 sysroot: crt libc.a libui.a
 	cp -rH src/libc/h/* sysroot/usr/include
@@ -27,6 +31,14 @@ sysroot: crt libc.a libui.a
 	cp libc.a sysroot/usr/lib
 	cp libui.a sysroot/usr/lib
 	cp crt{0,i,n}.o sysroot/usr/lib
+
+$(APPS): $(shell find src/apps -type f)
+	$(MAKE) out=${PWD}/$@ -C src/apps/$@
+	cp $@ sysroot/apps
+
+$(BIN): $(shell find src/bin -type f)
+	$(MAKE) out=${PWD}/$@ -C src/bin/$@
+	cp $@ sysroot/bin
 
 crt: crt0.o crti.o crtn.o
 
@@ -58,7 +70,6 @@ $(DRIVER_OBJECTS): $(shell find src/drivers -type f)
 	$(MAKE) out=${PWD}/$@ -C src/drivers/$(basename $@)
 
 rd: make_rd.py $(shell find rdroot -type f)
-	$(MAKE) -C rdroot
 	python3 make_rd.py
 
 mako.iso: kernel.elf rd
@@ -74,7 +85,7 @@ qemu: mako.iso
 
 .PHONY: clean
 clean:
-	rm -rf *.o *.a kernel.elf                                 \
-	       iso/boot/kernel.elf mako.iso bochslog.txt com1.out \
-	       iso/modules/rd src/libc/*.o src/libui/*.o          \
+	rm -rf *.o *.a kernel.elf                                      \
+	       iso/boot/kernel.elf mako.iso bochslog.txt com1.out      \
+	       iso/modules/rd src/libc/*.o src/libui/*.o               \
 	       sysroot/usr/include/{*,sys/*}.h sysroot/usr/lib/*.{a,o}
