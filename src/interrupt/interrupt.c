@@ -32,6 +32,14 @@ uint32_t register_interrupt_handler(
   return 0;
 }
 
+// Unregister an interrupt handler.
+uint8_t unregister_interrupt_handler(uint32_t index)
+{
+  if (index >= IDT_NUM_ENTRIES) return 1;
+  registered_handlers[index] = 0;
+  return 0;
+}
+
 // Forward interrupts to registered handler.
 void forward_interrupt(
   cpu_state_t c_state, idt_info_t info, stack_state_t s_state

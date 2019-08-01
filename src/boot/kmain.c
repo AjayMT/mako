@@ -32,16 +32,6 @@ uintptr_t __stack_chk_guard = STACK_CHK_GUARD;
 void __attribute__((noreturn)) __stack_chk_fail(void)
 { asm volatile ("xchg %bx, %bx"); while (1); }
 
-void gp_fault_handler(
-  cpu_state_t cs, idt_info_t info, stack_state_t ss
-  )
-{
-  log_error(
-    "kmain", "eip %x: gpf %x cs %x\n",
-    ss.eip, info.error_code, ss.cs
-    );
-}
-
 void page_fault_handler(
   cpu_state_t cs, idt_info_t info, stack_state_t ss
   )
@@ -107,7 +97,6 @@ void kmain(
   pit_init();
   rtc_init();
 
-  register_interrupt_handler(13, gp_fault_handler);
   register_interrupt_handler(14, page_fault_handler);
 
   uint32_t res;
@@ -147,6 +136,7 @@ void kmain(
   uint8_t *init_text = kmalloc(init_node.length);
   fs_read(&init_node, 0, init_node.length, init_text);
 
+  unregister_interrupt_handler(14);
   process_init();
 
   process_image_t p;

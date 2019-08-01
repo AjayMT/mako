@@ -51,6 +51,9 @@ void interrupt_init();
 // Register an interrupt handler.
 uint32_t register_interrupt_handler(uint32_t, interrupt_handler_t);
 
+// Unregister an interrupt handler.
+uint8_t unregister_interrupt_handler(uint32_t);
+
 // Forward interrupts to registered handler.
 void forward_interrupt(cpu_state_t, idt_info_t, stack_state_t);
 
