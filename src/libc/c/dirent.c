@@ -37,5 +37,6 @@ struct dirent *readdir(DIR *d)
     SYSCALL_READDIR, d->fd, (uint32_t)ent, d->current_entry
     );
   if (res < 0) { errno = -res; free(ent); return NULL; }
+  ++(d->current_entry);
   return ent;
 }

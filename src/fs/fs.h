@@ -97,8 +97,8 @@ typedef struct fs_node_s {
 
 // A single directory entry.
 struct dirent {
-  char name[FS_NAME_LEN];
   uint32_t ino;
+  char name[FS_NAME_LEN];
 };
 
 // Interface for all filesystems.
