@@ -24,8 +24,6 @@
     return (code);                                  \
   }
 
-// TODO return/set error codes.
-
 // Filesystem mountpoint tree.
 static tree_node_t *fs_tree = NULL;
 static volatile uint32_t fs_lock = 0;
@@ -115,6 +113,8 @@ static uint32_t resolve_path(char **outpath, const char *inpath)
   char *path = kmalloc(path_len + 1);
   CHECK(path == NULL, "No memory.", ENOMEM);
   u_memcpy(path, inpath, path_len + 1);
+  for (; path[path_len - 1] == FS_PATH_SEP && path_len > 1; --path_len);
+  path[path_len] = '\0';
   for (uint32_t i = 0; i < path_len; ++i)
     if (path[i] == FS_PATH_SEP) path[i] = '\0';
 
@@ -336,6 +336,57 @@ int32_t fs_unlink(char *path)
   kfree(parent_path);
   kfree(parent);
   kfree(rpath);
+  return 0;
+}
+
+int32_t fs_rename(char *old, char *new)
+{
+  char *oldpath;
+  uint32_t res = resolve_path(&oldpath, old);
+  CHECK(res, "Could not resolve path.", -res);
+
+  char *basename = oldpath + u_strlen(oldpath) - 1;
+  for (; *basename != FS_PATH_SEP && basename > oldpath; --basename);
+  if (*basename == FS_PATH_SEP) ++basename;
+
+  char *parent_path = kmalloc(basename - oldpath + 1);
+  CHECK(parent_path == NULL, "No memory.", -ENOMEM);
+  u_memcpy(parent_path, oldpath, basename - oldpath);
+  parent_path[basename - oldpath] = '\0';
+
+  fs_node_t *parent = kmalloc(sizeof(fs_node_t));
+  CHECK(parent == NULL, "No memory.", -ENOMEM);
+  res = fs_open_node(parent, parent_path, 0);
+  if (res) {
+    kfree(parent);
+    kfree(parent_path);
+    kfree(oldpath);
+    return -res;
+  }
+
+  if (parent->rename) {
+    uint32_t len = u_strlen(new);
+    char *newname = kmalloc(len + 1);
+    CHECK(newname == NULL, "No memory.", -ENOMEM);
+    u_memcpy(newname, new, len + 1);
+    for(; newname[len - 1] == FS_PATH_SEP; --len);
+    newname[len] = '\0';
+    char *nbasename = newname + len - 1;
+    for (; *nbasename != FS_PATH_SEP && nbasename > newname; --nbasename);
+    if (*nbasename == FS_PATH_SEP && nbasename[1]) ++nbasename;
+    if (*nbasename == FS_PATH_SEP) *nbasename = ':';
+
+    res = parent->rename(parent, basename, nbasename);
+    kfree(parent);
+    kfree(parent_path);
+    kfree(oldpath);
+    kfree(newname);
+    return res;
+  }
+
+  kfree(parent);
+  kfree(parent_path);
+  kfree(oldpath);
   return 0;
 }
 

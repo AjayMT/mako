@@ -585,6 +585,9 @@ static void syscall_ui_yield()
   current->uregs.eax = -ui_yield(current);
 }
 
+static void syscall_rename(char *old, char *new)
+{ process_current()->uregs.eax = fs_rename(old, new); }
+
 static syscall_t syscall_table[] = {
   syscall_exit,
   syscall_fork,
@@ -624,7 +627,8 @@ static syscall_t syscall_table[] = {
   syscall_ui_resume,
   syscall_ui_swap_buffers,
   syscall_ui_wait,
-  syscall_ui_yield
+  syscall_ui_yield,
+  syscall_rename
 };
 
 process_registers_t *syscall_handler(cpu_state_t cs, stack_state_t ss)

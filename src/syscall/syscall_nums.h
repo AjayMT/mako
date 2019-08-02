@@ -47,5 +47,6 @@
 #define SYSCALL_UI_SWAP_BUFFERS   36
 #define SYSCALL_UI_WAIT           37
 #define SYSCALL_UI_YIELD          38
+#define SYSCALL_RENAME            39
 
 #endif /* _SYSCALL_NUMS_H_ */

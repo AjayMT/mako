@@ -1116,6 +1116,7 @@ static int32_t ext2_unlink(fs_node_t *node, char *name)
   ext2_inode_t inode;
   uint32_t res = read_inode_info(self, &inode, node->inode);
   CHECK(res, "Failed to read inode info.", -res);
+  if ((inode.permissions & EXT2_S_IFDIR) == 0) return -ENOTDIR;
 
   uint8_t *blk_buf = kmalloc(self->block_size);
   CHECK(blk_buf == NULL, "No memory.", -ENOMEM);
@@ -1145,6 +1146,7 @@ static int32_t ext2_unlink(fs_node_t *node, char *name)
       continue;
 
     char *dname = kmalloc(current_entry->name_len + 1);
+    CHECK(dname == NULL, "No memory.", -ENOMEM);
     u_memcpy(dname, current_entry->name, current_entry->name_len);
     dname[current_entry->name_len] = '\0';
     if (u_strcmp(dname, name) == 0) {
@@ -1292,6 +1294,70 @@ static int32_t ext2_readlink(fs_node_t *node, char *buf, size_t bufsize)
   return read_size;
 }
 
+static int32_t ext2_rename(fs_node_t *node, char *old, char *new)
+{
+  ext2_fs_t *self = node->device;
+  ext2_inode_t inode;
+  uint32_t res = read_inode_info(self, &inode, node->inode);
+  CHECK(res, "Failed to read inode info.", -res);
+
+  uint8_t *blk_buf = kmalloc(self->block_size);
+  CHECK(blk_buf == NULL, "No memory.", -ENOMEM);
+  uint32_t block_num = 0;
+  res = read_inode_block(self, &inode, block_num, blk_buf);
+  CHECK(res != self->block_size, "Failed to read inode block.", -EAGAIN);
+
+  uint32_t idx = 0;
+  uint32_t dir_idx = 0;
+  ext2_dir_entry_t *current_entry = NULL;
+  ext2_dir_entry_t *old_entry = NULL;
+  ext2_dir_entry_t *new_entry = NULL;
+  for (
+    ;
+    idx < inode.size;
+    idx += current_entry->size, dir_idx += current_entry->size
+    )
+  {
+    if (dir_idx >= self->block_size) {
+      ++block_num;
+      dir_idx -= self->block_size;
+      res = read_inode_block(self, &inode, block_num, blk_buf);
+      CHECK(res != self->block_size, "Failed to read inode block.", -EAGAIN);
+    }
+
+    current_entry = (ext2_dir_entry_t *)(blk_buf + dir_idx);
+    if (current_entry->inode == 0)
+      continue;
+
+    char *dname = kmalloc(current_entry->name_len + 1);
+    CHECK(dname == NULL, "No memory.", -ENOMEM);
+    u_memcpy(dname, current_entry->name, current_entry->name_len);
+    dname[current_entry->name_len] = '\0';
+    if (u_strcmp(dname, old) == 0) old_entry = current_entry;
+    if (u_strcmp(dname, new) == 0) new_entry = current_entry;
+    kfree(dname);
+  }
+
+  if (old_entry == NULL) { kfree(blk_buf); return -ENOENT; }
+  if (new_entry) {
+    // On most systems, `rename' removes the directory entry with the new
+    // name.
+    // I think that's a bad design choice and I also don't want to
+    // implement it, so I won't.
+    kfree(blk_buf); return -EEXIST;
+  }
+
+  uint32_t child_inode_num = old_entry->inode;
+  old_entry->inode = 0;
+  res = write_inode_block(self, &inode, node->inode, block_num, blk_buf);
+  CHECK(res != self->block_size, "Failed to write inode block.", -EAGAIN);
+
+  int32_t sres = create_dir_entry(node, new, child_inode_num);
+  CHECK(sres < 0, "Failed to create directory entry.", sres);
+
+  return 0;
+}
+
 static void make_ext2_node(
   ext2_fs_t *self, fs_node_t *node, ext2_inode_t *inode, ext2_dir_entry_t *ent
   )
@@ -1311,6 +1377,7 @@ static void make_ext2_node(
   node->open = ext2_open;
   node->close = ext2_close;
   node->chmod = ext2_chmod;
+  node->rename = ext2_rename;
   if ((inode->permissions & EXT2_S_IFREG) == EXT2_S_IFREG) {
     node->flags |= FS_FILE;
     node->read = ext2_read;
@@ -1423,6 +1490,7 @@ uint32_t ext2_init(const char *dev_path)
   CHECK(res, "Failed to read root inode.", res);
   fs_node_t *node = kmalloc(sizeof(fs_node_t));
   CHECK(node == NULL, "No memory.", ENOMEM);
+  u_memset(node, 0, sizeof(fs_node_t));
   make_fs_root(e2fs, &root_inode, node);
   fs_mount(node, EXT2_ROOT);
 

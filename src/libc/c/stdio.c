@@ -14,6 +14,7 @@
 #include <fcntl.h>
 #include <unistd.h>
 #include <stdlib.h>
+#include <_syscall.h>
 #include <mako.h>
 #include <stdio.h>
 
@@ -271,9 +272,9 @@ int32_t setvbuf(FILE *stream, char *buf, int32_t type, size_t size)
 int32_t remove(const char *path)
 { return unlink(path); }
 
-// TODO implement renaming.
 int32_t rename(const char *old, const char *new)
 {
-  errno = EIO;
-  return -1;
+  int32_t res = _syscall2(SYSCALL_RENAME, (uint32_t)old, (uint32_t)new);
+  if (res < 0) { errno = -res; res = -1; }
+  return res;
 }

@@ -63,6 +63,7 @@ typedef int32_t (*unlink_type_t)(struct fs_node_s *, char *);
 typedef int32_t (*chmod_type_t)(struct fs_node_s *, int32_t);
 typedef int32_t (*symlink_type_t)(struct fs_node_s *, char *, char *);
 typedef int32_t (*readlink_type_t)(struct fs_node_s *, char *, size_t);
+typedef int32_t (*rename_type_t)(struct fs_node_s *, char *, char *);
 
 // A single filesystem node.
 typedef struct fs_node_s {
@@ -93,6 +94,7 @@ typedef struct fs_node_s {
   unlink_type_t unlink;
   symlink_type_t symlink;
   readlink_type_t readlink;
+  rename_type_t rename;
 } fs_node_t;
 
 // A single directory entry.
@@ -116,6 +118,7 @@ int32_t fs_symlink(char *, char *);
 int32_t fs_mkdir(char *, uint16_t);
 int32_t fs_create(char *, uint16_t);
 int32_t fs_unlink(char *);
+int32_t fs_rename(char *, char *);
 
 // Initialize the filesystem interface.
 uint32_t fs_init();
