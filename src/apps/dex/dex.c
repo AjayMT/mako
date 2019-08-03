@@ -371,6 +371,7 @@ static uint8_t open_dirent(uint32_t idx)
   size_t len = strlen(ent.d_name);
   size_t clen = strlen(current_path);
   char *npath = malloc(clen + len + 2);
+  memset(npath, 0, clen + len + 2);
   strcpy(npath, current_path);
   if (clen > 1) npath[clen] = '/';
   strcat(npath, ent.d_name);
