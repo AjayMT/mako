@@ -11,3 +11,4 @@ sysroot/usr/include/*.h
 sysroot/usr/include/sys/*.h
 /dex
 /init
+/xed
