@@ -332,7 +332,7 @@ void *kmalloc(size_t size)
   uint32_t flags = interrupt_save_disable();
 
   size = block_align_up(size);
-  if (size == 0) return NULL;
+  if (size == 0) { interrupt_restore(flags); return NULL; }
   if (biggest == NULL || get_size(biggest) < size) {
     get_heap(size);
     if (biggest == NULL || get_size(biggest) < size) {
@@ -366,7 +366,7 @@ void kfree(void *ptr)
 
   block_front_t *block = (block_front_t*)
     ((uint32_t)ptr - sizeof(block_front_t));
-  if (block->info->free) return;
+  if (block->info->free) { interrupt_restore(flags); return; }
   block->info->free = 1;
   uint8_t in_list = 0;
 

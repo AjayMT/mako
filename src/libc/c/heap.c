@@ -314,7 +314,7 @@ void *malloc(size_t size)
   thread_lock(&heap_lock);
 
   size = block_align_up(size);
-  if (size == 0) return NULL;
+  if (size == 0) { thread_unlock(&heap_lock); return NULL; }
   if (biggest == NULL || get_size(biggest) < size) {
     get_heap(size);
     if (biggest == NULL || get_size(biggest) < size) {
@@ -348,7 +348,7 @@ void free(void *ptr)
 
   block_front_t *block = (block_front_t*)
     ((uint32_t)ptr - sizeof(block_front_t));
-  if (block->info->free) return;
+  if (block->info->free) { thread_unlock(&heap_lock); return; }
   block->info->free = 1;
   uint8_t in_list = 0;
 
