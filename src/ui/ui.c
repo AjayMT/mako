@@ -94,7 +94,7 @@ static ui_responder_t *responder_from_process(process_t *p)
 {
   ui_responder_t *r = NULL;
   klock(&responders_lock);
-  if (key_responder && key_responder->process->pid == p->pid) {
+  if (key_responder && key_responder->process->gid == p->gid) {
     kunlock(&responders_lock);
     return key_responder;
   }
@@ -358,7 +358,7 @@ uint32_t ui_swap_buffers(process_t *p, uint32_t backbuf_vaddr)
 
 uint32_t ui_yield(process_t *p)
 {
-  if (p->pid != key_responder->process->pid) return EINVAL;
+  if (p->gid != key_responder->process->gid) return EINVAL;
   klock(&responders_lock);
   list_node_t *next = key_responder->list_node->next;
   if (next == NULL) next = responders->head;

@@ -430,19 +430,20 @@ uint32_t process_fork(
   CHECK_UNLOCK(child->wd == NULL, "No memory.", ENOMEM);
   u_memcpy(child->wd, process->wd, u_strlen(process->wd) + 1);
   child->pid = ++next_pid;
+  child->gid = child->pid;
   tree_node_t *node = tree_init(child);
   child->tree_node = node;
   tree_insert(process->tree_node, node);
   child->list_node = NULL;
+  child->ui_event_queue = kmalloc(sizeof(list_t));
+  CHECK_UNLOCK(child->ui_event_queue == NULL, "No memory.", ENOMEM);
+  u_memset(child->ui_event_queue, 0, sizeof(list_t));
+  child->ui_eip = 0; child->ui_event_buffer = 0; child->ui_event_pending = 0;
   if (is_thread == 0) {
-    child->ui_event_queue = kmalloc(sizeof(list_t));
-    CHECK_UNLOCK(child->ui_event_queue == NULL, "No memory.", ENOMEM);
-    u_memset(child->ui_event_queue, 0, sizeof(list_t));
-    child->ui_eip = 0; child->ui_event_buffer = 0; child->ui_event_pending = 0;
-
     uint32_t err = paging_clone_process_directory(&(child->cr3), process->cr3);
     CHECK_UNLOCK(err, "Failed to clone page directory.", err);
   } else {
+    child->gid = process->gid;
     uint32_t eflags = interrupt_save_disable();
     uint32_t cr3 = paging_get_cr3();
     paging_set_cr3(process->cr3);
@@ -478,7 +479,7 @@ uint32_t process_fork(
   u_memset(fds, 0, sizeof(list_t));
   list_foreach(lchild, process->fds) {
     process_fd_t *fd = lchild->value;
-    ++(fd->refcount);
+    if (fd) ++(fd->refcount);
     list_push_back(fds, fd);
   }
   child->fds = fds;
