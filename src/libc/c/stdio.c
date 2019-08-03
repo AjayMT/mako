@@ -65,11 +65,11 @@ FILE *fopen(const char *path, const char *mode)
   uint32_t mode_flags = parse_mode(mode);
   int32_t fd = open(path, mode_flags);
   if (fd == -1) {
-    if (errno == ENOENT) {
+    uint8_t create = ((mode_flags & O_WRONLY) || (mode_flags & O_RDWR));
+    if (errno == ENOENT && create) {
       fd = open(path, mode_flags | O_CREAT, 0666);
       if (fd == -1) return NULL;
-    }
-    return NULL;
+    } else return NULL;
   }
 
   FILE *f = malloc(sizeof(FILE));

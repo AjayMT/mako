@@ -20,6 +20,8 @@ char *dirname(char *path)
   }
 
   char *slash = strrchr(path, '/');
+  while (slash > path && *(slash - 1) == '/') --slash;
+  if (slash == path) ++slash;
   memcpy(gpath, path, slash - path);
   gpath[slash - path] = '\0';
   return gpath;

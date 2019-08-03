@@ -118,10 +118,10 @@ char *strstr(const char *haystack, const char *needle)
   uint32_t m = strlen(needle);
   if (m > n) return NULL;
   if (m == 0) return (char *)haystack;
-  for (uint32_t i = 0; i < n; i += m) {
-    uint32_t count = 0;
-    for (; count < m && haystack[i + count] == needle[count]; ++count);
-    if (count == m) return (char *)(haystack + i);
+  for (uint32_t i = 0; i < n; ++i) {
+    if (haystack[i] != needle[0]) continue;
+    if (strncmp(haystack + i, needle, m) == 0)
+      return (char *)(haystack + i);
   }
   return NULL;
 }
@@ -167,5 +167,6 @@ char *strcat(char *s1, const char *s2)
   size_t s2len = strlen(s2);
   for (size_t i = 0; i < s2len; ++i)
     s1[s1len + i] = s2[i];
+  s1[s1len + s2len] = '\0';
   return s1;
 }

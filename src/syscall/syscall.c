@@ -416,7 +416,7 @@ static void syscall_chdir(char *path)
     current->uregs.eax = -ENOTDIR; return;
   }
 
-  u_memcpy(current->wd, path, u_strlen(path));
+  u_memcpy(current->wd, path, u_strlen(path) + 1);
   current->uregs.eax = 0;
 }
 
