@@ -687,19 +687,14 @@ static int32_t create_dir_entry(
   return 0;
 }
 
-static struct dirent *ext2_readdir(fs_node_t *node, uint32_t idx)
+static struct dirent *ext2_readdir_inode(
+  ext2_fs_t *self, ext2_inode_t *inode, uint32_t idx
+  )
 {
-  ext2_fs_t *self = node->device;
-  ext2_inode_t inode;
-  uint32_t res = read_inode_info(self, &inode, node->inode);
-  CHECK(res, "Failed to read inode info.", NULL);
-  if ((inode.permissions & EXT2_S_IFDIR) == 0)
-    return NULL;
-
   uint8_t *blk_buf = kmalloc(self->block_size);
   CHECK(blk_buf == NULL, "No memory.", NULL);
   uint32_t block_num = 0;
-  res = read_inode_block(self, &inode, block_num, blk_buf);
+  uint32_t res = read_inode_block(self, inode, block_num, blk_buf);
   CHECK(res != self->block_size, "Failed to read inode block.", NULL);
 
   uint32_t t_idx = 0;
@@ -709,14 +704,14 @@ static struct dirent *ext2_readdir(fs_node_t *node, uint32_t idx)
   ext2_dir_entry_t *found_entry = NULL;
   for (
     ;
-    t_idx < inode.size && dir_idx <= idx;
+    t_idx < inode->size && dir_idx <= idx;
     t_idx += current_entry->size, dir_idx_w += current_entry->size
     )
   {
     if (dir_idx_w >= self->block_size) {
       ++block_num;
       dir_idx_w -= self->block_size;
-      res = read_inode_block(self, &inode, block_num, blk_buf);
+      res = read_inode_block(self, inode, block_num, blk_buf);
       CHECK(res != self->block_size, "Failed to read inode block.", NULL);
     }
 
@@ -741,6 +736,18 @@ static struct dirent *ext2_readdir(fs_node_t *node, uint32_t idx)
 
   kfree(found_entry);
   return ent;
+}
+
+static struct dirent *ext2_readdir(fs_node_t *node, uint32_t idx)
+{
+  ext2_fs_t *self = node->device;
+  ext2_inode_t inode;
+  uint32_t res = read_inode_info(self, &inode, node->inode);
+  CHECK(res, "Failed to read inode info.", NULL);
+  if ((inode.permissions & EXT2_S_IFDIR) == 0)
+    return NULL;
+
+  return ext2_readdir_inode(self, &inode, idx);
 }
 
 static fs_node_t *ext2_finddir(fs_node_t *node, char *name)
@@ -1160,42 +1167,51 @@ static int32_t ext2_unlink(fs_node_t *node, char *name)
   if (found_entry == NULL) { kfree(blk_buf); return -ENOENT; }
 
   uint32_t child_inode_num = found_entry->inode;
-  found_entry->inode = 0;
-  res = write_inode_block(self, &inode, node->inode, block_num, blk_buf);
-  CHECK(res != self->block_size, "Failed to write inode block.", -EAGAIN);
-
   ext2_inode_t child_inode;
   res = read_inode_info(self, &child_inode, child_inode_num);
   CHECK(res, "Failed to read child inode info.", -res);
-  --(child_inode.hard_link_count);
-  res = write_inode_info(self, &child_inode, child_inode_num);
-  CHECK(res, "Failed to write child inode info.", -res);
 
   uint8_t isfile = (child_inode.permissions & EXT2_S_IFREG) == EXT2_S_IFREG;
   uint8_t islink = (child_inode.permissions & EXT2_S_IFLNK) == EXT2_S_IFLNK;
   uint8_t isdir = (child_inode.permissions & EXT2_S_IFDIR) == EXT2_S_IFDIR;
+
+  if (isdir) {
+    if (ext2_readdir_inode(self, &child_inode, 2)) {
+      kfree(blk_buf);
+      return -EPERM;
+    }
+  }
+
+  found_entry->inode = 0;
+  res = write_inode_block(self, &inode, node->inode, block_num, blk_buf);
+  CHECK(res != self->block_size, "Failed to write inode block.", -EAGAIN);
+  --(child_inode.hard_link_count);
+  res = write_inode_info(self, &child_inode, child_inode_num);
+  CHECK(res, "Failed to write child inode info.", -res);
+
   if (isdir) {
     --(inode.hard_link_count);
     res = write_inode_info(self, &inode, node->inode);
     CHECK(res, "Failed to write inode info.", -res);
   }
 
-  if (
-    ((islink || isfile) && child_inode.hard_link_count == 0)
-    || (isdir && child_inode.hard_link_count == 1)
-    )
-  {
-    uint32_t tmp = child_inode.sector_count / (self->block_size / 512);
-    for (uint32_t i = 0; i < tmp; ++i) {
-      res = free_inode_block(self, &child_inode, child_inode_num, i);
-      CHECK(res, "Failed to free inode block.", -res);
-      res = read_inode_info(self, &child_inode, child_inode_num);
-      CHECK(res, "Failed to read inode info.", -res);
-    }
+  // TODO actually make freeing space work.
+  /* if ( */
+  /*   ((islink || isfile) && child_inode.hard_link_count == 0) */
+  /*   || (isdir && child_inode.hard_link_count == 1) */
+  /*   ) */
+  /* { */
+  /*   uint32_t tmp = child_inode.sector_count / (self->block_size / 512); */
+  /*   for (uint32_t i = 0; i < tmp; ++i) { */
+  /*     res = free_inode_block(self, &child_inode, child_inode_num, i); */
+  /*     CHECK(res, "Failed to free inode block.", -res); */
+  /*     res = read_inode_info(self, &child_inode, child_inode_num); */
+  /*     CHECK(res, "Failed to read inode info.", -res); */
+  /*   } */
 
-    res = free_inode(self, child_inode_num);
-    CHECK(res, "Failed to free inode.", -res);
-  }
+  /*   res = free_inode(self, child_inode_num); */
+  /*   CHECK(res, "Failed to free inode.", -res); */
+  /* } */
 
   kfree(blk_buf);
   return 0;
