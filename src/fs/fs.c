@@ -62,7 +62,7 @@ struct dirent *fs_readdir(fs_node_t *node, uint32_t index)
         if (index == 0) {
           struct dirent *ent = kmalloc(sizeof(struct dirent));
           if (ent == NULL) return NULL;
-          u_memcpy(ent->name, fschild->name, u_strlen(fschild->name));
+          u_memcpy(ent->name, fschild->name, u_strlen(fschild->name) + 1);
           ent->ino = fschild->inode;
           return ent;
         }
