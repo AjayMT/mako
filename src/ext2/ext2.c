@@ -27,6 +27,10 @@
     log_error("ext2", msg "\n"); kunlock(&(self->block_lock));  \
     return (code);                                              \
   }
+#define CHECK_UNLOCK_O(err, msg, code) if ((err)) {             \
+    log_error("ext2", msg "\n"); kunlock(&(self->ops_lock));    \
+    return (code);                                              \
+  }
 
 typedef struct ext2_fs_s {
   fs_node_t *block_device;
@@ -41,6 +45,7 @@ typedef struct ext2_fs_s {
   volatile uint32_t inode_lock;
   volatile uint32_t block_lock;
   volatile uint32_t bgds_lock;
+  volatile uint32_t ops_lock;
 } ext2_fs_t;
 
 static const uint32_t EXT2_DIRECT_BLOCKS = 12;
@@ -741,29 +746,39 @@ static struct dirent *ext2_readdir_inode(
 static struct dirent *ext2_readdir(fs_node_t *node, uint32_t idx)
 {
   ext2_fs_t *self = node->device;
+  klock(&(self->ops_lock));
   ext2_inode_t inode;
   uint32_t res = read_inode_info(self, &inode, node->inode);
-  CHECK(res, "Failed to read inode info.", NULL);
-  if ((inode.permissions & EXT2_S_IFDIR) == 0)
+  CHECK_UNLOCK_O(res, "Failed to read inode info.", NULL);
+  if ((inode.permissions & EXT2_S_IFDIR) == 0) {
+    kunlock(&(self->ops_lock));
     return NULL;
+  }
 
-  return ext2_readdir_inode(self, &inode, idx);
+  struct dirent *ent = ext2_readdir_inode(self, &inode, idx);
+  kunlock(&(self->ops_lock));
+  return ent;
 }
 
 static fs_node_t *ext2_finddir(fs_node_t *node, char *name)
 {
   ext2_fs_t *self = node->device;
+  klock(&(self->ops_lock));
   ext2_inode_t inode;
   uint32_t res = read_inode_info(self, &inode, node->inode);
-  CHECK(res, "Failed to read inode info.", NULL);
-  if ((inode.permissions & EXT2_S_IFDIR) == 0)
+  CHECK_UNLOCK_O(res, "Failed to read inode info.", NULL);
+  if ((inode.permissions & EXT2_S_IFDIR) == 0) {
+    kunlock(&(self->ops_lock));
     return NULL;
+  }
 
   uint8_t *blk_buf = kmalloc(self->block_size);
-  CHECK(blk_buf == NULL, "No memory.", NULL);
+  CHECK_UNLOCK_O(blk_buf == NULL, "No memory.", NULL);
   uint32_t block_num = 0;
   res = read_inode_block(self, &inode, block_num, blk_buf);
-  CHECK(res != self->block_size, "Failed to read inode block.", NULL);
+  CHECK_UNLOCK_O(
+    res != self->block_size, "Failed to read inode block.", NULL
+    );
 
   uint32_t idx = 0;
   uint32_t dir_idx = 0;
@@ -779,7 +794,9 @@ static fs_node_t *ext2_finddir(fs_node_t *node, char *name)
       ++block_num;
       dir_idx -= self->block_size;
       res = read_inode_block(self, &inode, block_num, blk_buf);
-      CHECK(res != self->block_size, "Failed to read inode block.", NULL);
+      CHECK_UNLOCK_O(
+        res != self->block_size, "Failed to read inode block.", NULL
+        );
     }
 
     current_entry = (ext2_dir_entry_t *)(blk_buf + dir_idx);
@@ -792,7 +809,7 @@ static fs_node_t *ext2_finddir(fs_node_t *node, char *name)
     if (u_strcmp(dname, name) == 0) {
       kfree(dname);
       found_entry = kmalloc(current_entry->size);
-      CHECK(found_entry == NULL, "No memory.", NULL);
+      CHECK_UNLOCK_O(found_entry == NULL, "No memory.", NULL);
       u_memcpy(found_entry, current_entry, current_entry->size);
       break;
     }
@@ -801,16 +818,17 @@ static fs_node_t *ext2_finddir(fs_node_t *node, char *name)
 
   kfree(blk_buf);
 
-  if (found_entry == NULL) return NULL;
+  if (found_entry == NULL) { kunlock(&(self->ops_lock)); return NULL; }
 
   fs_node_t *outnode = kmalloc(sizeof(fs_node_t));
-  CHECK(outnode == NULL, "No memory.", NULL);
+  CHECK_UNLOCK_O(outnode == NULL, "No memory.", NULL);
   u_memset(outnode, 0, sizeof(fs_node_t));
   res = read_inode_info(self, &inode, found_entry->inode);
-  CHECK(res, "Failed to read inode info.", NULL);
+  CHECK_UNLOCK_O(res, "Failed to read inode info.", NULL);
   make_ext2_node(self, outnode, &inode, found_entry);
 
   kfree(found_entry);
+  kunlock(&(self->ops_lock));
   return outnode;
 }
 
@@ -819,10 +837,11 @@ static uint32_t ext2_read(
   )
 {
   ext2_fs_t *self = node->device;
+  klock(&(self->ops_lock));
   ext2_inode_t inode;
   uint32_t res = read_inode_info(self, &inode, node->inode);
-  CHECK(res, "Failed to read inode info.", 0);
-  if (inode.size == 0) return 0;
+  CHECK_UNLOCK_O(res, "Failed to read inode info.", 0);
+  if (inode.size == 0) { kunlock(&(self->ops_lock)); return 0; }
 
   uint32_t end = offset + size;
   if (end > inode.size) end = inode.size;
@@ -834,13 +853,14 @@ static uint32_t ext2_read(
   uint32_t size_to_read = end - offset;
 
   uint8_t *blk_buf = kmalloc(self->block_size);
-  CHECK(blk_buf == NULL, "No memory.", 0);
+  CHECK_UNLOCK_O(blk_buf == NULL, "No memory.", 0);
   if (start_block == end_block) {
     res = read_inode_block(self, &inode, start_block, blk_buf);
-    CHECK(res != self->block_size, "Failed to read block.", res);
+    CHECK_UNLOCK_O(res != self->block_size, "Failed to read block.", res);
     u_memcpy(buffer, blk_buf + start_offset, size_to_read);
 
     kfree(blk_buf);
+    kunlock(&(self->ops_lock));
     return size_to_read;
   }
 
@@ -848,7 +868,7 @@ static uint32_t ext2_read(
   uint32_t read_blocks = 0;
   for (; current_block < end_block; ++current_block, ++read_blocks) {
     res = read_inode_block(self, &inode, current_block, blk_buf);
-    CHECK(
+    CHECK_UNLOCK_O(
       res != self->block_size,
       "Failed to read block.",
       (read_blocks * self->block_size) + res
@@ -868,7 +888,7 @@ static uint32_t ext2_read(
 
   if (end_post_offset) {
     res = read_inode_block(self, &inode, end_block, blk_buf);
-    CHECK(
+    CHECK_UNLOCK_O(
       res != self->block_size,
       "Failed to read block.",
       (read_blocks * self->block_size) + res
@@ -881,6 +901,7 @@ static uint32_t ext2_read(
   }
 
   kfree(blk_buf);
+  kunlock(&(self->ops_lock));
   return size_to_read;
 }
 
@@ -889,15 +910,16 @@ static uint32_t ext2_write(
   )
 {
   ext2_fs_t *self = node->device;
+  klock(&(self->ops_lock));
   ext2_inode_t inode;
   uint32_t res = read_inode_info(self, &inode, node->inode);
-  CHECK(res, "Failed to read inode info.", 0);
+  CHECK_UNLOCK_O(res, "Failed to read inode info.", 0);
 
   uint32_t end = offset + size;
   if (end > inode.size) {
     inode.size = end;
     res = write_inode_info(self, &inode, node->inode);
-    CHECK(res, "Failed to write inode info.", 0);
+    CHECK_UNLOCK_O(res, "Failed to write inode info.", 0);
   }
 
   uint32_t start_block = offset / self->block_size;
@@ -906,15 +928,16 @@ static uint32_t ext2_write(
   uint32_t end_post_offset = end - (end_block * self->block_size);
 
   uint8_t *blk_buf = kmalloc(self->block_size);
-  CHECK(blk_buf == NULL, "No memory.", 0);
+  CHECK_UNLOCK_O(blk_buf == NULL, "No memory.", 0);
   if (start_block == end_block) {
     res = read_inode_block(self, &inode, start_block, blk_buf);
-    CHECK(res != self->block_size, "Failed to read inode block.", 0);
+    CHECK_UNLOCK_O(res != self->block_size, "Failed to read inode block.", 0);
     u_memcpy(blk_buf + start_offset, buffer, size);
     res = write_inode_block(self, &inode, node->inode, start_block, blk_buf);
-    CHECK(res != self->block_size, "Failed to write inode block.", res);
+    CHECK_UNLOCK_O(res != self->block_size, "Failed to write inode block.", res);
 
     kfree(blk_buf);
+    kunlock(&(self->ops_lock));
     return size;
   }
 
@@ -922,10 +945,7 @@ static uint32_t ext2_write(
   uint32_t written_blocks = 0;
   for (; current_block < end_block; ++current_block, ++written_blocks) {
     uint32_t written_size = written_blocks * self->block_size;
-    res = read_inode_block(self, &inode, current_block, blk_buf);
-    CHECK(
-      res != self->block_size, "Failed to read inode block.", written_size
-      );
+    read_inode_block(self, &inode, current_block, blk_buf);
     if (current_block == start_block) {
       u_memcpy(
         blk_buf + start_offset, buffer, self->block_size - start_offset
@@ -933,9 +953,9 @@ static uint32_t ext2_write(
       res = write_inode_block(
         self, &inode, node->inode, current_block, blk_buf
         );
-      CHECK(res != self->block_size, "Failed to write inode block", res);
+      CHECK_UNLOCK_O(res != self->block_size, "Failed to write inode block", res);
       res = read_inode_info(self, &inode, node->inode);
-      CHECK(
+      CHECK_UNLOCK_O(
         res, "Failed to read inode info.", self->block_size - start_offset
         );
       continue;
@@ -944,18 +964,20 @@ static uint32_t ext2_write(
       blk_buf, buffer + written_size - start_offset, self->block_size
       );
     res = write_inode_block(self, &inode, node->inode, current_block, blk_buf);
-    CHECK(
+    CHECK_UNLOCK_O(
       res != self->block_size,
       "Failed to write inode block.",
       res + written_size
       );
     res = read_inode_info(self, &inode, node->inode);
-    CHECK(res, "Failed to read inode info.", written_size + self->block_size);
+    CHECK_UNLOCK_O(
+      res, "Failed to read inode info.", written_size + self->block_size
+      );
   }
 
   if (end_post_offset) {
     res = read_inode_block(self, &inode, end_block, blk_buf);
-    CHECK(
+    CHECK_UNLOCK_O(
       res != self->block_size,
       "Failed to read inode block.",
       (written_blocks * self->block_size) + res
@@ -966,7 +988,7 @@ static uint32_t ext2_write(
       end_post_offset
       );
     res = write_inode_block(self, &inode, node->inode, end_block, blk_buf);
-    CHECK(
+    CHECK_UNLOCK_O(
       res != self->block_size,
       "Failed to write inode block.",
       (written_blocks * self->block_size) + res
@@ -974,6 +996,7 @@ static uint32_t ext2_write(
   }
 
   kfree(blk_buf);
+  kunlock(&(self->ops_lock));
   return 0;
 }
 
@@ -982,11 +1005,16 @@ static void ext2_open(fs_node_t *node, uint32_t flags)
   if ((flags & O_TRUNC) == 0) return;
 
   ext2_fs_t *self = node->device;
+  klock(&(self->ops_lock));
   ext2_inode_t inode;
   uint32_t res = read_inode_info(self, &inode, node->inode);
-  if (res) { log_error("ext2", "Failed to read inode.\n"); return; }
+  if (res) {
+    log_error("ext2", "Failed to read inode.\n");
+    kunlock(&(self->ops_lock)); return;
+  }
   inode.size = 0;
   res = write_inode_info(self, &inode, node->inode);
+  kunlock(&(self->ops_lock));
   if (res) { log_error("ext2", "Failed to write inode.\n"); return; }
 }
 
@@ -1000,11 +1028,13 @@ static int32_t ext2_mkdir(fs_node_t *node, char *name, uint16_t mask)
   kfree(child);
   if (child) return -EEXIST;
 
+  klock(&(self->ops_lock));
+
   uint32_t inode_num = alloc_inode(self);
-  if (inode_num == 0) return -ENOSPC;
+  if (inode_num == 0) { kunlock(&(self->ops_lock)); return -ENOSPC; }
   ext2_inode_t inode;
   uint32_t res = read_inode_info(self, &inode, inode_num);
-  CHECK(res, "Failed to read inode info.", -res);
+  CHECK_UNLOCK_O(res, "Failed to read inode info.", -res);
 
   // TODO atime, mtime, ctime
   inode.atime = 0;
@@ -1030,17 +1060,17 @@ static int32_t ext2_mkdir(fs_node_t *node, char *name, uint16_t mask)
   inode.permissions |= 0xFFF & mask;
 
   res = write_inode_info(self, &inode, inode_num);
-  CHECK(res, "Failed to write inode info.", -res);
+  CHECK_UNLOCK_O(res, "Failed to write inode info.", -res);
   int32_t sres = create_dir_entry(node, name, inode_num);
-  CHECK(sres < 0, "Failed to create directory entry.", res);
+  CHECK_UNLOCK_O(sres < 0, "Failed to create directory entry.", res);
   inode.size = self->block_size;
   res = write_inode_info(self, &inode, inode_num);
-  CHECK(res, "Failed to write inode info.", -res);
+  CHECK_UNLOCK_O(res, "Failed to write inode info.", -res);
 
   uint8_t *buf = kmalloc(self->block_size);
-  CHECK(buf == NULL, "No memory.", -ENOMEM);
+  CHECK_UNLOCK_O(buf == NULL, "No memory.", -ENOMEM);
   ext2_dir_entry_t *ent = kmalloc(12);
-  CHECK(ent == NULL, "No memory.", -ENOMEM);
+  CHECK_UNLOCK_O(ent == NULL, "No memory.", -ENOMEM);
   u_memset(ent, 0, 12);
   ent->inode = inode_num;
   ent->size = 12;
@@ -1053,38 +1083,40 @@ static int32_t ext2_mkdir(fs_node_t *node, char *name, uint16_t mask)
   ent->size = self->block_size - 12;
   u_memcpy(&buf[12], ent, 12);
   res = write_inode_block(self, &inode, inode_num, 0, buf);
-  CHECK(res != self->block_size, "Failed to write inode block.", -EAGAIN);
+  CHECK_UNLOCK_O(res != self->block_size, "Failed to write inode block.", -EAGAIN);
   kfree(ent);
   kfree(buf);
 
   ext2_inode_t parent_inode;
   res = read_inode_info(self, &parent_inode, node->inode);
-  CHECK(res, "Failed to read inode info.", -res);
+  CHECK_UNLOCK_O(res, "Failed to read inode info.", -res);
   ++(parent_inode.hard_link_count);
   res = write_inode_info(self, &parent_inode, node->inode);
-  CHECK(res, "Failed to write inode info.", -res);
+  CHECK_UNLOCK_O(res, "Failed to write inode info.", -res);
 
   uint32_t group_num = inode_num / self->inodes_per_group;
   ++(self->bgds[group_num].dir_count);
   res = write_bgds(self);
-  CHECK(res, "Failed to write block group descriptors.", -res);
+  CHECK_UNLOCK_O(res, "Failed to write block group descriptors.", -res);
 
+  kunlock(&(self->ops_lock));
   return 0;
 }
 
 static int32_t ext2_create(fs_node_t *node, char *name, uint16_t mask)
 {
   ext2_fs_t *self = node->device;
-
   fs_node_t *child = fs_finddir(node, name);
   kfree(child);
   if (child) return -EEXIST;
 
+  klock(&(self->ops_lock));
+
   uint32_t inode_num = alloc_inode(self);
-  if (inode_num == 0) return -ENOSPC;
+  if (inode_num == 0) { kunlock(&(self->ops_lock)); return -ENOSPC; }
   ext2_inode_t inode;
   uint32_t res = read_inode_info(self, &inode, inode_num);
-  CHECK(res, "Failed to read inode info.", -res);
+  CHECK_UNLOCK_O(res, "Failed to read inode info.", -res);
 
   // TODO atime, mtime, ctime
   inode.atime = 0;
@@ -1110,26 +1142,30 @@ static int32_t ext2_create(fs_node_t *node, char *name, uint16_t mask)
   inode.permissions |= 0xFFF & mask;
 
   res = write_inode_info(self, &inode, inode_num);
-  CHECK(res, "Failed to write inode info.", -res);
+  CHECK_UNLOCK_O(res, "Failed to write inode info.", -res);
   int32_t sres = create_dir_entry(node, name, inode_num);
-  CHECK(sres < 0, "Failed to create directory entry.", sres);
+  CHECK_UNLOCK_O(sres < 0, "Failed to create directory entry.", sres);
 
+  kunlock(&(self->ops_lock));
   return 0;
 }
 
 static int32_t ext2_unlink(fs_node_t *node, char *name)
 {
   ext2_fs_t *self = node->device;
+  klock(&(self->ops_lock));
   ext2_inode_t inode;
   uint32_t res = read_inode_info(self, &inode, node->inode);
-  CHECK(res, "Failed to read inode info.", -res);
-  if ((inode.permissions & EXT2_S_IFDIR) == 0) return -ENOTDIR;
+  CHECK_UNLOCK_O(res, "Failed to read inode info.", -res);
+  if ((inode.permissions & EXT2_S_IFDIR) == 0) {
+    kunlock(&(self->ops_lock)); return -ENOTDIR;
+  }
 
   uint8_t *blk_buf = kmalloc(self->block_size);
-  CHECK(blk_buf == NULL, "No memory.", -ENOMEM);
+  CHECK_UNLOCK_O(blk_buf == NULL, "No memory.", -ENOMEM);
   uint32_t block_num = 0;
   res = read_inode_block(self, &inode, block_num, blk_buf);
-  CHECK(res != self->block_size, "Failed to read inode block.", -EAGAIN);
+  CHECK_UNLOCK_O(res != self->block_size, "Failed to read inode block.", -EAGAIN);
 
   uint32_t idx = 0;
   uint32_t dir_idx = 0;
@@ -1145,7 +1181,9 @@ static int32_t ext2_unlink(fs_node_t *node, char *name)
       ++block_num;
       dir_idx -= self->block_size;
       res = read_inode_block(self, &inode, block_num, blk_buf);
-      CHECK(res != self->block_size, "Failed to read inode block.", -EAGAIN);
+      CHECK_UNLOCK_O(
+        res != self->block_size, "Failed to read inode block.", -EAGAIN
+        );
     }
 
     current_entry = (ext2_dir_entry_t *)(blk_buf + dir_idx);
@@ -1153,7 +1191,7 @@ static int32_t ext2_unlink(fs_node_t *node, char *name)
       continue;
 
     char *dname = kmalloc(current_entry->name_len + 1);
-    CHECK(dname == NULL, "No memory.", -ENOMEM);
+    CHECK_UNLOCK_O(dname == NULL, "No memory.", -ENOMEM);
     u_memcpy(dname, current_entry->name, current_entry->name_len);
     dname[current_entry->name_len] = '\0';
     if (u_strcmp(dname, name) == 0) {
@@ -1164,35 +1202,35 @@ static int32_t ext2_unlink(fs_node_t *node, char *name)
     kfree(dname);
   }
 
-  if (found_entry == NULL) { kfree(blk_buf); return -ENOENT; }
+  if (found_entry == NULL) {
+    kfree(blk_buf); kunlock(&self->ops_lock); return -ENOENT;
+  }
 
   uint32_t child_inode_num = found_entry->inode;
   ext2_inode_t child_inode;
   res = read_inode_info(self, &child_inode, child_inode_num);
-  CHECK(res, "Failed to read child inode info.", -res);
+  CHECK_UNLOCK_O(res, "Failed to read child inode info.", -res);
 
   uint8_t isfile = (child_inode.permissions & EXT2_S_IFREG) == EXT2_S_IFREG;
   uint8_t islink = (child_inode.permissions & EXT2_S_IFLNK) == EXT2_S_IFLNK;
   uint8_t isdir = (child_inode.permissions & EXT2_S_IFDIR) == EXT2_S_IFDIR;
 
-  if (isdir) {
+  if (isdir)
     if (ext2_readdir_inode(self, &child_inode, 2)) {
-      kfree(blk_buf);
-      return -EPERM;
+      kfree(blk_buf); kunlock(&(self->ops_lock)); return -EPERM;
     }
-  }
 
   found_entry->inode = 0;
   res = write_inode_block(self, &inode, node->inode, block_num, blk_buf);
-  CHECK(res != self->block_size, "Failed to write inode block.", -EAGAIN);
+  CHECK_UNLOCK_O(res != self->block_size, "Failed to write inode block.", -EAGAIN);
   --(child_inode.hard_link_count);
   res = write_inode_info(self, &child_inode, child_inode_num);
-  CHECK(res, "Failed to write child inode info.", -res);
+  CHECK_UNLOCK_O(res, "Failed to write child inode info.", -res);
 
   if (isdir) {
     --(inode.hard_link_count);
     res = write_inode_info(self, &inode, node->inode);
-    CHECK(res, "Failed to write inode info.", -res);
+    CHECK_UNLOCK_O(res, "Failed to write inode info.", -res);
   }
 
   // TODO actually make freeing space work.
@@ -1214,18 +1252,21 @@ static int32_t ext2_unlink(fs_node_t *node, char *name)
   /* } */
 
   kfree(blk_buf);
+  kunlock(&(self->ops_lock));
   return 0;
 }
 
 static int32_t ext2_chmod(fs_node_t *node, int32_t mask)
 {
   ext2_fs_t *self = node->device;
+  klock(&(self->ops_lock));
   ext2_inode_t inode;
   uint32_t res = read_inode_info(self, &inode, node->inode);
-  CHECK(res, "Failed to read inode info.", -res);
+  CHECK_UNLOCK_O(res, "Failed to read inode info.", -res);
   inode.permissions = (inode.permissions & 0xFFFFF000) | mask;
   res = write_inode_info(self, &inode, node->inode);
-  CHECK(res, "Failed to write inode info.", -res);
+  CHECK_UNLOCK_O(res, "Failed to write inode info.", -res);
+  kunlock(&(self->ops_lock));
   return 0;
 }
 
@@ -1236,11 +1277,13 @@ static int32_t ext2_symlink(fs_node_t *node, char *value, char *name)
   kfree(child);
   if (child) return -EEXIST;
 
+  klock(&(self->ops_lock));
+
   uint32_t inode_num = alloc_inode(self);
-  if (inode_num == 0) return -ENOSPC;
+  if (inode_num == 0) { kunlock(&(self->ops_lock)); return -ENOSPC; }
   ext2_inode_t inode;
   uint32_t res = read_inode_info(self, &inode, inode_num);
-  CHECK(res, "Failed to read inode info.", -res);
+  CHECK_UNLOCK_O(res, "Failed to read inode info.", -res);
 
   // TODO atime, mtime, ctime
   inode.atime = 0;
@@ -1273,9 +1316,11 @@ static int32_t ext2_symlink(fs_node_t *node, char *value, char *name)
   }
 
   res = write_inode_info(self, &inode, inode_num);
-  CHECK(res, "Failed to write inode info.", -res);
+  CHECK_UNLOCK_O(res, "Failed to write inode info.", -res);
   int32_t sres = create_dir_entry(node, name, inode_num);
-  CHECK(sres < 0, "Failed to create directory entry.", sres);
+  CHECK_UNLOCK_O(sres < 0, "Failed to create directory entry.", sres);
+
+  kunlock(&(self->ops_lock));
 
   if (!embedded) {
     fs_node_t tmp;
@@ -1291,11 +1336,14 @@ static int32_t ext2_symlink(fs_node_t *node, char *value, char *name)
 static int32_t ext2_readlink(fs_node_t *node, char *buf, size_t bufsize)
 {
   ext2_fs_t *self = node->device;
+  klock(&(self->ops_lock));
   ext2_inode_t inode;
   uint32_t res = read_inode_info(self, &inode, node->inode);
-  CHECK(res, "Failed to read inode info.", -res);
+  CHECK_UNLOCK_O(res, "Failed to read inode info.", -res);
   uint32_t size = bufsize;
   if (inode.size < bufsize) size = inode.size;
+
+  kunlock(&(self->ops_lock));
 
   uint32_t read_size = 0;
   if (inode.size > sizeof(inode.block_pointer))
@@ -1313,15 +1361,16 @@ static int32_t ext2_readlink(fs_node_t *node, char *buf, size_t bufsize)
 static int32_t ext2_rename(fs_node_t *node, char *old, char *new)
 {
   ext2_fs_t *self = node->device;
+  klock(&(self->ops_lock));
   ext2_inode_t inode;
   uint32_t res = read_inode_info(self, &inode, node->inode);
-  CHECK(res, "Failed to read inode info.", -res);
+  CHECK_UNLOCK_O(res, "Failed to read inode info.", -res);
 
   uint8_t *blk_buf = kmalloc(self->block_size);
-  CHECK(blk_buf == NULL, "No memory.", -ENOMEM);
+  CHECK_UNLOCK_O(blk_buf == NULL, "No memory.", -ENOMEM);
   uint32_t block_num = 0;
   res = read_inode_block(self, &inode, block_num, blk_buf);
-  CHECK(res != self->block_size, "Failed to read inode block.", -EAGAIN);
+  CHECK_UNLOCK_O(res != self->block_size, "Failed to read inode block.", -EAGAIN);
 
   uint32_t idx = 0;
   uint32_t dir_idx = 0;
@@ -1338,7 +1387,9 @@ static int32_t ext2_rename(fs_node_t *node, char *old, char *new)
       ++block_num;
       dir_idx -= self->block_size;
       res = read_inode_block(self, &inode, block_num, blk_buf);
-      CHECK(res != self->block_size, "Failed to read inode block.", -EAGAIN);
+      CHECK_UNLOCK_O(
+        res != self->block_size, "Failed to read inode block.", -EAGAIN
+        );
     }
 
     current_entry = (ext2_dir_entry_t *)(blk_buf + dir_idx);
@@ -1346,7 +1397,7 @@ static int32_t ext2_rename(fs_node_t *node, char *old, char *new)
       continue;
 
     char *dname = kmalloc(current_entry->name_len + 1);
-    CHECK(dname == NULL, "No memory.", -ENOMEM);
+    CHECK_UNLOCK_O(dname == NULL, "No memory.", -ENOMEM);
     u_memcpy(dname, current_entry->name, current_entry->name_len);
     dname[current_entry->name_len] = '\0';
     if (u_strcmp(dname, old) == 0) old_entry = current_entry;
@@ -1354,23 +1405,28 @@ static int32_t ext2_rename(fs_node_t *node, char *old, char *new)
     kfree(dname);
   }
 
-  if (old_entry == NULL) { kfree(blk_buf); return -ENOENT; }
+  if (old_entry == NULL) {
+    kunlock(&(self->ops_lock)); kfree(blk_buf); return -ENOENT;
+  }
   if (new_entry) {
     // On most systems, `rename' removes the directory entry with the new
     // name.
     // I think that's a bad design choice and I also don't want to
     // implement it, so I won't.
-    kfree(blk_buf); return -EEXIST;
+    kunlock(&(self->ops_lock)); kfree(blk_buf); return -EEXIST;
   }
 
   uint32_t child_inode_num = old_entry->inode;
   old_entry->inode = 0;
   res = write_inode_block(self, &inode, node->inode, block_num, blk_buf);
-  CHECK(res != self->block_size, "Failed to write inode block.", -EAGAIN);
+  CHECK_UNLOCK_O(
+    res != self->block_size, "Failed to write inode block.", -EAGAIN
+    );
 
   int32_t sres = create_dir_entry(node, new, child_inode_num);
-  CHECK(sres < 0, "Failed to create directory entry.", sres);
+  CHECK_UNLOCK_O(sres < 0, "Failed to create directory entry.", sres);
 
+  kunlock(&(self->ops_lock));
   return 0;
 }
 
@@ -1447,6 +1503,7 @@ static uint32_t make_fs_root(
   node->unlink = ext2_unlink;
   node->symlink = ext2_symlink;
   node->readlink = ext2_readlink;
+  node->rename = ext2_rename;
 
   return 0;
 }
