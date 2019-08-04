@@ -14,6 +14,7 @@
 #include <libgen.h>
 #include <math.h>
 #include <sys/stat.h>
+#include <sys/param.h>
 #include <fcntl.h>
 #include <unistd.h>
 #include <errno.h>
@@ -236,6 +237,14 @@ static void duplicate_rec(char *srcdir, char *src, char *dstdir, char *dst)
   }
 
   if ((st.st_dev & 2) == 0) {
+    if ((st.st_dev & 0x20)) { // Symlink
+      char *buf = calloc(MAXPATHLEN);
+      size_t s = readlink(srcpath, buf, MAXPATHLEN);
+      if (s == 0) { free(buf); goto ret; }
+      symlink(buf, dstpath);
+      free(buf);
+      goto ret;
+    }
     FILE *f = fopen(srcpath, "r");
     if (f == NULL) goto ret;
     char *buf = malloc(st.st_size);
@@ -271,7 +280,9 @@ static void duplicate_rec(char *srcdir, char *src, char *dstdir, char *dst)
 
 static void duplication_thread(void *data)
 {
+  thread_lock(&ui_lock);
   char *start_dir = strdup(current_path);
+  thread_unlock(&ui_lock);
   char *entname = data;
   size_t len = strlen(entname);
   char *dupname = malloc(len + 4);
@@ -301,6 +312,10 @@ static void duplication_thread(void *data)
 
 static void duplicate_entry()
 {
+  char *p = strdup(dirents[cursor_idx].d_name);
+  if (strcmp(p, ".") == 0 || strcmp(p, "..") == 0) {
+    free(p); return;
+  }
   thread(duplication_thread, strdup(dirents[cursor_idx].d_name));
 }
 
