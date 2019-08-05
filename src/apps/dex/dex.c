@@ -15,8 +15,10 @@
 #include <math.h>
 #include <sys/stat.h>
 #include <sys/param.h>
+#include <sys/wait.h>
 #include <fcntl.h>
 #include <unistd.h>
+#include <signal.h>
 #include <errno.h>
 #include <mako.h>
 #include <ui.h>
@@ -48,13 +50,17 @@ static uint32_t cursor_idx = 0;
 static uint32_t top_idx = 0;
 static struct dirent dirents[MAX_DIRENTS];
 static char *file_path = NULL;
+static char *exec_path = NULL;
+static pid_t exec_pid = 0;
 
 typedef enum {
   CS_DEFAULT,
   CS_CREATE_TYPE,
   CS_CREATE_NAME,
   CS_EDIT_NAME,
-  CS_SPLIT
+  CS_SPLIT,
+  CS_EXEC_STDIN,
+  CS_EXEC_PENDING
 } command_state_t;
 
 static command_state_t cs;
@@ -69,6 +75,7 @@ typedef enum {
 static entry_type_t create_entry_type;
 static char create_entry_name[FOOTER_LEN];
 static char edit_entry_name[FOOTER_LEN];
+static char exec_stdin_path[FOOTER_LEN];
 
 __attribute__((always_inline))
 static inline uint32_t round(double d)
@@ -166,6 +173,14 @@ static void render_dirents()
   }
 }
 
+static void render_inactive()
+{
+  for (uint32_t i = 0; i < window_w; ++i)
+    for (uint32_t j = 0; j < window_h; ++j)
+      if (ui_buf[(j * window_w) + i] != BG_COLOR)
+        ui_buf[(j * window_w) + i] = INACTIVE_COLOR;
+}
+
 static void update_cursor(uint32_t new_idx)
 {
   uint32_t num_dirents =
@@ -238,7 +253,7 @@ static void duplicate_rec(char *srcdir, char *src, char *dstdir, char *dst)
 
   if ((st.st_dev & 2) == 0) {
     if ((st.st_dev & 0x20)) { // Symlink
-      char *buf = calloc(MAXPATHLEN);
+      char *buf = calloc(1, MAXPATHLEN);
       size_t s = readlink(srcpath, buf, MAXPATHLEN);
       if (s == 0) { free(buf); goto ret; }
       symlink(buf, dstpath);
@@ -408,17 +423,67 @@ static uint8_t open_dirent(uint32_t idx)
   return 1;
 }
 
+static void exec_thread(void *data)
+{
+  int32_t t;
+  waitpid(exec_pid, &t, 0);
+
+  thread_lock(&ui_lock);
+  free(file_path);
+  file_path = data;
+  cs = CS_SPLIT;
+  update_footer_text();
+  render_footer();
+  ui_swap_buffers((uint32_t)ui_buf);
+  thread_unlock(&ui_lock);
+}
+
+static uint8_t exec_entry()
+{
+  char *apps_path = getenv("APPS_PATH");
+  size_t aplen = apps_path ? strlen(apps_path) : 0;
+  if (apps_path && strncmp(current_path, apps_path, aplen) == 0) {
+    free(exec_path);
+    exec_path = strdup(dirents[cursor_idx].d_name);
+    return 2;
+  }
+
+  char *path = strdup(dirents[cursor_idx].d_name);
+  char *tmpf = calloc(1, 256);
+  tmpnam(tmpf);
+  FILE *of = fopen(tmpf, "rw+");
+  if (!of) { free(path); free(tmpf); return 0; }
+
+  pid_t p = fork();
+  if (p == 0) {
+    FILE *f = fopen(exec_stdin_path, "r");
+    if (f) movefd(f->fd, 0);
+    movefd(of->fd, 1);
+    char *args[] = { path, "-", NULL };
+    execve(path, args, environ);
+    printf("dex: error: %d\n", errno);
+    exit(1);
+  }
+
+  exec_pid = p;
+  thread(exec_thread, tmpf);
+
+  return 1;
+}
+
 static void keyboard_handler(uint8_t code)
 {
   static uint8_t lshift = 0;
   static uint8_t rshift = 0;
   static uint8_t capslock = 0;
+  static uint8_t meta = 0;
 
   if (code & 0x80) {
     code &= 0x7F;
     switch (code) {
     case KB_SC_LSHIFT: lshift = 0; break;
     case KB_SC_RSHIFT: rshift = 0; break;
+    case KB_SC_META:   meta = 0; break;
     }
     return;
   }
@@ -427,6 +492,15 @@ static void keyboard_handler(uint8_t code)
   case KB_SC_LSHIFT:   lshift = 1; return;
   case KB_SC_RSHIFT:   rshift = 1; return;
   case KB_SC_CAPSLOCK: capslock = !capslock; return;
+  case KB_SC_META:     meta = 1; return;
+  case KB_SC_TAB:
+    if (meta) {
+      meta = 0; lshift = 0; rshift = 0; capslock = 0;
+      render_inactive();
+      ui_swap_buffers((uint32_t)ui_buf);
+      ui_yield();
+    }
+    return;
   }
 
   thread_lock(&ui_lock);
@@ -488,6 +562,11 @@ static void keyboard_handler(uint8_t code)
       break;
     case KB_SC_E:
       cs = CS_EDIT_NAME;
+      update_footer_text();
+      render_footer();
+      break;
+    case KB_SC_X:
+      cs = CS_EXEC_STDIN;
       update_footer_text();
       render_footer();
       break;
@@ -642,6 +721,66 @@ static void keyboard_handler(uint8_t code)
     thread_unlock(&ui_lock);
     return;
   }
+
+  if (cs == CS_EXEC_STDIN) {
+    uint8_t update = 1;
+    uint8_t cancel = 0;
+    uint8_t execed = 0;
+    size_t len = strlen(exec_stdin_path);
+    char c = 0;
+    switch (code) {
+    case KB_SC_ESC:
+      cancel = 1;
+      break;
+    case KB_SC_BS:
+      if (len) {
+        exec_stdin_path[len - 1] = '\0';
+        update_footer_text();
+        strcat(footer_text, exec_stdin_path);
+      } else update = 0;
+      break;
+    case KB_SC_ENTER:
+      execed = exec_entry();
+      break;
+    default:
+      c = scancode_to_ascii(code, lshift || rshift);
+      if (!c) { update = 0; break; }
+      if (len + strlen(footer_text) >= FOOTER_LEN) {
+        update = 0; break;
+      }
+      exec_stdin_path[len] = c;
+      update_footer_text();
+      strcat(footer_text, exec_stdin_path);
+    }
+    if (update) {
+      if (cancel) {
+        memset(edit_entry_name, 0, sizeof(edit_entry_name));
+        cs = CS_DEFAULT;
+        update_footer_text();
+      }
+      if (execed) memset(edit_entry_name, 0, sizeof(edit_entry_name));
+      if (execed == 1) {
+        cs = CS_EXEC_PENDING;
+        update_footer_text();
+      } else if (execed == 2) {
+        cs = CS_SPLIT;
+        update_footer_text();
+      }
+      render_footer();
+      ui_swap_buffers((uint32_t)ui_buf);
+    }
+    thread_unlock(&ui_lock);
+    return;
+  }
+
+  if (cs == CS_EXEC_PENDING) {
+    switch (cs) {
+    case KB_SC_ESC:
+      if (!exec_pid) break;
+      signal_send(exec_pid, SIGKILL);
+    }
+    thread_unlock(&ui_lock);
+  }
 }
 
 static void ui_handler(ui_event_t ev)
@@ -663,6 +802,7 @@ static void ui_handler(ui_event_t ev)
     render_footer();
     render_dirents();
     update_cursor(cursor_idx);
+    if (ev.is_active == 0) render_inactive();
 
     ui_swap_buffers((uint32_t)ui_buf);
 
@@ -673,6 +813,14 @@ static void ui_handler(ui_event_t ev)
       }
       free(file_path);
       file_path = NULL;
+    } else if (exec_path) {
+      if (fork() == 0) {
+        char *args[] = { exec_path, NULL };
+        execve(exec_path, args, environ);
+        exit(1);
+      }
+      free(exec_path);
+      exec_path = NULL;
     }
 
     thread_unlock(&ui_lock);
@@ -698,6 +846,12 @@ static void update_footer_text()
   case CS_CREATE_TYPE:
     str = "Entry type: [d]directory | [f]file | [ESC]cancel";
     break;
+  case CS_EXEC_STDIN:
+    str = "(Optional) `stdin' file path ([ESC]cancel): ";
+    break;
+  case CS_EXEC_PENDING:
+    str = "[ESC]terminate";
+    break;
   case CS_EDIT_NAME:
   case CS_CREATE_NAME:
     str = "Entry name ([ESC]cancel): ";
@@ -719,6 +873,7 @@ int main(int argc, char *argv[])
 
   memset(create_entry_name, 0, sizeof(create_entry_name));
   memset(edit_entry_name, 0, sizeof(edit_entry_name));
+  memset(exec_stdin_path, 0, sizeof(exec_stdin_path));
   memset(dirents, 0, sizeof(dirents));
   cs = CS_DEFAULT;
   update_footer_text();
