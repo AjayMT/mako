@@ -259,7 +259,7 @@ char *tmpnam(char *s)
   static char temp[L_tmpnam];
   char *buf = s;
   if (s == NULL) buf = temp;
-  sprintf(buf, P_tmpdir "%u", getpid());
+  sprintf(buf, P_tmpdir "/%u", getpid());
   return buf;
 }
 

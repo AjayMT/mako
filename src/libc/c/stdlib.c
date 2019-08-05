@@ -19,7 +19,6 @@ char **environ = (char **)DEFAULT_ENVIRON;
 char *getenv(const char *name)
 {
   for (uint32_t i = 0; environ[i]; ++i) {
-    if (environ[i] == NULL) continue;
     char *eq = strchr(environ[i], '=');
     if (strncmp(environ[i], name, eq - environ[i]) == 0)
       return eq + 1;
@@ -31,7 +30,6 @@ int32_t setenv(const char *name, const char *value, int32_t overwrite)
 {
   int32_t p = -1;
   for (uint32_t i = 0; environ[i]; ++i) {
-    if (environ[i] == NULL) continue;
     char *eq = strchr(environ[i], '=');
     if (strncmp(environ[i], name, eq - environ[i]) == 0) {
       p = i;

@@ -134,7 +134,9 @@ int32_t strcmp(const char *s1, const char *s2)
 
 int32_t strncmp(const char *s1, const char *s2, size_t n)
 {
-  for (uint32_t i = 0; *s1 && *s1 == *s2 && i < n; ++s1, ++s2, ++i);
+  uint32_t i = 0;
+  for (; *s1 && *s1 == *s2 && i < n; ++s1, ++s2, ++i);
+  if (i == n) return 0;
   return *s1 - *s2;
 }
 
