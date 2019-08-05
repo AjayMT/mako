@@ -112,13 +112,18 @@ static void syscall_execve(char *path, char *argv[], char *envp[])
   if (new_argv == NULL) { current->uregs.eax = -ENOMEM; return; }
   uint32_t buf_idx = u_strlen((char *)buf) + 1;
   uint32_t new_argv_idx = 0;
-  for (; buf_idx < line_len; buf_idx += u_strlen((char *)buf) + 1) {
+  for (
+    ;
+    buf_idx < line_len;
+    buf_idx += u_strlen((char *)buf + buf_idx) + 1
+    )
+  {
     new_argv[new_argv_idx] = (char *)buf + buf_idx;
     ++new_argv_idx;
   }
   new_argv[new_argv_idx] = path;
   ++new_argv_idx;
-  for (uint32_t i = 0; i < argc; ++i) {
+  for (uint32_t i = 0; i <= argc; ++i) {
     new_argv[new_argv_idx] = argv[i];
     ++new_argv_idx;
   }
