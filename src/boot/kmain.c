@@ -46,7 +46,7 @@ void page_fault_handler(
 
 uint32_t debug_write(fs_node_t *n, size_t offset, size_t size, uint8_t *buf)
 {
-  log_debug("procdebug", "%s", (char *)buf);
+  log_debug("procdebug", "%u: %s", process_current()->pid, (char *)buf);
   return size;
 }
 
