@@ -65,6 +65,7 @@ static uint32_t ui_dispatch_resize_event(ui_responder_t *r)
   ev->type = UI_EVENT_RESIZE;
   ev->width = r->window.w;
   ev->height = r->window.h;
+  ev->is_active = r == key_responder;
 
   klock(&(r->lock));
   list_push_back(r->process->ui_event_queue, ev);
@@ -81,6 +82,7 @@ uint32_t ui_dispatch_keyboard_event(uint8_t code)
   CHECK(ev == NULL, "No memory.", ENOMEM);
   ev->type = UI_EVENT_KEYBOARD;
   ev->code = code;
+  ev->is_active = 1;
 
   klock(&(key_responder->lock));
   list_push_back(key_responder->process->ui_event_queue, ev);
@@ -176,17 +178,18 @@ uint32_t ui_make_responder(process_t *p)
   list_push_back(responders, r);
   r->list_node = responders->tail;
 
+  if (key_responder == NULL) key_responder = r;
+
   ui_event_t *ev = kmalloc(sizeof(ui_event_t));
   ev->type = UI_EVENT_WAKE;
   ev->width = r->window.w;
   ev->height = r->window.h;
+  ev->is_active = key_responder == r;
   CHECK(ev == NULL, "No memory.", ENOMEM);
   klock(&(r->lock));
   list_push_back(r->process->ui_event_queue, ev);
   kunlock(&(r->lock));
   r->process->is_running = 1;
-
-  if (key_responder == NULL) key_responder = r;
 
   kunlock(&responders_lock);
   return 0;
@@ -233,7 +236,7 @@ uint32_t ui_kill(process_t *p)
       list_push_back(h_expd_l, o);
     } else if (right) {
       h_expd_r_span += o->window.h;
-      list_push_back(h_expd_r, r);
+      list_push_back(h_expd_r, o);
     }
   }
 
@@ -289,7 +292,7 @@ uint32_t ui_kill(process_t *p)
       list_push_back(v_expd_u, o);
     } else if (down) {
       v_expd_d_span += o->window.w;
-      list_push_back(v_expd_d, r);
+      list_push_back(v_expd_d, o);
     }
   }
 
@@ -318,6 +321,22 @@ uint32_t ui_kill(process_t *p)
   }
 
 success:
+  if (r == key_responder) {
+    list_node_t *next = r->list_node->next;
+    if (next == NULL) next = responders->head;
+    key_responder = next->value;
+
+    ui_event_t *ev = kmalloc(sizeof(ui_event_t));
+    ev->type = UI_EVENT_WAKE;
+    ev->width = key_responder->window.w;
+    ev->height = key_responder->window.h;
+    ev->is_active = 1;
+    CHECK_UNLOCK(ev == NULL, "No memory.", ENOMEM);
+    klock(&(key_responder->lock));
+    list_push_back(key_responder->process->ui_event_queue, ev);
+    kunlock(&(key_responder->lock));
+    key_responder->process->is_running = 1;
+  }
   list_remove(responders, r->list_node, 1);
   kunlock(&free_windows_lock);
   kunlock(&responders_lock);
@@ -369,6 +388,7 @@ uint32_t ui_yield(process_t *p)
   ev->type = UI_EVENT_WAKE;
   ev->width = key_responder->window.w;
   ev->height = key_responder->window.h;
+  ev->is_active = 1;
   CHECK(ev == NULL, "No memory.", ENOMEM);
   klock(&(key_responder->lock));
   list_push_back(key_responder->process->ui_event_queue, ev);

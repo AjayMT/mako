@@ -29,6 +29,7 @@ typedef enum {
 typedef struct ui_event_s {
   ui_event_type_t type;
   uint8_t code;
+  uint8_t is_active;
   uint32_t width;
   uint32_t height;
 } ui_event_t;
