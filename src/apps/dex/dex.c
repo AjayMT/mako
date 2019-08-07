@@ -787,14 +787,16 @@ static void ui_handler(ui_event_t ev)
 {
   if (ev.type == UI_EVENT_RESIZE || ev.type == UI_EVENT_WAKE) {
     thread_lock(&ui_lock);
-    if (ui_buf) {
-      uint32_t oldsize = window_w * window_h * 4;
-      pagefree((uint32_t)ui_buf, (oldsize / 0x1000) + 1);
+    if (window_w != ev.width || window_h != ev.height) {
+      if (ui_buf) {
+        uint32_t oldsize = window_w * window_h * 4;
+        pagefree((uint32_t)ui_buf, (oldsize / 0x1000) + 1);
+      }
+      uint32_t size = ev.width * ev.height * 4;
+      ui_buf = (uint32_t *)pagealloc((size / 0x1000) + 1);
+      window_w = ev.width;
+      window_h = ev.height;
     }
-    uint32_t size = ev.width * ev.height * 4;
-    ui_buf = (uint32_t *)pagealloc((size / 0x1000) + 1);
-    window_w = ev.width;
-    window_h = ev.height;
 
     fill_color(ui_buf, BG_COLOR, window_w * window_h);
     load_dirents();
