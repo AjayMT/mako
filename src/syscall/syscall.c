@@ -153,9 +153,9 @@ static void syscall_msleep(uint32_t duration)
 static void syscall_exit(uint32_t status)
 {
   process_t *current = process_current();
-  process_finish(current);
   current->exited = 1;
   current->exit_status = status;
+  process_finish(current);
   process_switch_next();
 }
 
@@ -421,7 +421,12 @@ static void syscall_chdir(char *path)
     current->uregs.eax = -ENOTDIR; return;
   }
 
-  u_memcpy(current->wd, path, u_strlen(path) + 1);
+  uint32_t len = u_strlen(path);
+  uint32_t eflags = interrupt_save_disable();
+  kfree(current->wd);
+  current->wd = kmalloc(len + 1);
+  u_memcpy(current->wd, path, len + 1);
+  interrupt_restore(eflags);
   current->uregs.eax = 0;
 }
 

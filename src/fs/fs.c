@@ -109,6 +109,7 @@ int32_t fs_readlink(fs_node_t *node, char *buf, size_t bufsize)
 // Resolve a (relative) path.
 static uint32_t resolve_path(char **outpath, const char *inpath)
 {
+  process_t *current = process_current();
   uint32_t path_len = u_strlen(inpath);
   char *path = kmalloc(path_len + 1);
   CHECK(path == NULL, "No memory.", ENOMEM);
@@ -123,10 +124,10 @@ static uint32_t resolve_path(char **outpath, const char *inpath)
   u_memset(stack, 0, sizeof(list_t));
 
   if (path[0] != '\0') {
-    if (process_current() == NULL) { kfree(path); return 1; }
-    char *wd = kmalloc(u_strlen(process_current()->wd) + 1);
+    if (current == NULL) { kfree(path); return 1; }
+    char *wd = kmalloc(u_strlen(current->wd) + 1);
     CHECK(wd == NULL, "No memory.", ENOMEM);
-    u_memcpy(wd, process_current()->wd, u_strlen(process_current()->wd) + 1);
+    u_memcpy(wd, current->wd, u_strlen(current->wd) + 1);
     uint32_t wd_len = u_strlen(wd);
     for (uint32_t i = 0; i < wd_len; ++i)
       if (wd[i] == FS_PATH_SEP) wd[i] = '\0';

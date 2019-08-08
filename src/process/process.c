@@ -708,6 +708,7 @@ static uint32_t process_destroy(process_t *process)
   list_foreach(lchild, tree_node->parent->children) {
     if (lchild->value == tree_node) {
       list_remove(tree_node->parent->children, lchild, 0);
+      kfree(lchild);
       break;
     }
   }
