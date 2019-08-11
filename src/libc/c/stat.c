@@ -18,6 +18,7 @@ int32_t stat(const char *file, struct stat *st)
   if (fd < 0) { return fd; }
   int32_t res = _syscall2(SYSCALL_FSTAT, (uint32_t)fd, (uint32_t)st);
   if (res < 0) { errno = -res; res = -1; }
+  close(fd);
   return res;
 }
 
