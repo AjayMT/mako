@@ -42,7 +42,7 @@ void *memmove(void *dest, void *src, size_t n)
     for (; n; --n, ++d, ++s) *d = *s;
     return d;
   }
-  for (; n; --n) d[n] = s[n];
+  for (int32_t i = n - 1; i >= 0; --i) d[i] = s[i];
   return d;
 }
 
