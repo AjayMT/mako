@@ -139,7 +139,7 @@ uint32_t process_switch_next()
     list_node_t *next = lnode->next;
     if (next == NULL) next = running_list->head;
     process_t *p = lnode->value;
-    if (p->is_finished) {
+    if (p->is_finished || p->next_signal == SIGKILL) {
       uint32_t res = process_destroy(p);
       CHECK(res, "Failed to destroy process.", res);
     } else if (p->is_running) break;
