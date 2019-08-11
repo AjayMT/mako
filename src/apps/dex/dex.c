@@ -650,7 +650,7 @@ static void keyboard_handler(uint8_t code)
       created = create_entry();
       break;
     default:
-      c = scancode_to_ascii(code, lshift || rshift);
+      c = scancode_to_ascii(code, lshift || rshift || capslock);
       if (!c) { update = 0; break; }
       if (len + strlen(footer_text) >= FOOTER_LEN) {
         update = 0; break;
@@ -697,7 +697,7 @@ static void keyboard_handler(uint8_t code)
       edited = edit_entry();
       break;
     default:
-      c = scancode_to_ascii(code, lshift || rshift);
+      c = scancode_to_ascii(code, lshift || rshift || capslock);
       if (!c) { update = 0; break; }
       if (len + strlen(footer_text) >= FOOTER_LEN) {
         update = 0; break;
@@ -743,7 +743,7 @@ static void keyboard_handler(uint8_t code)
       execed = exec_entry();
       break;
     default:
-      c = scancode_to_ascii(code, lshift || rshift);
+      c = scancode_to_ascii(code, lshift || rshift || capslock);
       if (!c) { update = 0; break; }
       if (len + strlen(footer_text) >= FOOTER_LEN) {
         update = 0; break;
