@@ -12,3 +12,5 @@ sysroot/usr/include/sys/*.h
 /dex
 /init
 /xed
+/lua
+/deps

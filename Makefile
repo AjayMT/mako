@@ -23,7 +23,14 @@ export
 
 all: kernel.elf 
 
-user: sysroot $(APPS) $(BIN)
+user: deps $(APPS) $(BIN)
+
+deps: sysroot lua
+	cp lua sysroot/bin
+
+lua: $(shell find src/libc -type f) $(shell find deps/lua -type f)
+	$(MAKE) MAKO_PATH=${PWD} -C deps/lua generic
+	cp deps/lua/src/lua .
 
 sysroot: crt libc.a libui.a
 	cp -rH src/libc/h/* sysroot/usr/include
@@ -89,4 +96,4 @@ clean:
 	       iso/boot/kernel.elf mako.iso bochslog.txt com1.out      \
 	       iso/modules/rd src/libc/*.o src/libui/*.o               \
 	       sysroot/usr/include/{*,sys/*}.h sysroot/usr/lib/*.{a,o} \
-	       $(APPS) $(BIN)
+	       lua $(APPS) $(BIN)

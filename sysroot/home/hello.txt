@@ -1,1 +1,25 @@
-hello
+
+Hello, world!
+
+This is Mako, a small operating system for 32-bit x86-compatible computers.
+Mako is a UNIX-like system that features:
+- a Linux-compatible ext2 filesystem,
+- a Lua interpreter,
+- a graphical tile-based user interface,
+- a directory explorer (`dex'),
+- and a text editor (`xed').
+
+You are currently viewing this document in `xed', the eXtended EDitor.
+xed is a modal editor -- press [e] to enter edit mode or [v] to enter
+select mode.
+
+To view the contents of a different file or directory, press [o] in normal
+mode. Opening a directory will launch `dex', the Directory EXplorer. Pressing
+[ALT]+[TAB] will change the active window.
+
+More comprehensive documentation on the system and its applications is
+available in the `/doc' directory.
+
+Mako is an independent hobbyist project developed for learning and fun, and
+will likely always be a work in progress. If you would like to report bugs
+or share feedback, please do so here: <http://github.com/AjayMT/mako>.
