@@ -1,0 +1,14 @@
+!.gitkeep
+*.o
+*.elf
+*.iso
+bochslog.txt
+*.out
+iso/modules/rd
+hda.img
+*.a
+sysroot/usr/include/*.h
+sysroot/usr/include/sys/*.h
+/dex
+/init
+/xed
