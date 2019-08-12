@@ -320,6 +320,17 @@ uint32_t ui_kill(process_t *p)
     goto success;
   }
 
+  // TODO clear the window?
+  if (r == key_responder) key_responder = NULL;
+  ui_window_t *w = kmalloc(sizeof(ui_window_t));
+  CHECK_UNLOCK(w == NULL, "No memory.", ENOMEM);
+  u_memcpy(w, &(r->window), sizeof(ui_window_t));
+  list_push_back(free_windows, w);
+  list_remove(responders, r->list_node, 1);
+  kunlock(&free_windows_lock);
+  kunlock(&responders_lock);
+  return 0;
+
 success:
   if (r == key_responder) {
     list_node_t *next = r->list_node->next;
