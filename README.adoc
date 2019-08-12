@@ -1,0 +1,12 @@
+
+= Mako
+Mako is an operating system for 32-bit x86-compatible computers. Among its features are:
+- a Linux-compatible ext2 filesystem
+- fully virtualized per-process address spaces
+- cooperative and pre-emptive multitasking, including support for intra-process threads
+- a graphical user interface
+- a (mostly) UNIX-compatible C library
+- a Lua interpreter
+and a deliberate lack of mouse support for maximum efficiency (just kidding, I will eventually write a mouse driver).
+
+Mako is named after the https://en.wikipedia.org/wiki/Shortfin_mako_shark[mako shark].

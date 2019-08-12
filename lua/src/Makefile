@@ -6,19 +6,19 @@
 # Your platform. See PLATS for possible values.
 PLAT= none
 
-CC= i386-elf-gcc -std=gnu99
-CFLAGS= -O2 -Wall -Wextra -DLUA_COMPAT_5_2 $(SYSCFLAGS) $(MYCFLAGS)
-LD= i386-elf-ld
+CC= i686-pc-mako-gcc
+# CFLAGS= -O2 -Wall -Wextra -DLUA_COMPAT_5_2 $(SYSCFLAGS) $(MYCFLAGS)
+CFLAGS= -Wall -Wextra -DLUA_COMPAT_5_2 $(SYSCFLAGS) $(MYCFLAGS)
 LDFLAGS= $(SYSLDFLAGS) $(MYLDFLAGS)
 LIBS= $(SYSLIBS) $(MYLIBS)
 
-AR= i386-elf-ar rcu
-RANLIB= i386-elf-ranlib
+AR= i686-pc-mako-ar rcu
+RANLIB= i686-pc-mako-ranlib
 RM= rm -f
 
-SYSCFLAGS=-ffreestanding -nostdlib -nostartfiles -I${MAKO_PATH}/src/libc/h
-SYSLDFLAGS=-L${MAKO_PATH} -L$(dir $(shell $(CC) -print-file-name=libgcc.a))
-SYSLIBS=-lc -lgcc
+SYSCFLAGS=
+SYSLDFLAGS=
+SYSLIBS=
 
 MYCFLAGS=
 MYLDFLAGS=
@@ -61,12 +61,10 @@ $(LUA_A): $(BASE_O)
 	$(RANLIB) $@
 
 $(LUA_T): $(LUA_O) $(LUA_A)
-	$(LD) -o $@ $(LDFLAGS) ${MAKO_PATH}/crt0.o ${MAKO_PATH}/crti.o \
-	                       $(LUA_O) $(LUA_A) ${MAKO_PATH}/crtn.o $(LIBS)
+	$(CC) -o $@ $(LDFLAGS) $(LUA_O) $(LUA_A) $(LIBS)
 
 $(LUAC_T): $(LUAC_O) $(LUA_A)
-	$(LD) -o $@ $(LDFLAGS) ${MAKO_PATH}/crt0.o ${MAKO_PATH}/crti.o \
-	                       $(LUAC_O) $(LUA_A) ${MAKO_PATH}/crtn.o $(LIBS)
+	$(CC) -o $@ $(LDFLAGS) $(LUAC_O) $(LUA_A) $(LIBS)
 
 clean:
 	$(RM) $(ALL_T) $(ALL_O)
