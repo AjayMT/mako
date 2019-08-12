@@ -571,8 +571,8 @@ static void keyboard_handler(uint8_t code)
       render_footer();
       break;
     case KB_SC_Q:
-      exit(0);
-      break;
+      if (window_w != SCREENWIDTH || window_h != SCREENHEIGHT)
+        exit(0);
     default:
       swap = 0;
     }

@@ -681,8 +681,8 @@ static void keyboard_handler(uint8_t code)
         render_footer();
         break;
       }
-      exit(0);
-      break;
+      if (window_w != SCREENWIDTH || window_h != SCREENHEIGHT)
+        exit(0);
     default: update = 0;
     }
     if (update) ui_swap_buffers((uint32_t)ui_buf);
