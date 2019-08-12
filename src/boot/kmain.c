@@ -1,4 +1,10 @@
 
+// kmain.c
+//
+// Kernel entry point.
+//
+// Author: Ajay Tatachar <ajaymt2@illinois.edu>
+
 #include <drivers/serial/serial.h>
 #include <drivers/keyboard/keyboard.h>
 #include <tss/tss.h>
@@ -49,6 +55,10 @@ uint32_t debug_write(fs_node_t *n, size_t offset, size_t size, uint8_t *buf)
   log_debug("procdebug", "%u: %s", process_current()->pid, (char *)buf);
   return size;
 }
+
+#define CHECK(err, name) if ((err)) {                       \
+    log_error("kmain", "Failed to initialize " name "\n");  \
+  }                                                         \
 
 void kmain(
   uint32_t mb_info_addr,
@@ -101,46 +111,60 @@ void kmain(
 
   uint32_t res;
   res = pmm_init(mb_info, kphys_start, kphys_end, rd_phys_start, rd_phys_end);
+  CHECK(res, "pmm");
 
   res = paging_init(
     kernel_pd, (uint32_t)kernel_pd - KERNEL_START_VADDR
     );
+  CHECK(res, "paging");
   paging_set_kernel_pd(kernel_pd, (uint32_t)kernel_pd - KERNEL_START_VADDR);
 
-  fs_init();
+  res = fs_init();
+  CHECK(res, "fs");
   res = rd_init(rd_phys_start, rd_phys_end);
-
+  CHECK(res, "rd");
   res = ata_init();
+  CHECK(res, "ata");
   res = ext2_init("/dev/hda");
-
+  CHECK(res, "ext2");
   res = keyboard_init();
+  CHECK(res, "keyboard");
 
   uint32_t video_vaddr = paging_next_vaddr(469, KERNEL_START_VADDR);
   page_table_entry_t flags; u_memset(&flags, 0, sizeof(flags));
   flags.rw = 1;
-  for (uint32_t i = 0; i < 469; ++i)
-    paging_map(video_vaddr + (i << 12), 0xFD000000 + (i << 12), flags);
+  paging_result_t r;
+  for (uint32_t i = 0; i < 469; ++i) {
+    r = paging_map(video_vaddr + (i << 12), 0xFD000000 + (i << 12), flags);
+    CHECK(r != PAGING_OK, "ui");
+  }
   res = ui_init(video_vaddr);
+  CHECK(res, "ui");
 
   fs_node_t *debug_node = kmalloc(sizeof(fs_node_t));
   u_memset(debug_node, 0, sizeof(fs_node_t));
   debug_node->write = debug_write;
-  fs_mount(debug_node, "/dev/debug");
+  res = fs_mount(debug_node, "/dev/debug");
+  CHECK(res, "debug_node");
 
   fs_node_t *null_node = kmalloc(sizeof(fs_node_t));
   u_memset(null_node, 0, sizeof(fs_node_t));
-  fs_mount(null_node, "/dev/null");
+  res = fs_mount(null_node, "/dev/null");
+  CHECK(res, "null_node");
 
   fs_node_t init_node;
   res = fs_open_node(&init_node, "/bin/init", 0);
+  CHECK(res, "init");
   uint8_t *init_text = kmalloc(init_node.length);
   fs_read(&init_node, 0, init_node.length, init_text);
 
   unregister_interrupt_handler(14);
-  process_init();
+  res = process_init();
+  CHECK(res, "process");
 
   process_image_t p;
   res = elf_load(&p, init_text);
+  CHECK(res, "init ELF");
 
   process_t *init = kmalloc(sizeof(process_t));
   process_create_init(init, p);
