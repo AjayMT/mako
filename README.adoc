@@ -1,0 +1,74 @@
+
+= Mako
+
+Mako is an operating system for 32-bit x86-compatible computers. Among its features are:
+
+- a Linux-compatible ext2 filesystem
+- fully virtualized per-process address spaces
+- cooperative and pre-emptive multitasking -- multiple processes and mutliple threads per process
+- a graphical user interface
+- a (mostly) UNIX-compatible C library
+- a Lua interpreter
+- graphical applications for navigating directories and editing files
+
+image::http://ajaymt.github.io/mako/res/screenshot.png[]
+
+Mako is named after the https://marinebio.org/species/shortfin-mako-sharks/isurus-oxyrinchus/[mako shark], the fastest shark in the sea. The shortfin mako shark is classified as an endangered species by the http://www.iucn.org[IUCN] -- learn more about shark conservation https://www.sharktrust.org/shark-conservation[here].
+
+'Mako' is also the name of the fictional source of energy from https://finalfantasy.fandom.com/wiki/Final_Fantasy_VII[Final Fantasy VII].
+
+== Download
+
+Download `mako.iso` and `mako-hda.img` from https://github.com/AjayMT/mako/tree/release[here].
+
+== Build from source
+
+Coming Soon
+
+== Run it
+
+Mako only works on https://www.qemu.org/[qemu] at the moment.
+
+. Install qemu.
+. Download the `mako.iso` and `mako-hda.img` disk images from the link above.
+
+[source,sh]
+----
+# At least 64M of RAM is recommended
+qemu-system-i386 -cdrom mako.iso -m 256M -drive format=raw,file=mako-hda.img
+----
+
+== Roadmap
+
+TODOs:
+
+- More/better documentation.
+- A shell and terminal emulator.
+- Port freetype for non-ugly text.
+- Fix the build process.
+- Other misc. stuff in the code.
+
+Long term goals:
+
+- Full POSIX compliant libc.
+- Port a C compiler.
+- Better UI.
+
+== Acknowledgements
+
+Mako depends on:
+
+- http://nurd.se/~noname/?section=sdl_picofont[sdl_picofont] to render text
+- the http://lua.org[Lua] programming language
+
+I wrote Mako to better understand how operating systems work and learnt a lot of cool stuff in the process. This project would not exist without:
+
+- the https://wiki.osdev.org/[osdev wiki] and the friendly people of the #osdev IRC channel
+- https://littleosbook.github.io/[The little book about OS Development]
+- the very well-documented source code of http://github.com/klange/toaruos[ToAruOS], https://github.com/SerenityOS/serenity[SerenityOS] and many other hobby-OS projects.
+
+== License
+
+All Mako source is distributed under the terms of the MIT License.
+
+sdl_picofont is distributed under the terms of the GNU GPL v2.
