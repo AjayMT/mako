@@ -451,14 +451,16 @@ static uint8_t exec_entry()
   char *path = strdup(dirents[cursor_idx].d_name);
   char *tmpf = calloc(1, 256);
   tmpnam(tmpf);
-  FILE *of = fopen(tmpf, "rw+");
-  if (!of) { free(path); free(tmpf); return 0; }
+  int32_t ofd = open(tmpf, O_WRONLY | O_TRUNC);
+  if (ofd == -1 && errno == ENOENT)
+    ofd = open(tmpf, O_WRONLY | O_CREAT, 0666);
+  if (ofd == -1) { free(path); free(tmpf); return 0; }
 
   pid_t p = fork();
   if (p == 0) {
     FILE *f = fopen(exec_stdin_path, "r");
     if (f) movefd(f->fd, 0);
-    movefd(of->fd, 1);
+    movefd(ofd, 1);
     char *args[] = { path, "-", NULL };
     execve(path, args, environ);
     printf("dex: error: %d\n", errno);

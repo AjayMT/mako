@@ -11,6 +11,8 @@
 #include <string.h>
 #include <stdio.h>
 #include <unistd.h>
+#include <fcntl.h>
+#include <errno.h>
 #include <math.h>
 #include <sys/stat.h>
 #include <ui.h>
@@ -319,15 +321,18 @@ static void update_cursor(uint32_t new_idx, uint8_t erase)
 
 static size_t save_file()
 {
-  FILE *f = fopen(file_path, "rw+");
-  if (f == NULL) return 0;
+  int32_t fd = open(file_path, O_RDONLY | O_TRUNC);
+  if (fd == -1 && errno == ENOENT)
+    fd = open(file_path, O_RDONLY | O_CREAT, 0666);
+
+  if (fd == -1) return 0;
 
   struct stat st;
-  int32_t res = fstat(f->fd, &st);
-  if (res || (st.st_dev & 1) == 0) { fclose(f); return 0; }
+  int32_t res = fstat(fd, &st);
+  if (res || (st.st_dev & 1) == 0) { close(fd); return 0; }
 
-  size_t w = fwrite(file_buffer, file_buffer_len, 1, f);
-  fclose(f);
+  size_t w = write(fd, file_buffer, file_buffer_len);
+  close(fd);
   return w;
 }
 
@@ -884,6 +889,10 @@ static void keyboard_handler(uint8_t code)
       file_buffer_len -= selection_len;
       if (buffer_idx > lower) buffer_idx -= selection_len;
       file_buffer[file_buffer_len] = '\0';
+      if (buffer_dirty == 0) {
+        buffer_dirty = 1;
+        render_path();
+      }
       if (lower < top_idx) {
         top_idx = selection_top_idx;
         buffer_idx = selection_buffer_idx;
@@ -984,7 +993,13 @@ static void keyboard_handler(uint8_t code)
 
   if (cs == CS_OPEN_PATH) {
     FIELD_INPUT({
+        if (field_len == 0) { update = 0; break; }
         uint8_t type = check_path(footer_field);
+        if (errno == ENOENT) {
+          FILE *f = fopen(footer_field, "rw+");
+          fclose(f);
+          type = check_path(footer_field);
+        }
         if (type == 0) { update = 0; break; }
         if (type == 1) {
           free(file_path);
@@ -1010,6 +1025,7 @@ static void keyboard_handler(uint8_t code)
 
   if (cs == CS_SAVE_PATH) {
     FIELD_INPUT({
+        if (field_len == 0) { update = 0; break; }
         free(file_path);
         file_path = strdup(footer_field);
         if (save_file()) {
