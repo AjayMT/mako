@@ -39,6 +39,7 @@ static uint32_t *ui_buf = NULL;
 static char *file_path = NULL;
 static char *file_buffer = NULL;
 static char *paste_buffer = NULL;
+static char *dir_path = NULL;
 static uint32_t line_lengths[LINE_LEN_TABLE_SIZE];
 static uint32_t file_buffer_len = 0;
 static uint32_t file_buffer_capacity = 0;
@@ -470,10 +471,10 @@ static void update_footer_text()
     str = "- :: [e]* | [v]+ | [p] | [s] | [o] | [q]";
     break;
   case CS_EDIT:
-    str = "* :: [ESC]";
+    str = "* :: [ESC]-";
     break;
   case CS_SELECT:
-    str = "+ :: [ESC] | [c] | [k]";
+    str = "+ :: [ESC]- | [c] | [k]";
     break;
   case CS_CONFIRM_SAVE:
     str = "Save? ([ESC]cancel) [y/n]"; break;
@@ -989,12 +990,9 @@ static void keyboard_handler(uint8_t code)
           free(file_path);
           file_path = strdup(footer_field);
         } else {
+          free(dir_path);
+          dir_path = strdup(footer_field);
           ui_split(UI_SPLIT_LEFT);
-          if (fork() == 0) {
-            char *args[3];
-            args[0] = "dex"; args[1] = footer_field; args[2] = NULL;
-            execve("/apps/dex", args, environ);
-          }
         }
         cs = CS_NORMAL;
         update_footer_text();
@@ -1056,12 +1054,27 @@ static void ui_handler(ui_event_t ev)
   buffer_idx = top_idx;
   if (ev.is_active == 0) render_inactive();
 
+  if (dir_path) {
+    if (fork() == 0) {
+      char *args[3];
+      args[0] = "dex"; args[1] = dir_path; args[2] = NULL;
+      execve("/apps/dex", args, environ);
+      exit(1);
+    }
+    free(dir_path);
+    dir_path = NULL;
+  }
+
   ui_swap_buffers((uint32_t)ui_buf);
 }
 
 int main(int argc, char *argv[])
 {
-  if (argc > 1) file_path = strdup(argv[1]);
+  if (argc > 1) {
+    char buf[1024];
+    resolve(buf, argv[1], 1024);
+    file_path = strdup(buf);
+  }
 
   memset(footer_text, 0, sizeof(footer_text));
   memset(line_lengths, 0, sizeof(line_lengths));

@@ -55,16 +55,18 @@ struct dirent *fs_readdir(fs_node_t *node, uint32_t index)
 
   if (node->tree_node) {
     tree_node_t *tnode = node->tree_node;
-    if (index < 2) {
-      struct dirent *ent = kmalloc(sizeof(struct dirent));
-      if (ent == NULL) return NULL;
-      char *name = index == 0 ? "." : "..";
-      u_memcpy(ent->name, name, u_strlen(name) + 1);
-      ent->ino = index;
-      return ent;
+    if (tnode != fs_tree) {
+      if (index < 2) {
+        struct dirent *ent = kmalloc(sizeof(struct dirent));
+        if (ent == NULL) return NULL;
+        char *name = index == 0 ? "." : "..";
+        u_memcpy(ent->name, name, u_strlen(name) + 1);
+        ent->ino = index;
+        return ent;
+      }
+      index -= 2;
     }
 
-    index -= 2;
     if (index < tnode->children->size) {
       list_foreach(lchild, tnode->children) {
         tree_node_t *tchild = lchild->value;
@@ -117,7 +119,7 @@ int32_t fs_readlink(fs_node_t *node, char *buf, size_t bufsize)
 }
 
 // Resolve a (relative) path.
-static uint32_t resolve_path(char **outpath, const char *inpath)
+uint32_t resolve_path(char **outpath, const char *inpath)
 {
   process_t *current = process_current();
   uint32_t path_len = u_strlen(inpath);

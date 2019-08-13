@@ -20,8 +20,9 @@ int main(int argc, char *argv[])
   setenv("PATH", "/bin", 0);
 
   if (fork() == 0) {
-    char *args[] = { "dex", "/home", NULL };
-    execve("/apps/dex", args, environ);
+    chdir("/home");
+    char *args[] = { "xed", "/home/hello.txt", NULL };
+    execve("/apps/xed", args, environ);
   }
 
   while (1) yield();

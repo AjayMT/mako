@@ -867,8 +867,11 @@ static void update_footer_text()
 
 int main(int argc, char *argv[])
 {
-  if (argc > 1) current_path = strdup(argv[1]);
-  else current_path = strdup("/");
+  if (argc > 1) {
+    char buf[1024];
+    resolve(buf, argv[1], 1024);
+    current_path = strdup(buf);
+  } else current_path = strdup("/");
 
   int32_t res = chdir(current_path);
   if (res == -1) return 1;

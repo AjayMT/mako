@@ -421,11 +421,15 @@ static void syscall_chdir(char *path)
     current->uregs.eax = -ENOTDIR; return;
   }
 
-  uint32_t len = u_strlen(path);
+  char *rpath;
+  res = resolve_path(&rpath, path);
+  if (res) { current->uregs.eax = -res; return; }
+  uint32_t len = u_strlen(rpath);
   uint32_t eflags = interrupt_save_disable();
   kfree(current->wd);
   current->wd = kmalloc(len + 1);
-  u_memcpy(current->wd, path, len + 1);
+  u_memcpy(current->wd, rpath, len + 1);
+  kfree(rpath);
   interrupt_restore(eflags);
   current->uregs.eax = 0;
 }
@@ -598,6 +602,19 @@ static void syscall_ui_yield()
 static void syscall_rename(char *old, char *new)
 { process_current()->uregs.eax = fs_rename(old, new); }
 
+static void syscall_resolve(char *outpath, char *inpath, size_t len)
+{
+  process_t *current = process_current();
+  char *rpath;
+  uint32_t res = resolve_path(&rpath, inpath);
+  if (res) { current->uregs.eax = -res; return; }
+  size_t l = u_strlen(rpath) + 1;
+  if (l > len) l = len;
+  u_memcpy(outpath, rpath, l);
+  kfree(rpath);
+  current->uregs.eax = 0;
+}
+
 static syscall_t syscall_table[] = {
   syscall_exit,
   syscall_fork,
@@ -638,7 +655,8 @@ static syscall_t syscall_table[] = {
   syscall_ui_swap_buffers,
   syscall_ui_wait,
   syscall_ui_yield,
-  syscall_rename
+  syscall_rename,
+  syscall_resolve
 };
 
 process_registers_t *syscall_handler(cpu_state_t cs, stack_state_t ss)

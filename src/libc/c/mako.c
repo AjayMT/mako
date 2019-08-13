@@ -26,6 +26,13 @@ int32_t movefd(uint32_t from, uint32_t to)
   return res;
 }
 
+int32_t resolve(char *out, char *in, size_t l)
+{
+  int32_t res = _syscall3(SYSCALL_RESOLVE, (uint32_t)out, (uint32_t)in, l);
+  if (res < 0) { errno = -res; res = -1; }
+  return res;
+}
+
 uint32_t pagealloc(uint32_t npages)
 { return _syscall1(SYSCALL_PAGEALLOC, npages); }
 int32_t pagefree(uint32_t vaddr, uint32_t npages)
