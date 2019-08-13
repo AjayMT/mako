@@ -5,7 +5,7 @@ This is Mako, a small operating system for 32-bit x86-compatible computers.
 Mako is a UNIX-like system that features:
 - a Linux-compatible ext2 filesystem,
 - a Lua interpreter,
-- a graphical tile-based user interface,
+- a graphical window-based user interface,
 - a directory explorer (`dex'),
 - and a text editor (`xed').
 
