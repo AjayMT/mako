@@ -1,0 +1,120 @@
+
+= Mako Documentation
+
+This document provides a basic overview of the Mako system.
+
+Sections:
+
+- Common Tasks: how to perform common tasks, like exploring the filesystem
+and writing/executing programs.
+- Filesystem Layout: an explanation of the structure of the filesystem and
+various root-subdirectories (`/usr', `/home', etc).
+- Window Management: how to manage windows and navigate the user interface.
+
+== Common Tasks
+
+Mako's user interface is presented through `apps', which are programs that
+can draw windows on the screen.
+
+dex (located at `/apps/dex' by default) is a directory explorer, and
+(in addition to exploring directories) can execute programs and scripts.
+
+xed (which you are probably using to read this document) is a text editor.
+
+Detailed documentation on dex and xed can be found at `/doc/dex.adoc' and
+`/doc/xed.adoc'.
+
+=== Exploring the filesystem
+
+To start dex from within xed:
+
+- Switch to normal (`-') mode by pressing [ESC].
+- Press [o] to open a file or directory.
+- Type in the path of a directory (`.' for example) and press [ENTER].
+
+This will create a new dex window. To switch windows, press [ALT]+[TAB].
+
+Once you have switched to a dex window:
+
+- Press [UP] and [DOWN] to move the cursor.
+- Press [ENTER] to open the selected entry.
+
+=== Opening files
+
+If you attempt to open a file in dex, the bottom bar will change to the
+following prompt:
+
+  Split direction: [LEFT] | [RIGHT] | [UP] | [DOWN] | [ESC]cancel
+
+dex is attempting to launch xed to display the contents of the file -- to do
+so, it must create space for a new xed window.
+
+Pressing an arrow key will shrink the dex window to half its size and place
+the new xed window in the remaining space.
+
+=== Executing files
+
+Mako has more-or-less the same program execution and process management
+mechanics as UNIX:
+
+- Programs are provided a set of arguments and environment variables.
+- They can read from and write to standard input, output and error streams.
+- Processes can send/receive signals and create pipes to communicate with each
+other.
+
+Any executable file (ELF binary or shebang script) can be invoked as a program.
+To start a program with dex:
+
+- Select the executable file.
+- Press [x] to execute it.
+- Optionally, enter a `stdin' file path. The contents of this file will be
+directed to the standard input stream of the program. This can be left blank.
+
+The standard output stream of the program is directed to a temporary file.
+Once the program has terminated, dex will attempt to open the temporary output
+file as described in `Opening files'.
+
+If the program is an `app' (i.e it presents a graphical interface), dex will
+split its window and launch the app without any I/O redirection.
+
+== Filesystem Layout
+
+The Mako filesystem is largely similar to most other UNIX-like OSes.
+The filesystem root (`/') contains the following directories:
+
+- usr: System resources, specifically the libc and libui libraries.
+- bin: Traditional UNIX-style executables.
+- apps: Programs that present a graphical interface.
+- tmp: Temporary files.
+- doc: Documentation.
+- home: The home directory, for storing most user files.
+- rd: The `ramdisk', a read-only filesystem loaded into memory when the OS
+boots.
+- dev: A virtual filesystem for interacting with devices.
+
+The kernel does not distinguish between ordinary UNIX-style executables and
+apps. To determine whether an executable file is an app, dex uses the
+`APPS_PATH' environment variable (set to `/apps' by default).
+
+== Window Management
+
+Mako divides the screen into one or more non-overlapping `windows', each of
+which belongs to an application process. Each window can only belong to a single
+process and each process can only own a single window.
+
+The highlighted or `active' window is the only window that can receive and
+respond to keyboard events. To switch active windows, press [ALT]+[TAB].
+
+The window manager performs three basic functions:
+
+- Allocates free windows to processes that request them.
+- Shrinks allocated windows to create free ones.
+- Destroys windows when their owner processes die.
+
+The window manager normally shrinks windows to half their size, and only does
+so when requested by the window's owner process. An application like dex, for
+example, must ask the window manager to shrink its own window before attempting
+to launch another application.
+
+When a window is destroyed, the window manager expands the surrounding windows
+to occupy the free space.

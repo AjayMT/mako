@@ -1,0 +1,86 @@
+
+= dex Documentation
+
+This document describes the interface and functionality of `dex', the Directory
+EXplorer.
+
+== Interface
+
+Every dex window is made of three parts:
+
+- A top bar that displays the path of the current directory.
+- A large content panel that displays a list of directory entries and a cursor.
+- A bottom bar that displays available actions and input prompts.
+
+To navigate the directory tree:
+
+- Press [UP] and [DOWN] to move the cursor.
+- Press [ENTER] to open the selected entry.
+
+As on most UNIX systems, `.' refers to the current directory and `..' refers
+to the parent directory. `/' is the filesystem root.
+
+== Actions
+
+When dex is started, the bottom bar displays the following text:
+
+  [ENT]open | [x]exec | [n]new | [d]delete | [e]edit | [c]duplicate | [q]quit
+
+These are all of the available actions that can be performed by pressing the
+appropriate key.
+
+- `open' opens the selected entry.
+- `exec' attempts to execute the selected entry.
+- `new' creates a new entry.
+- `delete' attempts to delete the selected entry.
+- `edit' renames the selected entry.
+- `duplicate' duplicates the selected entry.
+- `quit' quits dex.
+
+When creating a new entry or editing an existing one, the bottom bar changes
+to an input prompt:
+
+  Entry type: [d]directory | [f]file | [ESC]cancel
+
+  Entry name ([ESC]cancel):
+
+After typing in the (new) name of the entry, press [ENTER] to create/rename it.
+
+dex does not recursively delete directories -- they must be emptied first.
+dex does, however, recursively duplicate them. Duplicate entries are suffixed
+with a `(1)'; for example, duplicating `hello.txt' will create `hello.txt(1)'.
+
+=== Opening files
+
+When attempting to open a file, the bottom bar changes to the following prompt:
+
+  Split direction: [LEFT] | [RIGHT] | [UP] | [DOWN] | [ESC]cancel
+
+This indicates that dex is attempting to split its own window to create a new
+`xed' window. Selecting a direction will place the new xed window in that half
+of the old dex window.
+
+For example, pressing [LEFT] will split the dex window vertically and place xed
+on the left.
+
+=== Executing files
+
+As described in `/doc/mako.adoc', Mako has the same process management and
+execution mechanics as UNIX. Described simply, this means that processes have
+standard input and output streams and can send signals to each other.
+
+When attempting to execute a file, dex's bottom bar will change to the
+following prompt:
+
+  (Optional) `stdin' file path ([ESC]cancel):
+
+The contents of this file will be directed to the standard input stream of
+the new process. This can be left blank.
+
+dex automatically directs the standard output stream of the process to a
+temporary file. Once the process has terminated, dex will attempt to open the
+temporary file as described in `Opening Files'.
+
+If the file being executed is an `app' (i.e it is in `/apps') that presents
+a graphical interface, dex will not redirect its standard I/O streams or wait
+for it to terminate.

@@ -1,0 +1,71 @@
+
+= xed Documentation
+
+This document describes the interface and functionality of `xed', the eXtended
+EDitor.
+
+== Interface
+
+xed is a modal editor with three modes:
+
+- `-' or `normal' mode: this mode enables basic commands and actions.
+- `*' or `edit' mode: this mode enables insertion and deletion of text.
+- `+' or `select' mode: this mode enables manipulating regions of text.
+
+The xed window is made of three parts:
+
+- A top bar that displays the file path and whether it has been modified.
+- A large text view that displays the contents of the file and a cursor.
+- A bottom bar that displays the current mode, available actions and input
+prompts.
+
+== Normal Mode
+
+In normal mode, the bottom bar displays the following text:
+
+  - :: [e]* | [v]+ | [p] | [s] | [o] | [q]
+
+The `::' separates the mode indicator (`-' in this case) from the keyboard
+actions, which are:
+
+- [e] enters edit mode.
+- [v] enter select mode.
+- [p] inserts the text in the paste buffer (see `Select Mode').
+- [s] saves the file.
+- [o] opens a different file or directory.
+- [q] quits xed.
+
+The bottom bar also displays the following input prompts:
+
+  Save? ([ESC]cancel) [y/n]
+
+when quitting or opening a different file with unsaved changes, and
+
+  Path: ([ESC]cancel)
+
+when saving an unnamed file or opening a file.
+
+When opening a directory, xed always splits its window vertically and places
+a `dex' window to the left.
+
+== Edit Mode
+
+Edit mode enables insertion and deletion of text as in most other text editors.
+Pressing [ESC] will return to normal mode.
+
+== Select Mode
+
+Entering select mode marks the current position of the cursor as the `anchor',
+i.e one end of the selected region. Moving the cursor moves the other end
+of the selected region -- the text between the anchor and the cursor is
+`selected'.
+
+The bottom bar displays the following text:
+
+  + :: [ESC]- | [c] | [k]
+
+As with edit mode, pressing [ESC] will return to normal mode.
+
+Pressing [c] copies the contents of the selected region into the paste buffer,
+which can then be `pasted' in normal mode. Pressing [k] deletes the selected
+region in addition to copying it.

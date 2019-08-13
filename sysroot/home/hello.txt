@@ -10,12 +10,12 @@ Mako is a UNIX-like system that features:
 - and a text editor (`xed').
 
 You are currently viewing this document in `xed', the eXtended EDitor.
-xed is a modal editor -- press [e] to enter edit mode or [v] to enter
-select mode.
+xed is a modal editor -- press [e] to enter edit (`*') mode or [v] to enter
+select (`+') mode.
 
 To view the contents of a different file or directory, press [o] in normal
-mode. Opening a directory will launch `dex', the Directory EXplorer. Pressing
-[ALT]+[TAB] will change the active window.
+(`-') mode. Opening a directory will launch `dex', the Directory EXplorer.
+Pressing [ALT]+[TAB] will change the active window.
 
 More comprehensive documentation on the system and its applications is
 available in the `/doc' directory.
