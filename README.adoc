@@ -58,7 +58,6 @@ Long term goals:
 
 Mako depends on:
 
-- http://nurd.se/~noname/?section=sdl_picofont[sdl_picofont] to render text
 - the http://lua.org[Lua] programming language
 
 I wrote Mako to better understand how operating systems work and learnt a lot of cool stuff in the process. This project would not exist without:
@@ -70,5 +69,3 @@ I wrote Mako to better understand how operating systems work and learnt a lot of
 == License
 
 All Mako source is distributed under the terms of the MIT License.
-
-sdl_picofont is distributed under the terms of the GNU GPL v2.

@@ -17,7 +17,7 @@
 #include <sys/stat.h>
 #include <ui.h>
 #include <mako.h>
-#include "SDL_picofont.h"
+#include "text_render.h"
 #include "scancode.h"
 
 #define FOOTER_LEN          99
@@ -28,10 +28,9 @@ static const uint32_t TEXT_COLOR      = 0;
 static const uint32_t INACTIVE_COLOR  = 0xb0b0b0;
 static const uint32_t CURSOR_COLOR    = 0x190081;
 static const uint32_t SELECTION_COLOR = 0xb0d5ff;
-static const uint32_t PATH_HEIGHT     = 20;
-static const uint32_t FOOTER_HEIGHT   = 20;
-static const uint32_t LINE_HEIGHT     = (FNT_FONTHEIGHT * FNT_FONTVSCALE)
-  + FNT_FONTVPADDING;
+static const uint32_t PATH_HEIGHT     = 24;
+static const uint32_t FOOTER_HEIGHT   = 24;
+static const uint32_t LINE_HEIGHT     = FONTHEIGHT + FONTVPADDING;
 static const uint32_t DEFAULT_BUFFER_CAPACITY = 512;
 
 static uint32_t window_w = 0;
@@ -84,19 +83,21 @@ static char *rstrchr(char *a, char *b, char c)
 
 static uint32_t render_text(const char *text, uint32_t x, uint32_t y)
 {
-  uint32_t len = strlen(text);
-  FNT_xy dim = FNT_Generate(text, len, 0, NULL);
-  uint32_t w = dim.x;
-  uint32_t h = dim.y;
+  size_t len = strlen(text);
+  size_t w, h;
+  text_dimensions(text, len, &w, &h);
+
   uint8_t *pixels = malloc(w * h);
   memset(pixels, 0, w * h);
-  FNT_Generate(text, len, w, pixels);
+  text_render(text, len, w, h, pixels);
 
-  for (uint32_t i = 0; i < w && x + i < window_w; ++i)
-    for (uint32_t j = 0; j < h && y + j < window_h; ++j)
+  uint32_t *p = ui_buf + (y * window_w) + x;
+  for (uint32_t j = 0; j < h && y + j < window_h; ++j) {
+    for (uint32_t i = 0; i < w && x + i < window_w; ++i)
       if (pixels[(j * w) + i])
-        ui_buf[((y + j) * window_w) + x + i] = TEXT_COLOR;
-
+        p[i] = TEXT_COLOR;
+    p += window_w;
+  }
   free(pixels);
   return h;
 }
@@ -139,7 +140,7 @@ static void render_footer()
 
 static void clear_selection(uint32_t delta, uint32_t old, uint32_t new)
 {
-  uint32_t line_len = (window_w - 16) / FNT_FONTWIDTH;
+  uint32_t line_len = (window_w - 16) / FONTWIDTH;
   uint32_t num_lines =
     (window_h - PATH_HEIGHT - FOOTER_HEIGHT - 16) / LINE_HEIGHT;
 
@@ -163,8 +164,8 @@ static void clear_selection(uint32_t delta, uint32_t old, uint32_t new)
     uint32_t ix = i % line_len;
     span = higher - i;
     if (span > line_len - ix) span = line_len - ix;
-    uint32_t xstart = 8 + (ix * FNT_FONTWIDTH);
-    uint32_t xend = 8 + ((ix + span) * FNT_FONTWIDTH);
+    uint32_t xstart = 8 + (ix * FONTWIDTH);
+    uint32_t xend = 8 + ((ix + span) * FONTWIDTH);
     for (uint32_t x = xstart; x < xend; ++x)
       for (uint32_t y = 0; y < LINE_HEIGHT; ++y)
         if (row[(y * window_w) + x] == SELECTION_COLOR)
@@ -177,7 +178,7 @@ static void render_selection(int32_t delta)
 {
   if (selection_buffer_idx == buffer_idx) return;
 
-  uint32_t line_len = (window_w - 16) / FNT_FONTWIDTH;
+  uint32_t line_len = (window_w - 16) / FONTWIDTH;
   uint32_t num_lines =
     (window_h - PATH_HEIGHT - FOOTER_HEIGHT - 16) / LINE_HEIGHT;
 
@@ -199,8 +200,8 @@ static void render_selection(int32_t delta)
     uint32_t ix = i % line_len;
     span = higher - i;
     if (span > line_len - ix) span = line_len - ix;
-    uint32_t xstart = 8 + (ix * FNT_FONTWIDTH);
-    uint32_t xend = 8 + ((ix + span) * FNT_FONTWIDTH);
+    uint32_t xstart = 8 + (ix * FONTWIDTH);
+    uint32_t xend = 8 + ((ix + span) * FONTWIDTH);
     for (uint32_t x = xstart; x < xend; ++x)
       for (uint32_t y = 0; y < LINE_HEIGHT; ++y)
         if (row[(y * window_w) + x] == BG_COLOR)
@@ -227,7 +228,7 @@ static void render_buffer(uint32_t line_idx, uint32_t char_idx)
   if (char_idx >= file_buffer_len) return;
   char *p = file_buffer + char_idx;
 
-  uint32_t len = (window_w - 16) / FNT_FONTWIDTH;
+  uint32_t len = (window_w - 16) / FONTWIDTH;
   uint32_t ht = window_h - PATH_HEIGHT - FOOTER_HEIGHT - 16;
   uint32_t top = PATH_HEIGHT + 8;
 
@@ -260,7 +261,7 @@ static void update_line_lengths(uint32_t top_line, uint32_t fidx)
   memset(line_lengths + top_line, 0, 4 * (LINE_LEN_TABLE_SIZE - top_line));
   if (top_idx >= file_buffer_len) return;
 
-  uint32_t len = (window_w - 16) / FNT_FONTWIDTH;
+  uint32_t len = (window_w - 16) / FONTWIDTH;
   for (
     uint32_t i = top_line;
     i < LINE_LEN_TABLE_SIZE && fidx < file_buffer_len;
@@ -290,14 +291,14 @@ static void update_cursor(uint32_t new_idx, uint8_t erase)
 {
   uint32_t num_lines =
     (window_h - PATH_HEIGHT - FOOTER_HEIGHT - 16) / LINE_HEIGHT;
-  uint32_t line_len = (window_w - 16) / FNT_FONTWIDTH;
+  uint32_t line_len = (window_w - 16) / FONTWIDTH;
   if (erase && cursor_idx / line_len < num_lines) {
-    uint32_t x = ((cursor_idx % line_len) * FNT_FONTWIDTH) + 8;
+    uint32_t x = ((cursor_idx % line_len) * FONTWIDTH) + 8;
     uint32_t cy = cursor_idx / line_len;
     uint32_t *pos = ui_buf
       + (((cy * LINE_HEIGHT) + 8 + PATH_HEIGHT) * window_w);
     for (uint32_t i = 0; i < LINE_HEIGHT; ++i) {
-      for (uint32_t j = x; j < x + FNT_FONTWIDTH; ++j) {
+      for (uint32_t j = x; j < x + FONTWIDTH; ++j) {
         if (pos[j] == CURSOR_COLOR) pos[j] = BG_COLOR;
         else pos[j] = TEXT_COLOR;
       }
@@ -306,12 +307,12 @@ static void update_cursor(uint32_t new_idx, uint8_t erase)
   }
 
   cursor_idx = new_idx;
-  uint32_t x = ((cursor_idx % line_len) * FNT_FONTWIDTH) + 8;
+  uint32_t x = ((cursor_idx % line_len) * FONTWIDTH) + 8;
   uint32_t cy = cursor_idx / line_len;
   uint32_t *pos = ui_buf
     + (((cy * LINE_HEIGHT) + 8 + PATH_HEIGHT) * window_w);
   for (uint32_t i = 0; i < LINE_HEIGHT; ++i) {
-    for (uint32_t j = x; j < x + FNT_FONTWIDTH; ++j) {
+    for (uint32_t j = x; j < x + FONTWIDTH; ++j) {
       if (pos[j] == TEXT_COLOR) pos[j] = BG_COLOR;
       else pos[j] = CURSOR_COLOR;
     }
@@ -386,7 +387,7 @@ static inline void backspace_scroll_up()
 __attribute__((always_inline))
 static inline uint32_t newline_scroll_down()
 {
-  uint32_t line_len = (window_w - 16) / FNT_FONTWIDTH;
+  uint32_t line_len = (window_w - 16) / FONTWIDTH;
   char *n = strchr(file_buffer + top_idx, '\n');
   uint32_t ni = n - file_buffer;
   uint32_t lines = (ni - top_idx) / line_len;
@@ -397,7 +398,7 @@ static inline uint32_t newline_scroll_down()
 static uint32_t scroll_up()
 {
   if (top_idx == 0) return cursor_idx;
-  uint32_t line_len = (window_w - 16) / FNT_FONTWIDTH;
+  uint32_t line_len = (window_w - 16) / FONTWIDTH;
   uint32_t num_lines =
     (window_h - PATH_HEIGHT - FOOTER_HEIGHT - 16) / LINE_HEIGHT;
 
@@ -435,7 +436,7 @@ static uint32_t scroll_up()
 
 static uint32_t scroll_down()
 {
-  uint32_t line_len = (window_w - 16) / FNT_FONTWIDTH;
+  uint32_t line_len = (window_w - 16) / FONTWIDTH;
   uint32_t num_lines =
     (window_h - PATH_HEIGHT - FOOTER_HEIGHT - 16) / LINE_HEIGHT;
 
@@ -494,7 +495,7 @@ static void update_footer_text()
 
 static int32_t move_up()
 {
-  uint32_t line_len = (window_w - 16) / FNT_FONTWIDTH;
+  uint32_t line_len = (window_w - 16) / FONTWIDTH;
   char *p = rstrchr(file_buffer, file_buffer + buffer_idx - 1, '\n');
   if (p < file_buffer) return cursor_idx;
   if (*p != '\n') return cursor_idx;
@@ -512,7 +513,7 @@ static int32_t move_up()
 
 static int32_t move_down()
 {
-  uint32_t line_len = (window_w - 16) / FNT_FONTWIDTH;
+  uint32_t line_len = (window_w - 16) / FONTWIDTH;
   uint32_t num_lines =
     (window_h - PATH_HEIGHT - FOOTER_HEIGHT - 16) / LINE_HEIGHT;
 
@@ -565,7 +566,7 @@ static void keyboard_handler(uint8_t code)
 
   uint32_t num_lines =
     (window_h - PATH_HEIGHT - FOOTER_HEIGHT - 16) / LINE_HEIGHT;
-  uint32_t line_len = (window_w - 16) / FNT_FONTWIDTH;
+  uint32_t line_len = (window_w - 16) / FONTWIDTH;
   uint32_t cursor_x = cursor_idx % line_len;
   uint32_t cursor_y = cursor_idx / line_len;
   uint32_t up = 0;

@@ -22,22 +22,19 @@
 #include <errno.h>
 #include <mako.h>
 #include <ui.h>
-#include "SDL_picofont.h"
+#include "text_render.h"
 #include "scancode.h"
 
-#define MAX_DIRENTS 35
+#define MAX_DIRENTS 30
 #define FOOTER_LEN  99
 
 static const uint32_t BG_COLOR       = 0xffffff;
 static const uint32_t TEXT_COLOR     = 0;
 static const uint32_t INACTIVE_COLOR = 0xb0b0b0;
 static const uint32_t CURSOR_COLOR   = 0xb43a3b;
-static const uint32_t FONTWIDTH      = 8;
-static const double   FONTVSCALE     = 1.5;
-static const uint32_t FONTHEIGHT     = 12;
-static const uint32_t PATH_HEIGHT    = 20;
-static const uint32_t FOOTER_HEIGHT  = 20;
-static const uint32_t DIRENT_HEIGHT  = 16;
+static const uint32_t PATH_HEIGHT    = 24;
+static const uint32_t FOOTER_HEIGHT  = 24;
+static const uint32_t DIRENT_HEIGHT  = 20;
 static const uint32_t CURSOR_WIDTH   = 30;
 
 static uint32_t *ui_buf = NULL;
@@ -78,10 +75,6 @@ static char edit_entry_name[FOOTER_LEN];
 static char exec_stdin_path[FOOTER_LEN];
 
 __attribute__((always_inline))
-static inline uint32_t round(double d)
-{ return (uint32_t)(d + 0.5); }
-
-__attribute__((always_inline))
 static inline void fill_color(uint32_t *p, uint32_t b, size_t n)
 { for (uint32_t i = 0; i < n; ++i) p[i] = b; }
 
@@ -89,19 +82,21 @@ static void update_footer_text();
 
 static void render_text(const char *text, uint32_t x, uint32_t y)
 {
-  uint32_t len = strlen(text);
-  FNT_xy dim = FNT_Generate(text, len, 0, NULL);
-  uint32_t w = dim.x;
-  uint32_t h = dim.y;
+  size_t len = strlen(text);
+  size_t w, h;
+  text_dimensions(text, len, &w, &h);
+
   uint8_t *pixels = malloc(w * h);
   memset(pixels, 0, w * h);
-  FNT_Generate(text, len, w, pixels);
+  text_render(text, len, w, h, pixels);
 
-  for (uint32_t i = 0; i < w && x + i < window_w; ++i)
-    for (uint32_t j = 0; j < h * FONTVSCALE && y + j < window_h; ++j)
-      if (pixels[(round(j / FONTVSCALE) * w) + i])
-        ui_buf[((y + j) * window_w) + x + i] = TEXT_COLOR;
-
+  uint32_t *p = ui_buf + (y * window_w) + x;
+  for (uint32_t j = 0; j < h && y + j < window_h; ++j) {
+    for (uint32_t i = 0; i < w && x + i < window_w; ++i)
+      if (pixels[(j * w) + i])
+        p[i] = TEXT_COLOR;
+    p += window_w;
+  }
   free(pixels);
 }
 
@@ -200,12 +195,12 @@ static void update_cursor(uint32_t new_idx)
   cursor_idx = new_idx;
   uint32_t *row = ui_buf
     + (((cursor_idx * DIRENT_HEIGHT) + 1 + PATH_HEIGHT) * window_w);
-  for (int32_t i = 0; i < (DIRENT_HEIGHT - 2) / 2; ++i) {
+  for (int32_t i = 0; i < (DIRENT_HEIGHT - 8) / 2; ++i) {
     fill_color(row + 20, CURSOR_COLOR, i);
     row += window_w;
   }
-  for (int32_t i = 0; i < (DIRENT_HEIGHT - 2) / 2; ++i) {
-    fill_color(row + 20, CURSOR_COLOR, ((DIRENT_HEIGHT - 2) / 2) - i);
+  for (int32_t i = 0; i < (DIRENT_HEIGHT - 8) / 2; ++i) {
+    fill_color(row + 20, CURSOR_COLOR, ((DIRENT_HEIGHT - 8) / 2) - i);
     row += window_w;
   }
 }
