@@ -1004,7 +1004,9 @@ static void keyboard_handler(uint8_t code)
         if (type == 0) { update = 0; break; }
         if (type == 1) {
           free(file_path);
-          file_path = strdup(footer_field);
+          char buf[1024];
+          resolve(buf, footer_field, 1024);
+          file_path = strdup(buf);
         } else {
           free(dir_path);
           dir_path = strdup(footer_field);
@@ -1028,7 +1030,9 @@ static void keyboard_handler(uint8_t code)
     FIELD_INPUT({
         if (field_len == 0) { update = 0; break; }
         free(file_path);
-        file_path = strdup(footer_field);
+        char buf[1024];
+        resolve(buf, footer_field, 1024);
+        file_path = strdup(buf);
         if (save_file()) {
           buffer_dirty = 0;
           render_path();
