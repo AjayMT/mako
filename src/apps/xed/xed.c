@@ -102,7 +102,8 @@ static uint32_t render_text(const char *text, uint32_t x, uint32_t y)
   return h;
 }
 
-static void render_inactive()
+__attribute__((always_inline))
+static inline void render_inactive()
 {
   for (uint32_t i = 0; i < window_w; ++i)
     for (uint32_t j = 0; j < window_h; ++j)
@@ -488,8 +489,6 @@ static void update_footer_text()
   case CS_OPEN_PATH:
     str = "Path: ([ESC]cancel)"; break;
   }
-  size_t len = strlen(str);
-  size_t min = len < FOOTER_LEN ? len : FOOTER_LEN;
   strncpy(footer_text, str, FOOTER_LEN);
 }
 
@@ -998,6 +997,7 @@ static void keyboard_handler(uint8_t code)
         uint8_t type = check_path(footer_field);
         if (errno == ENOENT) {
           FILE *f = fopen(footer_field, "rw+");
+          if (f == NULL) { update = 0; break; }
           fclose(f);
           type = check_path(footer_field);
         }
@@ -1093,8 +1093,8 @@ int main(int argc, char *argv[])
 {
   if (argc > 1) {
     char buf[1024];
-    resolve(buf, argv[1], 1024);
-    file_path = strdup(buf);
+    int32_t res = resolve(buf, argv[1], 1024);
+    if (res == 0) file_path = strdup(buf);
   }
 
   memset(footer_text, 0, sizeof(footer_text));

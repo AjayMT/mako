@@ -62,7 +62,6 @@ typedef enum {
 
 static command_state_t cs;
 static char footer_text[FOOTER_LEN];
-static uint32_t footer_idx = 0;
 
 typedef enum {
   ET_DIRECTORY,
@@ -112,7 +111,7 @@ static void render_footer()
 {
   uint32_t *line_row = ui_buf + ((window_h - FOOTER_HEIGHT) * window_w);
   fill_color(line_row, BG_COLOR, window_w * FOOTER_HEIGHT);
-  render_text(footer_text, 4, window_h - 4 - FONTHEIGHT);
+  render_text(footer_text, 4, window_h - FOOTER_HEIGHT + 4);
   fill_color(line_row, INACTIVE_COLOR, window_w);
 }
 
@@ -168,7 +167,8 @@ static void render_dirents()
   }
 }
 
-static void render_inactive()
+__attribute__((always_inline))
+static inline void render_inactive()
 {
   for (uint32_t i = 0; i < window_w; ++i)
     for (uint32_t j = 0; j < window_h; ++j)
@@ -593,6 +593,8 @@ static void keyboard_handler(uint8_t code)
       cs = CS_DEFAULT;
       update_footer_text();
       if (cancel) {
+        free(file_path); file_path = NULL;
+        free(exec_path); exec_path = NULL;
         render_footer();
         ui_swap_buffers((uint32_t)ui_buf);
       }
@@ -809,6 +811,7 @@ static void ui_handler(ui_event_t ev)
       if (fork() == 0) {
         char *args[] = { "xed", file_path, NULL };
         execve("/apps/xed", args, environ);
+        exit(1);
       }
       free(file_path);
       file_path = NULL;
@@ -831,7 +834,6 @@ static void ui_handler(ui_event_t ev)
 
 static void update_footer_text()
 {
-  footer_idx = 0;
   char *str = NULL;
   switch (cs) {
   case CS_DEFAULT:
@@ -856,10 +858,7 @@ static void update_footer_text()
     str = "Entry name ([ESC]cancel): ";
     break;
   }
-  size_t len = strlen(str);
-  size_t min = len < FOOTER_LEN ? len : FOOTER_LEN;
   strncpy(footer_text, str, FOOTER_LEN);
-  footer_idx = min;
 }
 
 int main(int argc, char *argv[])
