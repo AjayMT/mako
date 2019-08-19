@@ -122,11 +122,11 @@ size_t fread(void *ptr, size_t size, size_t nitems, FILE *stream)
   if (total_size == 0) return 0;
   char *buf = ptr;
   size_t read_size = 0;
-  if (stream->ungetcd != -1) {
+  if (stream->ungetcd != EOF) {
     buf[read_size] = stream->ungetcd;
     ++read_size;
     ++(stream->offset);
-    stream->ungetcd = -1;
+    stream->ungetcd = EOF;
   }
 
   if (read_size == total_size) return read_size;
@@ -206,20 +206,23 @@ int32_t getchar()
 
 char *fgets(char *str, int32_t size, FILE *stream)
 {
-  for (int32_t i = 0; i < size; ++i) {
+  int32_t i = 0;
+  for (; i < size - 1; ++i) {
     char c = (char)fgetc(stream);
     if (c == EOF) {
       if (i == 0) return NULL;
       return str;
     }
     str[i] = c;
-    if (c == '\n') return str;
+    if (c == '\n') { str[i + 1] = '\0'; return str; }
   }
+  if (i) str[i] = '\0';
   return str;
 }
 
 int32_t ungetc(int32_t c, FILE *stream)
 {
+  if ((char)c == EOF) return c;
   stream->eof = 0;
   stream->ungetcd = (char)c;
   --(stream->offset);

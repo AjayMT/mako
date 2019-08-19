@@ -480,6 +480,11 @@ uint32_t process_fork(
   list_foreach(lchild, process->fds) {
     process_fd_t *fd = lchild->value;
     if (fd) ++(fd->refcount);
+    if (fd && (fd->node.flags & FS_PIPE)) {
+      pipe_t *p = fd->node.device;
+      if (fd->node.read) ++(p->read_refcount);
+      else if (fd->node.write) ++(p->write_refcount);
+    }
     list_push_back(fds, fd);
   }
   child->fds = fds;
@@ -720,11 +725,11 @@ static uint32_t process_destroy(process_t *process)
     kfree(head);
     if (fd == NULL) continue;
     --(fd->refcount);
+    fs_close(&(fd->node));
     if (fd->refcount) continue;
-    if (fd->is_pipe) {
+    if (fd->node.flags & FS_PIPE) {
       pipe_t *p = fd->node.device;
-      if (&(fd->node) == p->read_node && p->write_closed) kfree(p);
-      if (&(fd->node) == p->write_node && p->read_closed) kfree(p);
+      if (p->read_closed && p->write_closed) kfree(p);
     }
     kfree(fd);
   }

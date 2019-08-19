@@ -29,6 +29,7 @@
 #define FS_PIPE        0x10
 #define FS_SYMLINK     0x20
 #define FS_MOUNTPOINT  0x40
+#define FS_TTY         0x80
 
 // fs_open flags.
 #define O_RDONLY    0

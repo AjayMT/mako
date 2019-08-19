@@ -12,9 +12,11 @@
 #include <stdlib.h>
 #include <mako.h>
 
-int32_t pipe(uint32_t *readfd, uint32_t *writefd)
+int32_t pipe(uint32_t *readfd, uint32_t *writefd, uint32_t rb, uint32_t wb)
 {
-  int32_t res = _syscall2(SYSCALL_PIPE, (uint32_t)readfd, (uint32_t)writefd);
+  int32_t res = _syscall4(
+    SYSCALL_PIPE, (uint32_t)readfd, (uint32_t)writefd, rb, wb
+    );
   if (res < 0) { errno = -res; res = -1; }
   return res;
 }
@@ -29,6 +31,13 @@ int32_t movefd(uint32_t from, uint32_t to)
 int32_t resolve(char *out, char *in, size_t l)
 {
   int32_t res = _syscall3(SYSCALL_RESOLVE, (uint32_t)out, (uint32_t)in, l);
+  if (res < 0) { errno = -res; res = -1; }
+  return res;
+}
+
+int32_t maketty(uint32_t fd)
+{
+  int32_t res = _syscall1(SYSCALL_MAKETTY, fd);
   if (res < 0) { errno = -res; res = -1; }
   return res;
 }

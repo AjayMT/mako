@@ -276,18 +276,19 @@ static void syscall_close(int32_t fdnum)
   uint32_t eflags = interrupt_save_disable();
   list_node_t *lnode = find_fd(fdnum);
   if (lnode == NULL) {
+  fail:
     current->uregs.eax = -EBADF;
     interrupt_restore(eflags);
     return;
   }
 
   process_fd_t *fd = lnode->value;
+  if (fd == NULL) goto fail;
   --(fd->refcount);
   fs_close(&(fd->node));
-  if (fd->is_pipe) {
+  if (fd->node.flags & FS_PIPE) {
     pipe_t *p = fd->node.device;
-    if (&(fd->node) == p->read_node && p->write_closed) kfree(p);
-    if (&(fd->node) == p->write_node && p->read_closed) kfree(p);
+    if (p->read_closed && p->write_closed) kfree(p);
   }
   if (fd->refcount == 0) kfree(fd);
   lnode->value = NULL;
@@ -302,6 +303,7 @@ static void syscall_read(uint32_t fdnum, uint8_t *buf, uint32_t size)
   list_node_t *lnode = find_fd(fdnum);
   if (lnode == NULL) { current->uregs.eax = -EBADF; return; }
   process_fd_t *fd = lnode->value;
+  if (fd == NULL) { current->uregs.eax = -EBADF; return; }
   int32_t res = fs_read(&(fd->node), fd->offset, size, buf);
   if (res < 0) { current->uregs.eax = res; return; }
   fd->offset += res;
@@ -315,6 +317,7 @@ static void syscall_write(uint32_t fdnum, uint8_t *buf, uint32_t size)
   list_node_t *lnode = find_fd(fdnum);
   if (lnode == NULL) { current->uregs.eax = -EBADF; return; }
   process_fd_t *fd = lnode->value;
+  if (fd == NULL) { current->uregs.eax = -EBADF; return; }
   int32_t res = fs_write(&(fd->node), fd->offset, size, buf);
   if (res < 0) { current->uregs.eax = res; return; }
 
@@ -328,6 +331,7 @@ static void syscall_readdir(int32_t fdnum, struct dirent *ent, uint32_t index)
   list_node_t *lnode = find_fd(fdnum);
   if (lnode == NULL) { current->uregs.eax = -EBADF; return; }
   process_fd_t *fd = lnode->value;
+  if (fd == NULL) { current->uregs.eax = -EBADF; return; }
   struct dirent *res = fs_readdir(&(fd->node), index);
   if (res == NULL) { current->uregs.eax = -ENOENT; return; }
   u_memcpy(ent, res, sizeof(struct dirent));
@@ -361,7 +365,9 @@ static void syscall_symlink(char *path1, char *path2)
 static void syscall_mkdir(char *path, uint32_t mode)
 { process_current()->uregs.eax = fs_mkdir(path, mode); }
 
-static void syscall_pipe(uint32_t *read_fdnum, uint32_t *write_fdnum)
+static void syscall_pipe(
+  uint32_t *read_fdnum, uint32_t *write_fdnum, uint32_t rb, uint32_t wb
+  )
 {
   process_t *current = process_current();
   uint32_t eflags = interrupt_save_disable();
@@ -369,14 +375,12 @@ static void syscall_pipe(uint32_t *read_fdnum, uint32_t *write_fdnum)
   process_fd_t *read_fd = kmalloc(sizeof(process_fd_t));
   if (read_fd == NULL) { current->uregs.eax = -ENOMEM; return; }
   u_memset(read_fd, 0, sizeof(process_fd_t));
-  read_fd->is_pipe = 1;
 
   process_fd_t *write_fd = kmalloc(sizeof(process_fd_t));
   if (write_fd == NULL) { current->uregs.eax = -ENOMEM; return; }
   u_memset(write_fd, 0, sizeof(process_fd_t));
-  write_fd->is_pipe = 1;
 
-  uint32_t res = pipe_create(&(read_fd->node), &(write_fd->node));
+  uint32_t res = pipe_create(&(read_fd->node), &(write_fd->node), rb, wb);
   if (res) { current->uregs.eax = -res; return; }
 
   list_push_back(current->fds, read_fd);
@@ -460,6 +464,7 @@ static void syscall_fstat(uint32_t fdnum, struct stat *st)
   if (lnode == NULL) { current->uregs.eax = -EBADF; return; }
 
   process_fd_t *fd = lnode->value;
+  if (fd == NULL) { current->uregs.eax = -EBADF; return; }
   u_memset(st, 0, sizeof(struct stat));
   st->st_dev = fd->node.flags;
   st->st_ino = fd->node.inode;
@@ -502,6 +507,7 @@ static void syscall_lseek(uint32_t fd, int32_t offset, uint32_t whence)
   list_node_t *lnode = find_fd(fd);
   if (lnode == NULL) { current->uregs.eax = -EBADF; return; }
   process_fd_t *pfd = lnode->value;
+  if (pfd == NULL) { current->uregs.eax = -EBADF; return; }
   if (whence == 1) pfd->offset += offset;
   else if (whence == 2) pfd->offset = pfd->node.length + offset;
   else pfd->offset = offset;
@@ -532,7 +538,17 @@ static void syscall_dup(uint32_t fdnum)
   if (lnode == NULL) { current->uregs.eax = -EBADF; return; }
   uint32_t eflags = interrupt_save_disable();
   process_fd_t *fd1 = lnode->value;
+  if (fd1 == NULL) {
+    interrupt_restore(eflags);
+    current->uregs.eax = -EBADF;
+    return;
+  }
   ++(fd1->refcount);
+  if (fd1->node.flags & FS_PIPE) {
+    pipe_t *p = fd1->node.device;
+    if (fd1->node.read) ++(p->read_refcount);
+    else if (fd1->node.write) ++(p->write_refcount);
+  }
   list_push_back(current->fds, fd1);
   current->uregs.eax = current->fds->size - 1;
   interrupt_restore(eflags);
@@ -615,6 +631,18 @@ static void syscall_resolve(char *outpath, char *inpath, size_t len)
   current->uregs.eax = 0;
 }
 
+static void syscall_maketty(uint32_t fdnum)
+{
+  process_t *current = process_current();
+  list_node_t *lnode = find_fd(fdnum);
+  if (lnode == NULL || lnode->value == NULL) {
+    current->uregs.eax = -EBADF; return;
+  }
+  process_fd_t *fd = lnode->value;
+  fd->node.flags |= FS_TTY;
+  current->uregs.eax = 0;
+}
+
 static syscall_t syscall_table[] = {
   syscall_exit,
   syscall_fork,
@@ -656,7 +684,8 @@ static syscall_t syscall_table[] = {
   syscall_ui_wait,
   syscall_ui_yield,
   syscall_rename,
-  syscall_resolve
+  syscall_resolve,
+  syscall_maketty
 };
 
 process_registers_t *syscall_handler(cpu_state_t cs, stack_state_t ss)

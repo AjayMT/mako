@@ -25,6 +25,8 @@ typedef struct ringbuffer_s ringbuffer_t;
 ringbuffer_t *ringbuffer_create(uint32_t);
 void ringbuffer_close_write(ringbuffer_t *rb);
 void ringbuffer_destroy(ringbuffer_t *);
+uint32_t ringbuffer_check_read(ringbuffer_t *rb);
+uint32_t ringbuffer_check_write(ringbuffer_t *rb);
 
 // Implemented in ringbuffer.s.
 uint32_t ringbuffer_read(ringbuffer_t *rb, uint32_t size, uint8_t *buf);

@@ -15,9 +15,10 @@
 typedef void (*thread_t)(void *);
 typedef volatile uint32_t *thread_lock_t;
 
-int32_t pipe(uint32_t *readfd, uint32_t *writefd);
+int32_t pipe(uint32_t *readfd, uint32_t *writefd, uint32_t rb, uint32_t wb);
 int32_t movefd(uint32_t from, uint32_t to);
 int32_t resolve(char *out, char *in, size_t l);
+int32_t maketty(uint32_t fd);
 uint32_t pagealloc(uint32_t npages);
 int32_t pagefree(uint32_t vaddr, uint32_t npages);
 pid_t thread(thread_t t, void *data);
