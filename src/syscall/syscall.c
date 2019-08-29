@@ -288,7 +288,7 @@ static void syscall_close(int32_t fdnum)
   fs_close(&(fd->node));
   if (fd->node.flags & FS_PIPE) {
     pipe_t *p = fd->node.device;
-    if (p->read_closed && p->write_closed) kfree(p);
+    if (p && p->read_closed && p->write_closed) kfree(p);
   }
   if (fd->refcount == 0) kfree(fd);
   lnode->value = NULL;

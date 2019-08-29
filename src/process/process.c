@@ -729,7 +729,7 @@ static uint32_t process_destroy(process_t *process)
     if (fd->refcount) continue;
     if (fd->node.flags & FS_PIPE) {
       pipe_t *p = fd->node.device;
-      if (p->read_closed && p->write_closed) kfree(p);
+      if (p && p->read_closed && p->write_closed) kfree(p);
     }
     kfree(fd);
   }

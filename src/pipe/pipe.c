@@ -33,7 +33,7 @@ static uint32_t pipe_read(
   )
 {
   pipe_t *self = node->device;
-  if (self == NULL) return 0;
+  if (self == NULL || self->rb == NULL) return 0;
   if (self->read_buffered == 0) {
     uint32_t s;
     while ((s = ringbuffer_check_read(self->rb)) == 0)
@@ -60,7 +60,7 @@ static uint32_t pipe_write(
   )
 {
   pipe_t *self = node->device;
-  if (self == NULL) return 0;
+  if (self == NULL || self->rb == NULL) return 0;
   if (self->write_buffered == 0) {
     uint32_t s;
     while ((s = ringbuffer_check_write(self->rb)) == 0)
