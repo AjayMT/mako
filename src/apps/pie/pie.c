@@ -48,6 +48,7 @@ static char *text_buffer = NULL;
 static uint32_t line_lengths[LINE_LEN_TABLE_SIZE];
 static uint32_t top_idx = 0;
 static uint32_t buffer_len = 0;
+static uint32_t screen_line_idx = 0;
 static uint32_t proc_write_fd = 0;
 static uint32_t proc_read_fd = 0;
 
@@ -172,9 +173,11 @@ static void update_line_lengths(uint32_t top_line, uint32_t fidx)
     if (nextnl && nextnl - p <= len) {
       nl = 1;
       llen = nextnl - p;
-    }
+    } else if (nextnl == NULL && buffer_len - fidx < len)
+      llen = buffer_len - fidx;
     fidx += llen + nl;
     line_lengths[i] = llen;
+    screen_line_idx = i;
   }
 }
 
@@ -182,7 +185,7 @@ static void update_footer_text()
 {
   char *str = NULL;
   switch (cs) {
-  case CS_PENDING: str = "% "; break;
+  case CS_PENDING: str = "(\"q\" to quit) % "; break;
   case CS_EXEC:    str = "$ "; break;
   }
   strncpy(footer_text, str, FOOTER_LEN);
@@ -197,26 +200,24 @@ static void exec_thread()
     if (r <= 0) break;
 
     thread_lock(&ui_lock);
+    uint32_t line_idx = screen_line_idx;
+    uint32_t char_idx = buffer_len - line_lengths[line_idx];
     memcpy(text_buffer + buffer_len, buf, r);
     buffer_len += r;
     text_buffer[buffer_len] = 0;
-    update_line_lengths(0, 0);
-    render_buffer(0, 0);
+    update_line_lengths(line_idx, char_idx);
+    render_buffer(line_idx, char_idx);
     ui_swap_buffers((uint32_t)ui_buf);
     thread_unlock(&ui_lock);
   }
 
   thread_lock(&ui_lock);
-  char *str = "[process complete]\n";
-  size_t l = strlen(str);
-  memcpy(text_buffer + buffer_len, str, l);
-  buffer_len += l;
-  text_buffer[buffer_len] = 0;
-  update_line_lengths(0, 0);
-  render_buffer(0, 0);
+  free(path);
+  path = NULL;
   cs = CS_PENDING;
   update_footer_text();
   render_footer();
+  render_path();
   ui_swap_buffers((uint32_t)ui_buf);
   thread_unlock(&ui_lock);
 
@@ -337,6 +338,8 @@ static void keyboard_handler(uint8_t code)
 
   if (cs == CS_PENDING) {
     FIELD_INPUT({
+        if (strcmp(footer_field, "q") == 0) exit(0);
+
         uint8_t valid = check_path(footer_field);
         if (!valid) { update = 0; break; }
 
@@ -367,10 +370,12 @@ static void keyboard_handler(uint8_t code)
         buf[field_len + 1] = 0;
         write(proc_write_fd, buf, field_len + 1);
 
+        uint32_t line_idx = screen_line_idx;
+        uint32_t char_idx = buffer_len - line_lengths[line_idx];
         memcpy(text_buffer + buffer_len, buf, field_len + 2);
         buffer_len += field_len + 1;
-        update_line_lengths(0, 0);
-        render_buffer(0, 0);
+        update_line_lengths(line_idx, char_idx);
+        render_buffer(line_idx, char_idx);
 
         free(buf);
         memset(footer_field, 0, sizeof(footer_field));
