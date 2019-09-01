@@ -96,4 +96,4 @@ clean:
 	       iso/boot/kernel.elf mako.iso bochslog.txt com1.out      \
 	       iso/modules/rd src/libc/*.o src/libui/*.o               \
 	       sysroot/usr/include/{*,sys/*}.h sysroot/usr/lib/*.{a,o} \
-	       lua $(APPS) $(BIN)
+	       lua $(APPS) $(BIN) hda.img
