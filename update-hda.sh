@@ -1,6 +1,10 @@
 #!/bin/sh
 
-mount hda.img /mnt
-rm -fr /mnt/*
-cp -r /sysroot/* /mnt
-umount /mnt
+fuse-ext2 -o rw+ hda.img mnt
+sudo rm -fr mnt/*
+sudo cp -r sysroot/* mnt
+if [[ $OSTYPE == "darwin"* ]]; then
+  diskutil unmount mnt
+else
+  umount mnt
+fi
