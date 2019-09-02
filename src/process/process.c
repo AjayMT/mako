@@ -482,8 +482,8 @@ uint32_t process_fork(
     if (fd) ++(fd->refcount);
     if (fd && (fd->node.flags & FS_PIPE)) {
       pipe_t *p = fd->node.device;
-      if (fd->node.read) ++(p->read_refcount);
-      else if (fd->node.write) ++(p->write_refcount);
+      if (p && fd->node.read) ++(p->read_refcount);
+      else if (p && fd->node.write) ++(p->write_refcount);
     }
     list_push_back(fds, fd);
   }

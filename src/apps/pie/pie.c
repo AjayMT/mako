@@ -200,13 +200,28 @@ static void exec_thread()
     if (r <= 0) break;
 
     thread_lock(&ui_lock);
-    uint32_t line_idx = screen_line_idx;
-    uint32_t char_idx = buffer_len - line_lengths[line_idx];
+    //uint32_t line_idx = screen_line_idx;
+    //uint32_t char_idx = buffer_len - line_lengths[line_idx];
+    //if (text_buffer[char_idx] == '\n') ++char_idx;
+    uint32_t num_lines =
+      (window_h - PATH_HEIGHT - FOOTER_HEIGHT - 16) / LINE_HEIGHT;
+    if (screen_line_idx >= num_lines - 1)
+      top_idx = buffer_len - line_lengths[screen_line_idx];
+    if (buffer_len + r >= 0x2000) {
+      char *new = (char *)pagealloc(2);
+      memcpy(new, text_buffer + top_idx, buffer_len - top_idx);
+      pagefree((uint32_t)text_buffer, 2);
+      text_buffer = new;
+      buffer_len -= top_idx;
+      top_idx = 0;
+    }
     memcpy(text_buffer + buffer_len, buf, r);
     buffer_len += r;
     text_buffer[buffer_len] = 0;
-    update_line_lengths(line_idx, char_idx);
-    render_buffer(line_idx, char_idx);
+    //update_line_lengths(line_idx, char_idx);
+    //render_buffer(line_idx, char_idx);
+    update_line_lengths(0, top_idx);
+    render_buffer(0, top_idx);
     ui_swap_buffers((uint32_t)ui_buf);
     thread_unlock(&ui_lock);
   }
@@ -221,7 +236,9 @@ static void exec_thread()
   ui_swap_buffers((uint32_t)ui_buf);
   thread_unlock(&ui_lock);
 
+  //fprintf(stderr, "thread closing proc_read_fd\n");
   close(proc_read_fd);
+  //fprintf(stderr, "thread terminating\n");
 }
 
 static uint8_t exec_path()
@@ -256,7 +273,9 @@ static uint8_t exec_path()
   proc_read_fd = readfd;
   proc_write_fd = writefd2;
   close(writefd);
+  close(readfd2);
   pid_t t = thread(exec_thread, NULL);
+  //fprintf(stderr, "child %u thread %u\n", p, t);
   close(readfd);
 
   return 1;
@@ -367,15 +386,30 @@ static void keyboard_handler(uint8_t code)
         char *buf = malloc(field_len + 2);
         memcpy(buf, footer_field, field_len);
         buf[field_len] = '\n';
-        buf[field_len + 1] = 0;
         write(proc_write_fd, buf, field_len + 1);
 
-        uint32_t line_idx = screen_line_idx;
-        uint32_t char_idx = buffer_len - line_lengths[line_idx];
-        memcpy(text_buffer + buffer_len, buf, field_len + 2);
+        // uint32_t line_idx = screen_line_idx;
+        // uint32_t char_idx = buffer_len - line_lengths[line_idx];
+        // if (text_buffer[char_idx] == '\n') ++char_idx;
+        uint32_t num_lines =
+          (window_h - PATH_HEIGHT - FOOTER_HEIGHT - 16) / LINE_HEIGHT;
+        if (screen_line_idx >= num_lines - 1)
+          top_idx = buffer_len - line_lengths[screen_line_idx];
+        if (buffer_len + field_len + 1 >= 0x2000) {
+          char *new = (char *)pagealloc(2);
+          memcpy(new, text_buffer + top_idx, buffer_len - top_idx);
+          pagefree((uint32_t)text_buffer, 2);
+          text_buffer = new;
+          buffer_len -= top_idx;
+          top_idx = 0;
+        }
+        memcpy(text_buffer + buffer_len, buf, field_len + 1);
         buffer_len += field_len + 1;
-        update_line_lengths(line_idx, char_idx);
-        render_buffer(line_idx, char_idx);
+        text_buffer[buffer_len] = 0;
+        // update_line_lengths(line_idx, char_idx);
+        // render_buffer(line_idx, char_idx);
+        update_line_lengths(0, top_idx);
+        render_buffer(0, top_idx);
 
         free(buf);
         memset(footer_field, 0, sizeof(footer_field));

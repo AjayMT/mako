@@ -282,7 +282,8 @@ static void update_line_lengths(uint32_t top_line, uint32_t fidx)
     if (nextnl && nextnl - p <= len) {
       nl = 1;
       llen = nextnl - p;
-    }
+    } else if (nextnl == NULL && file_buffer_len - fidx < len)
+      llen = file_buffer_len - fidx;
     fidx += llen + nl;
     line_lengths[i] = llen;
   }

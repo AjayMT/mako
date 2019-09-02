@@ -656,7 +656,7 @@ static int32_t create_dir_entry(
   {
     if (dir_idx >= self->block_size) {
       ++block_num;
-      dir_idx -= self->block_size;
+      dir_idx = 0;
       res = read_inode_block(self, &inode, block_num, blk_buf);
       CHECK(res != self->block_size, "Failed to read inode block.", -EAGAIN);
     }
@@ -678,12 +678,25 @@ static int32_t create_dir_entry(
     }
   }
 
-  current_entry = (ext2_dir_entry_t *)(blk_buf + dir_idx);
+  current_entry = (ext2_dir_entry_t *)((uint32_t)blk_buf + dir_idx);
   current_entry->inode = inode_num;
   current_entry->size = self->block_size - dir_idx;
   current_entry->name_len = u_strlen(name);
   current_entry->type = 0;
   u_memcpy(current_entry->name, name, current_entry->name_len);
+
+  res = write_inode_block(self, &inode, node->inode, block_num, blk_buf);
+  CHECK(res != self->block_size, "Failed to write inode block", -EAGAIN);
+
+  dir_idx += current_entry->size;
+  if (dir_idx >= self->block_size) {
+    ++block_num;
+    dir_idx = 0;
+    res = read_inode_block(self, &inode, block_num, blk_buf);
+    CHECK(res != self->block_size, "Failed to read inode block.", -EAGAIN);
+  }
+  current_entry = (ext2_dir_entry_t *)((uint32_t)blk_buf + dir_idx);
+  u_memset(current_entry, 0, sizeof(ext2_dir_entry_t));
 
   res = write_inode_block(self, &inode, node->inode, block_num, blk_buf);
   CHECK(res != self->block_size, "Failed to write inode block", -EAGAIN);
