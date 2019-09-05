@@ -210,6 +210,7 @@ static void exec_thread()
     if (buffer_len + r >= 0x2000) {
       char *new = (char *)pagealloc(2);
       memcpy(new, text_buffer + top_idx, buffer_len - top_idx);
+      memset(new, 0, 0x2000 - (buffer_len - top_idx));
       pagefree((uint32_t)text_buffer, 2);
       text_buffer = new;
       buffer_len -= top_idx;
@@ -236,9 +237,7 @@ static void exec_thread()
   ui_swap_buffers((uint32_t)ui_buf);
   thread_unlock(&ui_lock);
 
-  //fprintf(stderr, "thread closing proc_read_fd\n");
   close(proc_read_fd);
-  //fprintf(stderr, "thread terminating\n");
 }
 
 static uint8_t exec_path()
@@ -275,7 +274,6 @@ static uint8_t exec_path()
   close(writefd);
   close(readfd2);
   pid_t t = thread(exec_thread, NULL);
-  //fprintf(stderr, "child %u thread %u\n", p, t);
   close(readfd);
 
   return 1;
@@ -398,6 +396,7 @@ static void keyboard_handler(uint8_t code)
         if (buffer_len + field_len + 1 >= 0x2000) {
           char *new = (char *)pagealloc(2);
           memcpy(new, text_buffer + top_idx, buffer_len - top_idx);
+          memset(new, 0, 0x2000 - (buffer_len - top_idx));
           pagefree((uint32_t)text_buffer, 2);
           text_buffer = new;
           buffer_len -= top_idx;

@@ -91,10 +91,8 @@ static uint32_t pipe_write(
 static void pipe_close_read(fs_node_t *node)
 {
   pipe_t *self = node->device;
-  // log_debug("pipe", "closing %x self %x\n", node, self);
   if (self == NULL) return;
   --(self->read_refcount);
-  //log_debug("pipe", "read refcount %u\n", self->read_refcount);
   if (self->read_refcount) return;
   self->read_closed = 1;
   if (self->write_closed) pipe_destroy(self);
@@ -103,10 +101,8 @@ static void pipe_close_read(fs_node_t *node)
 static void pipe_close_write(fs_node_t *node)
 {
   pipe_t *self = node->device;
-  //log_debug("pipe", "closing %x self %x\n", node, self);
   if (self == NULL) return;
   --(self->write_refcount);
-  //log_debug("pipe", "write refcount %u\n", self->write_refcount);
   if (self->write_refcount) return;
   self->write_closed = 1;
   if (self->read_closed) pipe_destroy(self);

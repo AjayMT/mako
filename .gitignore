@@ -15,3 +15,4 @@ sysroot/usr/include/sys/*.h
 /pie
 /lua
 /deps
+/mnt/*

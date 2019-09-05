@@ -285,16 +285,12 @@ static void syscall_close(int32_t fdnum)
   process_fd_t *fd = lnode->value;
   if (fd == NULL) goto fail;
   --(fd->refcount);
-  //log_debug("syscall", "closing fd %x with close ptr: %x, read: %u\n", fd, fd->node.close, !!(fd->node.read));
   fs_close(&(fd->node));
   if (fd->node.flags & FS_PIPE) {
     pipe_t *p = fd->node.device;
     if (p && p->read_closed && p->write_closed) kfree(p);
   }
-  if (fd->refcount == 0) {
-    //log_debug("syscall", "Freeing fd %x\n", fd);
-    kfree(fd);
-  }
+  if (fd->refcount == 0) kfree(fd);
   lnode->value = NULL;
 
   current->uregs.eax = 0;
@@ -377,10 +373,12 @@ static void syscall_pipe(
   process_fd_t *read_fd = kmalloc(sizeof(process_fd_t));
   if (read_fd == NULL) { current->uregs.eax = -ENOMEM; return; }
   u_memset(read_fd, 0, sizeof(process_fd_t));
+  read_fd->refcount = 1;
 
   process_fd_t *write_fd = kmalloc(sizeof(process_fd_t));
   if (write_fd == NULL) { current->uregs.eax = -ENOMEM; return; }
   u_memset(write_fd, 0, sizeof(process_fd_t));
+  write_fd->refcount = 1;
 
   uint32_t res = pipe_create(&(read_fd->node), &(write_fd->node), rb, wb);
   if (res) { current->uregs.eax = -res; return; }
@@ -548,7 +546,6 @@ static void syscall_dup(uint32_t fdnum)
   }
   ++(fd1->refcount);
   if (fd1->node.flags & FS_PIPE) {
-    //log_debug("syscall", "duping pipe, fd %x\n", fd1);
     pipe_t *p = fd1->node.device;
     if (fd1->node.read) ++(p->read_refcount);
     else if (fd1->node.write) ++(p->write_refcount);
