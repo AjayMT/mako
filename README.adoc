@@ -5,14 +5,14 @@ Mako is an operating system for 32-bit x86-compatible computers. Among its featu
 
 - a Linux-compatible ext2 filesystem
 - fully virtualized per-process address spaces
-- cooperative and pre-emptive multitasking -- multiple processes and mutliple threads per process
+- inter-process communication through pipes and signals
+- cooperative and pre-emptive multitasking -- multiple processes and multiple threads per process
 - a graphical user interface
 - a (mostly) UNIX-compatible C library
 - a Lua interpreter
-- graphical applications for navigating directories and editing files
+- graphical applications for navigating directories, editing files and executing programs
 
 image::http://ajaymt.github.io/mako/res/screenshot.png[]
-
 
 Mako is named after the https://marinebio.org/species/shortfin-mako-sharks/isurus-oxyrinchus/[mako shark], the fastest shark in the sea. The shortfin mako shark is classified as an endangered species by the http://www.iucn.org[IUCN] -- learn more about shark conservation https://www.sharktrust.org/shark-conservation[here].
 
@@ -59,7 +59,6 @@ Long term goals:
 
 Mako depends on:
 
-- http://nurd.se/~noname/?section=sdl_picofont[sdl_picofont] to render text
 - the http://lua.org[Lua] programming language
 
 I wrote Mako to better understand how operating systems work and learnt a lot of cool stuff in the process. This project would not exist without:
@@ -71,5 +70,3 @@ I wrote Mako to better understand how operating systems work and learnt a lot of
 == License
 
 All Mako source is distributed under the terms of the MIT License.
-
-sdl_picofont is distributed under the terms of the GNU GPL v2.
