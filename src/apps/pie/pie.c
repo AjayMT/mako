@@ -51,6 +51,7 @@ static uint32_t buffer_len = 0;
 static uint32_t screen_line_idx = 0;
 static uint32_t proc_write_fd = 0;
 static uint32_t proc_read_fd = 0;
+static pid_t proc_pid = 0;
 
 __attribute__((always_inline))
 static inline void fill_color(uint32_t *p, uint32_t b, size_t n)
@@ -235,9 +236,12 @@ static void exec_thread()
   render_footer();
   render_path();
   ui_swap_buffers((uint32_t)ui_buf);
-  thread_unlock(&ui_lock);
 
   close(proc_read_fd);
+  proc_read_fd = 0;
+  proc_write_fd = 0;
+  proc_pid = 0;
+  thread_unlock(&ui_lock);
 }
 
 static uint8_t exec_path()
@@ -250,8 +254,8 @@ static uint8_t exec_path()
   res = pipe(&readfd2, &writefd2, 1, 1);
   if (res) return 0;
 
-  pid_t p = fork();
-  if (p == 0) {
+  proc_pid = fork();
+  if (proc_pid == 0) {
     close(readfd);
     close(writefd2);
 
@@ -355,7 +359,10 @@ static void keyboard_handler(uint8_t code)
 
   if (cs == CS_PENDING) {
     FIELD_INPUT({
-        if (strcmp(footer_field, "q") == 0) exit(0);
+        if (
+          strcmp(footer_field, "q") == 0
+          && (window_w != SCREENWIDTH || window_h != SCREENHEIGHT)
+          ) exit(0);
 
         uint8_t valid = check_path(footer_field);
         if (!valid) { update = 0; break; }
@@ -380,6 +387,20 @@ static void keyboard_handler(uint8_t code)
   }
 
   if (cs == CS_EXEC) {
+    uint8_t killed = 0;
+    switch (code) {
+    case KB_SC_ESC:
+      if (proc_pid) {
+        killed = 1;
+        signal_send(proc_pid, SIGKILL);
+      }
+      break;
+    }
+    if (killed) {
+      thread_unlock(&ui_lock);
+      return;
+    }
+
     FIELD_INPUT({
         char *buf = malloc(field_len + 2);
         memcpy(buf, footer_field, field_len);
@@ -475,7 +496,8 @@ int main(int argc, char *argv[])
 
   ui_init();
   ui_set_handler(ui_handler);
-  ui_acquire_window();
+  int32_t res = ui_acquire_window();
+  if (res) return 1;
 
   while (1) ui_wait();
 

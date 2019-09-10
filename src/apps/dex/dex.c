@@ -881,7 +881,8 @@ int main(int argc, char *argv[])
 
   ui_init();
   ui_set_handler(ui_handler);
-  ui_acquire_window();
+  res = ui_acquire_window();
+  if (res) return 1;
 
   while (1) ui_wait();
 
