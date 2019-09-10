@@ -1,0 +1,30 @@
+
+= pie Documentation
+
+This document describes the interface and functionality of `pie', the Program
+Interaction Environment.
+
+== Interface
+
+pie mimics the functionality of a simple terminal emulator. It hosts
+interactive text-mode programs, forwarding text input to the program's
+standard input file descriptor and reading its standard output and error
+descriptors.
+
+The pie window is made of three parts:
+
+- A top bar that displays the path of the hosted program.
+- A large text view that displays the output of the hosted program.
+- A bottom bar that displays the pie prompt.
+
+The pie prompt is always in one of two states:
+- `%': No program is running.
+- `$': A program is running and is accepting input.
+
+== Usage
+
+When no program is running (the prompt is `%'), enter the path of a program to
+execute it or "q" to quit.
+
+When a program is running (the prompt is `$'), enter text to forward to the
+program or press ESC to kill it.

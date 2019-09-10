@@ -1,7 +1,10 @@
 #!/bin/lua
 
-print("hello, world")
+io.write("hello, world\n")
 
 while true do
-  print("// "..io.read())
+  io.write("(`q': quit) > ")
+  w = io.read()
+  if w == 'q' then os.exit() end
+  io.write("hello "..w.."\n")
 end
