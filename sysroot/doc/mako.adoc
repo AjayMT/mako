@@ -21,8 +21,12 @@ dex (located at `/apps/dex' by default) is a directory explorer, and
 
 xed (which you are probably using to read this document) is a text editor.
 
-Detailed documentation on dex and xed can be found at `/doc/dex.adoc' and
-`/doc/xed.adoc'.
+pie (the Program Interaction Environment, located at `/apps/pie') is a simple
+terminal-emulator-like application for executing interactive text-based
+programs.
+
+Detailed documentation on dex, xed and pie can be found at `/doc/dex.adoc',
+`/doc/xed.adoc' and `/doc/pie.adoc'.
 
 === Exploring the filesystem
 
@@ -76,6 +80,9 @@ file as described in `Opening files'.
 
 If the program is an `app' (i.e it presents a graphical interface), dex will
 split its window and launch the app without any I/O redirection.
+
+pie (`/apps/pie') provides a simple mechanism to execute and interact with
+programs; see `/doc/pie.adoc' for more.
 
 == Filesystem Layout
 
