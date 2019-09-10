@@ -5,11 +5,12 @@ Mako is an operating system for 32-bit x86-compatible computers. Among its featu
 
 - a Linux-compatible ext2 filesystem
 - fully virtualized per-process address spaces
-- cooperative and pre-emptive multitasking -- multiple processes and mutliple threads per process
+- inter-process communication through pipes and signals
+- cooperative and pre-emptive multitasking -- multiple processes and multiple threads per process
 - a graphical user interface
 - a (mostly) UNIX-compatible C library
 - a Lua interpreter
-- graphical applications for navigating directories and editing files
+- graphical applications for navigating directories, editing files and executing programs
 
 image::http://ajaymt.github.io/mako/res/screenshot.png[]
 
