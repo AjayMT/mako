@@ -268,7 +268,7 @@ static uint8_t exec_path()
     maketty(1);
     maketty(2);
 
-    char *args[] = { path, NULL };
+    char *args[] = { NULL };
     execve(path, args, environ);
     exit(1);
   }

@@ -1078,8 +1078,7 @@ static void ui_handler(ui_event_t ev)
 
   if (dir_path) {
     if (fork() == 0) {
-      char *args[3];
-      args[0] = "dex"; args[1] = dir_path; args[2] = NULL;
+      char *args[2] = { dir_path, NULL };
       execve("/apps/dex", args, environ);
       exit(1);
     }

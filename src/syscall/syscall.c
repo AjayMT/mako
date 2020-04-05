@@ -54,15 +54,18 @@ static void syscall_execve(char *path, char *argv[], char *envp[])
   if (rsize >= 4 && elf_is_valid(buf)) {
     uint32_t argc = 0;
     for (; argv[argc]; ++argc);
-    char **kargv = kmalloc((argc + 1) * sizeof(char *));
+    char **kargv = kmalloc((argc + 2) * sizeof(char *));
     if (kargv == NULL) { current->uregs.eax = -ENOMEM; return; }
+    kargv[0] = kmalloc(u_strlen(path) + 1);
+    if (kargv[0] == NULL) { current->uregs.eax = -ENOMEM; return; }
+    u_memcpy(kargv[0], path, u_strlen(path) + 1);
     for (uint32_t i = 0; i < argc; ++i) {
       char *arg = kmalloc(u_strlen(argv[i]) + 1);
       if (arg == NULL) { current->uregs.eax = -ENOMEM; return; }
       u_memcpy(arg, argv[i], u_strlen(argv[i]) + 1);
-      kargv[i] = arg;
+      kargv[i + 1] = arg;
     }
-    kargv[argc] = NULL;
+    kargv[argc + 1] = NULL;
 
     uint32_t envc = 0;
     for (; envp[envc]; ++envc);

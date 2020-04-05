@@ -21,7 +21,7 @@ int main(int argc, char *argv[])
 
   if (fork() == 0) {
     chdir("/home");
-    char *args[] = { "xed", "/home/hello.txt", NULL };
+    char *args[] = { "/home/hello.txt", NULL };
     execve("/apps/xed", args, environ);
   }
 

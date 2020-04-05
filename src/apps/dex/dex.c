@@ -453,10 +453,16 @@ static uint8_t exec_entry()
 
   pid_t p = fork();
   if (p == 0) {
-    FILE *f = fopen(exec_stdin_path, "r");
-    if (f) movefd(f->fd, 0);
+    char *arg0 = NULL;
+    if (strlen(exec_stdin_path)) {
+      arg0 = "-";
+      FILE *f = fopen(exec_stdin_path, "r");
+      if (f) movefd(f->fd, 0);
+    }
+
     movefd(ofd, 1);
-    char *args[] = { path, "-", NULL };
+
+    char *args[] = { arg0, NULL };
     execve(path, args, environ);
     printf("dex: error: %d\n", errno);
     exit(1);
@@ -809,7 +815,7 @@ static void ui_handler(ui_event_t ev)
 
     if (file_path) {
       if (fork() == 0) {
-        char *args[] = { "xed", file_path, NULL };
+        char *args[] = { file_path, NULL };
         execve("/apps/xed", args, environ);
         exit(1);
       }
@@ -817,7 +823,7 @@ static void ui_handler(ui_event_t ev)
       file_path = NULL;
     } else if (exec_path) {
       if (fork() == 0) {
-        char *args[] = { exec_path, NULL };
+        char *args[] = { NULL };
         execve(exec_path, args, environ);
         exit(1);
       }

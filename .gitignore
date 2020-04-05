@@ -14,5 +14,6 @@ sysroot/usr/include/sys/*.h
 /xed
 /pie
 /lua
+/c4
 /deps
 /mnt/*

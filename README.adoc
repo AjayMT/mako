@@ -60,6 +60,7 @@ Long term goals:
 Mako depends on:
 
 - the http://lua.org[Lua] programming language
+- https://github.com/rswier/c4[c4], a wonderfully simple implementation of C.
 
 I wrote Mako to better understand how operating systems work and learnt a lot of cool stuff in the process. This project would not exist without:
 

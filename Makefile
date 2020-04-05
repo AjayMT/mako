@@ -25,8 +25,13 @@ all: kernel.elf
 
 user: deps $(APPS) $(BIN)
 
-deps: sysroot lua
+deps: sysroot lua c4
 	cp lua sysroot/bin
+	cp c4 sysroot/bin
+
+c4: $(shell find src/libc -type f) $(shell find deps/lua -type f)
+	$(MAKE) -C deps/c4
+	cp deps/c4/c4 .
 
 lua: $(shell find src/libc -type f) $(shell find deps/lua -type f)
 	$(MAKE) MAKO_PATH=${PWD} -C deps/lua generic
@@ -96,4 +101,4 @@ clean:
 	       iso/boot/kernel.elf mako.iso bochslog.txt com1.out      \
 	       iso/modules/rd src/libc/*.o src/libui/*.o               \
 	       sysroot/usr/include/{*,sys/*}.h sysroot/usr/lib/*.{a,o} \
-	       lua $(APPS) $(BIN) hda.img
+	       lua c4 $(APPS) $(BIN) hda.img
