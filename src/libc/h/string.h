@@ -19,6 +19,7 @@ void *memchr(const void *src, int32_t c, size_t n);
 int32_t memcmp(const void *p1, const void *p2, size_t n);
 
 char *strdup(const char *s);
+char *strndup(const char *s, size_t n);
 char *strcpy(char *dest, const char *src);
 char *strncpy(char *dest, const char *src, size_t len);
 char *strchr(const char *s, int32_t c);

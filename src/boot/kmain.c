@@ -130,11 +130,11 @@ void kmain(
   res = keyboard_init();
   CHECK(res, "keyboard");
 
-  uint32_t video_vaddr = paging_next_vaddr(469, KERNEL_START_VADDR);
+  uint32_t video_vaddr = paging_next_vaddr(768, KERNEL_START_VADDR);
   page_table_entry_t flags; u_memset(&flags, 0, sizeof(flags));
   flags.rw = 1;
   paging_result_t r;
-  for (uint32_t i = 0; i < 469; ++i) {
+  for (uint32_t i = 0; i < 768; ++i) {
     r = paging_map(video_vaddr + (i << 12), 0xFD000000 + (i << 12), flags);
     CHECK(r != PAGING_OK, "ui");
   }

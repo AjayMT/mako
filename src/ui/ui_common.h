@@ -10,8 +10,8 @@
 
 #include <stdint.h>
 
-#define SCREENWIDTH  800
-#define SCREENHEIGHT 600
+#define SCREENWIDTH  1024
+#define SCREENHEIGHT 768
 
 typedef struct ui_window_s {
   uint32_t x;

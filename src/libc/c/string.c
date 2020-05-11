@@ -73,6 +73,15 @@ char *strdup(const char *s)
   return new;
 }
 
+char *strndup(const char *s, size_t n)
+{
+  char *new = malloc(n + 1);
+  if (new == NULL) { errno = ENOMEM; return NULL; }
+  strncpy(new, s, n);
+  new[n] = 0;
+  return new;
+}
+
 char *strcpy(char *dest, const char *src)
 { return memcpy(dest, src, strlen(src) + 1); }
 char *strncpy(char *dest, const char *src, size_t len)
