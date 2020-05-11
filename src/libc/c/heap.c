@@ -11,6 +11,7 @@
 #include <string.h>
 #include <stdlib.h>
 
+
 // This is adapted from the kernel's heap implementation, see `src/kheap`.
 
 // This is a relatively simple worst-fit allocator. It maintains
@@ -26,11 +27,9 @@
 // to implement than a simple first-fit allocator.
 
 // Constants.
-static const uint32_t PHYS_ADDR_OFFSET  = 12;
-static const uint32_t PAGE_SIZE         = 0x1000;
-static const uint32_t SIZE_UNIT         = 8;
-static const uint32_t SIZE_UNIT_OFFSET  = 3;
-static const uint32_t BLOCK_MAGIC       = 0xDEADDEAD;
+static const uint32_t PHYS_ADDR_OFFSET = 12;
+static const uint32_t PAGE_SIZE        = 0x1000;
+static const uint32_t BLOCK_MAGIC      = 0xDEADDEAD;
 
 // The back of every block stores its size and three flags:
 //   `free`: whether the block is free
@@ -38,26 +37,19 @@ static const uint32_t BLOCK_MAGIC       = 0xDEADDEAD;
 //           memory, before it
 //   `next`: whether a block exists adjacent to this one in
 //           memory, after it.
-// The size can be stored with only 29 bits because we force it
-// to be a multiple of 8, so the last three bits are always zero.
-//
-// UPDATE: This needs to also be a multiple of 8 in size, so 4
-// padding bytes are necessary.
 struct block_back_s {
-  uint32_t padding : 32;
-  uint32_t size    : 29;
-  uint32_t free    : 1;
-  uint32_t prev    : 1;
-  uint32_t next    : 1;
+  uint32_t size   : 32;
+  uint8_t free    : 1;
+  uint8_t prev    : 1;
+  uint8_t next    : 1;
+  uint8_t padding : 5;
 } __attribute__((packed));
 typedef struct block_back_s block_back_t;
 
 // The front of every block stores pointers to the next (smaller) and
 // previous (bigger) blocks in the size chain, and a pointer to the
-// struct at the back of the block.
-//
-// UPDATE: It also stores a magic number to confirm that it is a
-// kmalloc'd block and to pad out its size to a multiple of 8.
+// struct at the back of the block. It also stores a magic number to
+// confirm that it is a malloced block.
 struct block_front_s {
   struct block_front_s *bigger;
   struct block_front_s *smaller;
@@ -69,7 +61,7 @@ typedef struct block_front_s block_front_t;
 // Minimum size of a single block, including front and back
 // info structs.
 static const uint32_t MIN_SIZE = sizeof(block_front_t)
-  + sizeof(block_back_t) + SIZE_UNIT;
+  + sizeof(block_back_t) + 1;
 
 // The largest available block and head of the size list.
 static block_front_t *biggest = NULL;
@@ -86,14 +78,6 @@ static inline uint32_t page_align_up(uint32_t addr)
 }
 static inline uint32_t page_align_down(uint32_t addr)
 { return addr & 0xFFFFF000; }
-static inline uint32_t block_align_up(uint32_t addr)
-{
-  if ((addr & 0b111) != 0)
-    addr += SIZE_UNIT - (addr & 0b111);
-  return addr;
-}
-static inline size_t get_size(block_front_t *block)
-{ return (block->info->size) << SIZE_UNIT_OFFSET; }
 
 // Remove a free block from the size list.
 static void remove_block(block_front_t *block)
@@ -113,9 +97,10 @@ static void sort_down(block_front_t *block)
 {
   block_front_t *swap = block->smaller;
   block_front_t *prev = block;
+
   for (
     ;
-    swap && get_size(block) < get_size(swap);
+    swap && block->info->size < swap->info->size;
     prev = swap, swap = swap->smaller
     );
 
@@ -135,7 +120,7 @@ static void sort_up(block_front_t *block)
   block_front_t *prev = block;
   for (
     ;
-    swap && get_size(block) > get_size(swap);
+    swap && block->info->size > swap->info->size;
     prev = swap, swap = swap->bigger
     );
 
@@ -153,7 +138,7 @@ static void sort_up(block_front_t *block)
 static inline block_front_t *previous_block(block_front_t *block)
 {
   uint32_t pinfo_addr = (uint32_t)block - sizeof(block_back_t);
-  uint32_t psize = ((block_back_t *)pinfo_addr)->size << SIZE_UNIT_OFFSET;
+  uint32_t psize = ((block_back_t *)pinfo_addr)->size;
   uint32_t pfront_addr = pinfo_addr - psize - sizeof(block_front_t);
   return (block_front_t *)pfront_addr;
 }
@@ -169,7 +154,7 @@ static inline block_front_t *next_block(block_front_t *block)
 // free region within the block.
 static block_front_t *split_block(block_front_t *block, size_t offset)
 {
-  if (offset >= get_size(block)) return NULL;
+  if (offset >= block->info->size) return NULL;
 
   uint32_t block_addr = (uint32_t)block;
   uint32_t new_front_addr = block_addr + sizeof(block_front_t) + offset;
@@ -182,16 +167,15 @@ static block_front_t *split_block(block_front_t *block, size_t offset)
     .info = block->info,
     .magic = BLOCK_MAGIC
   };
-  *((block_front_t *)new_front_addr) = new_front;
-  new_front.info->size =
-    (get_size(block) - offset - sizeof(block_front_t)) >> SIZE_UNIT_OFFSET;
+  new_front.info->size = block->info->size - offset - sizeof(block_front_t);
   new_front.info->prev = 1;
   block->smaller = (block_front_t *)new_front_addr;
   if (new_front.smaller)
     new_front.smaller->bigger = (block_front_t *)new_front_addr;
+  *((block_front_t *)new_front_addr) = new_front;
 
   block_back_t new_info = {
-    .size = (offset - sizeof(block_back_t)) >> SIZE_UNIT_OFFSET,
+    .size = offset - sizeof(block_back_t),
     .free = old_info.free,
     .prev = old_info.prev,
     .next = 1
@@ -211,12 +195,12 @@ static void merge_block(block_front_t *block)
   remove_block(nb);
 
   block_back_t old_info = *(block->info);
-  uint32_t block_size = get_size(block);
-  uint32_t nb_size = get_size(nb);
+  uint32_t block_size = block->info->size;
+  uint32_t nb_size = nb->info->size;
   block_size += nb_size + sizeof(block_front_t) + sizeof(block_back_t);
 
   block->info = nb->info;
-  block->info->size = block_size >> SIZE_UNIT_OFFSET;
+  block->info->size = block_size;
   block->info->prev = old_info.prev;
   block->info->free = old_info.free;
   memset(nb, 0, sizeof(block_front_t));
@@ -232,9 +216,8 @@ static void get_heap(size_t size)
   uint32_t vaddr = pagealloc(npages);
   if (vaddr == 0) return;
 
-  size_t new_size = size - sizeof(block_front_t) - sizeof(block_back_t);
   block_back_t new_info = {
-    .size = new_size >> SIZE_UNIT_OFFSET,
+    .size = size - sizeof(block_front_t) - sizeof(block_back_t),
     .free = 1,
     .prev = 0,
     .next = 0
@@ -311,20 +294,20 @@ static void release_heap(block_front_t *block)
 // Allocate memory.
 void *malloc(size_t size)
 {
+  if (size == 0) return NULL;
+
   thread_lock(&heap_lock);
 
-  size = block_align_up(size);
-  if (size == 0) { thread_unlock(&heap_lock); return NULL; }
-  if (biggest == NULL || get_size(biggest) < size) {
+  if (biggest == NULL || biggest->info->size < size) {
     get_heap(size);
-    if (biggest == NULL || get_size(biggest) < size) {
+    if (biggest == NULL || biggest->info->size < size) {
       thread_unlock(&heap_lock);
       return NULL;
     }
   }
 
-  if (get_size(biggest) - size < MIN_SIZE)
-    size = get_size(biggest);
+  if (biggest->info->size - size < MIN_SIZE)
+    size = biggest->info->size;
   else split_block(biggest, size + sizeof(block_back_t));
 
   block_front_t *ret = biggest;
@@ -383,16 +366,15 @@ void *realloc(void *ptr, size_t size)
   if (ptr == NULL) return malloc(size);
   if (*((uint32_t *)((uint32_t)ptr - sizeof(uint32_t))) != BLOCK_MAGIC)
     return malloc(size);
-  if (size == 0) size = MIN_SIZE;
+  if (size == 0) ++size;
 
   thread_lock(&heap_lock);
 
-  block_front_t *block = (block_front_t *)
-    ((uint32_t)ptr - sizeof(block_front_t));
+  block_front_t *block = (block_front_t *)((uint32_t)ptr - sizeof(block_front_t));
 
-  if (block->info->next && size > get_size(block)) {
+  if (block->info->next && size > block->info->size) {
     block_front_t *nb = next_block(block);
-    uint32_t nsize = get_size(block) + get_size(nb)
+    uint32_t nsize = block->info->size + nb->info->size
       + sizeof(block_front_t) + sizeof(block_back_t);
     if (nb->info->free && nsize >= size) {
       merge_block(block);
@@ -406,7 +388,7 @@ void *realloc(void *ptr, size_t size)
   char *p = malloc(size);
   if (p == NULL) return NULL;
 
-  if (size > get_size(block)) size = get_size(block);
+  if (size > block->info->size) size = block->info->size;
   memcpy(p, (char *)ptr, size);
   free(ptr);
 
