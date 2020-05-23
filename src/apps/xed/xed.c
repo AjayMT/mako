@@ -56,9 +56,12 @@ typedef struct line_s {
   int32_t len; // length of the line
 } line_t;
 static line_t lines[MAX_NUM_LINES];
-static uint32_t top_idx = 0;
-static uint32_t cursor_idx = 0;
-static uint32_t buffer_idx = 0;
+typedef struct position_s {
+  uint32_t top_idx;
+  uint32_t cursor_idx;
+  uint32_t buffer_idx;
+} position_t;
+static position_t P = { 0, 0, 0 };
 
 // Directory path to open in dex
 static char *dir_path = NULL;
@@ -67,10 +70,7 @@ static char *dir_path = NULL;
 static uint8_t buffer_dirty = 0;
 
 // selection state
-static uint32_t selection_top_idx = 0;
-static uint32_t selection_cursor_idx = 0;
-static uint32_t selection_buffer_idx = 0;
-static int32_t selection_line_delta = 0;
+static position_t SP = { 0, 0, 0 };
 
 // 'Command' (footer) state
 typedef enum {
@@ -85,6 +85,7 @@ static command_state_t cs;
 static char footer_text[FOOTER_LEN];
 static char footer_field[FOOTER_LEN];
 
+// set `n` pixels of the buffer to `b` starting at `p`
 __attribute__((always_inline))
 static inline void fill_color(uint32_t *p, uint32_t b, size_t n)
 { for (uint32_t i = 0; i < n; ++i) p[i] = b; }
@@ -97,11 +98,12 @@ static char *rstrchr(char *a, char *b, char c)
 }
 
 // render text at x and y coordinates
-static uint32_t render_text(const char *text, uint32_t x, uint32_t y)
+static void render_text(const char *text, uint32_t x, uint32_t y)
 {
   size_t len = strlen(text);
   size_t w, h;
   text_dimensions(text, len, &w, &h);
+  if (w * h == 0) return;
 
   uint8_t *pixels = malloc(w * h);
   memset(pixels, 0, w * h);
@@ -115,7 +117,6 @@ static uint32_t render_text(const char *text, uint32_t x, uint32_t y)
     p += window_w;
   }
   free(pixels);
-  return h;
 }
 
 // gray out all UI elements when the window is inactive
@@ -158,78 +159,6 @@ static void render_footer()
   fill_color(line_row, INACTIVE_COLOR, window_w);
 }
 
-static void clear_selection(uint32_t delta, uint32_t old, uint32_t new)
-{
-  uint32_t line_len = (window_w - TOTAL_PADDING) / FONTWIDTH;
-  uint32_t num_lines =
-    (window_h - PATH_HEIGHT - FOOTER_HEIGHT - TOTAL_PADDING) / LINE_HEIGHT;
-
-  old -= delta * line_len;
-  if (old < 0 || old >= num_lines * line_len)
-    old = delta > 0 ? 0 : (num_lines * line_len) - 1;
-  if (old == new) return;
-
-  uint32_t lower = new;
-  if (old < lower) lower = old;
-  uint32_t higher = new;
-  if (higher < old) higher = old;
-  uint32_t ly = lower / line_len;
-  uint32_t hy = higher / line_len;
-
-  uint32_t *row = ui_buf
-    + (window_w * (PATH_HEIGHT + (TOTAL_PADDING / 2) + ly * LINE_HEIGHT));
-
-  uint32_t span = 0;
-  for (uint32_t i = lower; i < higher; i += span) {
-    uint32_t ix = i % line_len;
-    span = higher - i;
-    if (span > line_len - ix) span = line_len - ix;
-    uint32_t xstart = (TOTAL_PADDING / 2) + (ix * FONTWIDTH);
-    uint32_t xend = (TOTAL_PADDING / 2) + ((ix + span) * FONTWIDTH);
-    for (uint32_t x = xstart; x < xend; ++x)
-      for (uint32_t y = 0; y < LINE_HEIGHT; ++y)
-        if (row[(y * window_w) + x] == SELECTION_COLOR)
-          row[(y * window_w) + x] = BG_COLOR;
-    row += window_w * LINE_HEIGHT;
-  }
-}
-
-static void render_selection(int32_t delta)
-{
-  if (selection_buffer_idx == buffer_idx) return;
-
-  uint32_t line_len = (window_w - TOTAL_PADDING) / FONTWIDTH;
-  uint32_t num_lines =
-    (window_h - PATH_HEIGHT - FOOTER_HEIGHT - TOTAL_PADDING) / LINE_HEIGHT;
-
-  uint32_t sci = selection_cursor_idx - (delta * line_len);
-  if (sci < 0 || sci >= num_lines * line_len)
-    sci = delta > 0 ? 0 : (num_lines * line_len) - 1;
-  if (sci == cursor_idx) return;
-
-  uint32_t lower = cursor_idx;
-  if (sci < lower) lower = sci;
-  uint32_t higher = cursor_idx;
-  if (higher < sci) higher = sci;
-  uint32_t ly = lower / line_len;
-
-  uint32_t *row = ui_buf
-    + (window_w * (PATH_HEIGHT + (TOTAL_PADDING / 2) + (ly * LINE_HEIGHT)));
-  uint32_t span = 0;
-  for (uint32_t i = lower; i < higher; i += span) {
-    uint32_t ix = i % line_len;
-    span = higher - i;
-    if (span > line_len - ix) span = line_len - ix;
-    uint32_t xstart = (TOTAL_PADDING / 2) + (ix * FONTWIDTH);
-    uint32_t xend = (TOTAL_PADDING / 2) + ((ix + span) * FONTWIDTH);
-    for (uint32_t x = xstart; x < xend; ++x)
-      for (uint32_t y = 0; y < LINE_HEIGHT; ++y)
-        if (row[(y * window_w) + x] == BG_COLOR)
-          row[(y * window_w) + x] = SELECTION_COLOR;
-    row += window_w * LINE_HEIGHT;
-  }
-}
-
 // Render all the text in the buffer, starting at line `line_idx`
 static void render_buffer(uint32_t line_idx)
 {
@@ -256,13 +185,78 @@ static void render_buffer(uint32_t line_idx)
 
   // rendering the lines {
   uint32_t top = PATH_HEIGHT + (TOTAL_PADDING / 2);
-  for (uint32_t i = line_idx; i < num_lines && lines[i].len > 0; ++i) {
+  for (uint32_t i = line_idx; i < num_lines && lines[i].len >= 0; ++i) {
+    if (lines[i].len == 0) continue;
     uint32_t y = top + i * LINE_HEIGHT;
     char *line = strndup(file_buffer + lines[i].buffer_idx, lines[i].len);
     render_text(line, TOTAL_PADDING / 2, y);
     free(line);
   }
   // }
+}
+
+// highlight selected text
+static void render_selection()
+{
+  // lower and upper bounds within buffer
+  uint32_t lower = SP.buffer_idx;
+  uint32_t higher = P.buffer_idx;
+  if (higher < lower) {
+    lower = P.buffer_idx;
+    higher = SP.buffer_idx;
+  }
+  if (higher == lower || higher < P.top_idx) return;
+
+  uint32_t num_lines =
+    (window_h - PATH_HEIGHT - FOOTER_HEIGHT - TOTAL_PADDING) / LINE_HEIGHT;
+  uint32_t line_len = (window_w - TOTAL_PADDING) / FONTWIDTH;
+
+  // lower and upper bounds on screen
+  uint32_t screen_start = 0;
+  uint32_t screen_end = num_lines * line_len;
+  for (uint32_t i = 0; i < num_lines && lines[i].len >= 0; ++i) {
+    if (lines[i].buffer_idx > higher) break;
+
+    if (lines[i].buffer_idx <= lower && lines[i].buffer_idx + lines[i].len > lower)
+      screen_start = (i * line_len) + lower - lines[i].buffer_idx;
+
+    if (lines[i].buffer_idx <= higher && lines[i].buffer_idx + lines[i].len > higher)
+      screen_end = (i * line_len) + higher - lines[i].buffer_idx;
+  }
+
+  // highlight the text
+  for (uint32_t i = screen_start, next = screen_start; i < screen_end; i = next) {
+    // calculate x, y in terms of characters
+    uint32_t x = i % line_len;
+    uint32_t y = i / line_len;
+    // next = end of current line or end of selected region
+    next = i + line_len - x;
+    if (next > screen_end) next = screen_end;
+    uint32_t next_x = next % line_len;
+
+    // pixel x, y coordinates
+    uint32_t screen_y = (TOTAL_PADDING / 2) + PATH_HEIGHT + (y * LINE_HEIGHT);
+    uint32_t screen_x = (TOTAL_PADDING / 2) + (x * FONTWIDTH);
+    uint32_t x_limit = window_w - (TOTAL_PADDING / 2);
+    if (next_x) x_limit = (TOTAL_PADDING / 2) + (next_x * FONTWIDTH);
+
+    for (uint32_t draw_y = screen_y; draw_y < screen_y + LINE_HEIGHT; ++draw_y) {
+      uint32_t *line = ui_buf + (draw_y * window_w);
+      for (uint32_t draw_x = screen_x; draw_x < x_limit; ++draw_x)
+        if (line[draw_x] == BG_COLOR)
+          line[draw_x] = SELECTION_COLOR;
+    }
+  }
+}
+
+// un-highlight the selected region
+static void clear_selection()
+{
+  // TODO this can be made faster?
+  for (uint32_t i = 0; i < window_w * window_h; ++i) {
+    if (ui_buf[i] == SELECTION_COLOR)
+      ui_buf[i] = BG_COLOR;
+  }
 }
 
 // Update the array of lines, starting at `line_idx` and index
@@ -281,7 +275,7 @@ static void update_lines(uint32_t line_idx, uint32_t buf_idx)
     lines[i].buffer_idx = p - file_buffer;
     char *next_nl = strchr(p, '\n');
 
-    if (next_nl == NULL || next_nl - p > line_len) {
+    if (next_nl == NULL || next_nl - p >= line_len) {
       // wrap text around without newline
       lines[i].len = line_len;
       p += line_len;
@@ -295,39 +289,7 @@ static void update_lines(uint32_t line_idx, uint32_t buf_idx)
   lines[num_lines].len = -1;
 }
 
-/* static void update_line_lengths(uint32_t top_line, uint32_t fidx) */
-/* { */
-/*   memset(line_lengths + top_line, 0, 4 * (LINE_LEN_TABLE_SIZE - top_line)); */
-/*   if (top_idx >= file_buffer_len) return; */
-
-/*   uint32_t len = (window_w - TOTAL_PADDING) / FONTWIDTH; */
-/*   for ( */
-/*     uint32_t i = top_line; */
-/*     i < LINE_LEN_TABLE_SIZE && fidx < file_buffer_len; */
-/*     ++i */
-/*     ) */
-/*   { */
-/*     char *p = file_buffer + fidx; */
-/*     if (*p == '\n') { */
-/*       line_lengths[i] = 0; */
-/*       ++fidx; */
-/*       continue; */
-/*     } */
-
-/*     uint32_t llen = len; */
-/*     char *nextnl = strchr(p, '\n'); */
-/*     uint8_t nl = 0; */
-/*     if (nextnl && nextnl - p <= len) { */
-/*       nl = 1; */
-/*       llen = nextnl - p; */
-/*     } else if (nextnl == NULL && file_buffer_len - fidx < len) */
-/*       llen = file_buffer_len - fidx; */
-/*     fidx += llen + nl; */
-/*     line_lengths[i] = llen; */
-/*   } */
-/* } */
-
-// redraw the cursor at position `cursor_idx`.
+// redraw the cursor at position `P.cursor_idx`.
 // if `erase`, erase it from the old position `old_idx`
 static void update_cursor(uint32_t old_idx, uint8_t erase)
 {
@@ -353,8 +315,8 @@ static void update_cursor(uint32_t old_idx, uint8_t erase)
     }
   }
 
-  uint32_t cx = cursor_idx % line_len;
-  uint32_t cy = cursor_idx / line_len;
+  uint32_t cx = P.cursor_idx % line_len;
+  uint32_t cy = P.cursor_idx / line_len;
   uint32_t x = (cx * FONTWIDTH) + (TOTAL_PADDING / 2);
   uint32_t y = (cy * LINE_HEIGHT) + (TOTAL_PADDING / 2) + PATH_HEIGHT;
 
@@ -403,7 +365,7 @@ static void load_file()
 {
   if (file_path == NULL) {
   fail:
-    top_idx = 0;
+    P.top_idx = 0;
     free(file_buffer);
     file_buffer = NULL;
     file_buffer_len = 0;
@@ -423,81 +385,81 @@ static void load_file()
   file_buffer[st.st_size] = '\0';
   file_buffer_len = st.st_size;
   file_buffer_capacity = st.st_size;
-  if (top_idx >= file_buffer_len)
-    top_idx = 0;
+  if (P.top_idx >= file_buffer_len)
+    P.top_idx = 0;
 
   fclose(f);
 }
 
 // Scroll up when deleting characters at the top of the buffer.
-// Updates `top_idx`.
+// Updates `P.top_idx`.
 __attribute__((always_inline))
 static inline void backspace_scroll_up()
 {
-  if (top_idx <= 1) return;
-  char *p = rstrchr(file_buffer, file_buffer + top_idx - 2, '\n');
+  if (P.top_idx <= 1) return;
+  char *p = rstrchr(file_buffer, file_buffer + P.top_idx - 2, '\n');
   if (*p == '\n') ++p;
   uint32_t pi = p - file_buffer;
-  top_idx = pi;
+  P.top_idx = pi;
 }
 
-// Scroll down to the next newline. Updates `top_idx`, returns
+// Scroll down to the next newline. Updates `P.top_idx`, returns
 // new cursor index.
 __attribute__((always_inline))
 static inline uint32_t newline_scroll_down()
 {
   uint32_t line_len = (window_w - TOTAL_PADDING) / FONTWIDTH;
-  char *n = strchr(file_buffer + top_idx, '\n');
-  if (n == NULL || n[1] == 0) return cursor_idx;
+  char *n = strchr(file_buffer + P.top_idx, '\n');
+  if (n == NULL || n[1] == 0) return P.cursor_idx;
   uint32_t ni = n - file_buffer + 1;
-  uint32_t num_lines_moved = ((ni - top_idx) / line_len) + 1;
-  top_idx = ni;
-  return ((cursor_idx / line_len) - num_lines_moved + 1) * line_len;
+  uint32_t num_lines_moved = ((ni - P.top_idx) / line_len) + 1;
+  P.top_idx = ni;
+  return ((P.cursor_idx / line_len) - num_lines_moved + 1) * line_len;
 }
 
-// Scroll up. Updates `lines`, `top_idx`, `buffer_idx`, `cursor_idx`.
+// Scroll up. Updates `lines`, `P`
 static void scroll_up()
 {
-  if (top_idx == 0) return;
+  if (P.top_idx == 0) return;
   uint32_t line_len = (window_w - TOTAL_PADDING) / FONTWIDTH;
 
   // Scrolling {
-  uint32_t previous_newline = top_idx - 1;
+  uint32_t previous_newline = P.top_idx - 1;
   char *previous_previous_newline = rstrchr(
     file_buffer, file_buffer + previous_newline - 1, '\n'
     );
   if (*previous_previous_newline == '\n') // we found a newline
-    top_idx = previous_previous_newline - file_buffer + 1;
+    P.top_idx = previous_previous_newline - file_buffer + 1;
   else // we didn't find a newline, move to the beginning of the buffer
-    top_idx = 0;
+    P.top_idx = 0;
 
-  update_lines(0, top_idx);
+  update_lines(0, P.top_idx);
   // }
 
   // Moving {
-  if (cursor_idx >= lines[0].len)
-    cursor_idx = lines[0].len - 1;
-  buffer_idx = top_idx + cursor_idx;
+  if (P.cursor_idx >= lines[0].len)
+    P.cursor_idx = lines[0].len - 1;
+  P.buffer_idx = P.top_idx + P.cursor_idx;
   // }
 }
 
-// Scroll down. Updates `lines`, `top_idx`, `buffer_idx`, `cursor_idx`.
+// Scroll down. Updates `lines`, `P`
 static void scroll_down()
 {
   uint32_t line_len = (window_w - TOTAL_PADDING) / FONTWIDTH;
 
   // Scrolling {
-  char *next_newline = strchr(file_buffer + top_idx, '\n');
+  char *next_newline = strchr(file_buffer + P.top_idx, '\n');
   if (next_newline == NULL) return;
   if (next_newline[1] == 0) return; // next newline is the last character
   uint32_t new_top_idx = next_newline - file_buffer + 1;
-  uint32_t num_lines_moved = ((new_top_idx - top_idx) / line_len) + 1;
-  top_idx = new_top_idx;
-  update_lines(0, top_idx);
+  uint32_t num_lines_moved = ((new_top_idx - P.top_idx) / line_len) + 1;
+  P.top_idx = new_top_idx;
+  update_lines(0, P.top_idx);
   // }
 
   // Moving {
-  cursor_idx -= num_lines_moved * line_len;
+  P.cursor_idx -= num_lines_moved * line_len;
   // }
 }
 
@@ -524,45 +486,45 @@ static void update_footer_text()
   strncpy(footer_text, str, FOOTER_LEN);
 }
 
-// Move the cursor up one line. Updates `cursor_idx` and `buffer_idx`.
+// Move the cursor up one line. Updates `P.cursor_idx` and `P.buffer_idx`.
 static void move_up()
 {
   uint32_t line_len = (window_w - TOTAL_PADDING) / FONTWIDTH;
 
-  uint32_t cy = cursor_idx / line_len;
-  uint32_t cx = cursor_idx % line_len;
+  uint32_t cy = P.cursor_idx / line_len;
+  uint32_t cx = P.cursor_idx % line_len;
 
   if (cy == 0) return;
 
-  cursor_idx -= line_len;
+  P.cursor_idx -= line_len;
   --cy;
   if (cx >= lines[cy].len) {
     cx = lines[cy].len - 1;
-    cursor_idx = (cy * line_len) + cx;
+    P.cursor_idx = (cy * line_len) + cx;
   }
-  buffer_idx = lines[cy].buffer_idx + cx;
+  P.buffer_idx = lines[cy].buffer_idx + cx;
 }
 
-// Move the cursor down one line. Updates `cursor_idx` and `buffer_idx`.
+// Move the cursor down one line. Updates `P.cursor_idx` and `P.buffer_idx`.
 static void move_down()
 {
   uint32_t line_len = (window_w - TOTAL_PADDING) / FONTWIDTH;
   uint32_t num_lines =
     (window_h - PATH_HEIGHT - FOOTER_HEIGHT - TOTAL_PADDING) / LINE_HEIGHT;
 
-  uint32_t cy = cursor_idx / line_len;
-  uint32_t cx = cursor_idx % line_len;
+  uint32_t cy = P.cursor_idx / line_len;
+  uint32_t cx = P.cursor_idx % line_len;
 
   if (cy == num_lines - 1) return;
   if (lines[cy + 1].len < 0) return;
 
-  cursor_idx += line_len;
+  P.cursor_idx += line_len;
   ++cy;
   if (cx >= lines[cy].len) {
     cx = lines[cy].len - 1;
-    cursor_idx = (cy * line_len) + cx;
+    P.cursor_idx = (cy * line_len) + cx;
   }
-  buffer_idx = lines[cy].buffer_idx + cx;
+  P.buffer_idx = lines[cy].buffer_idx + cx;
 }
 
 // Handle keyboard input
@@ -601,35 +563,35 @@ static void keyboard_handler(uint8_t code)
   uint32_t num_lines =
     (window_h - PATH_HEIGHT - FOOTER_HEIGHT - TOTAL_PADDING) / LINE_HEIGHT;
   uint32_t line_len = (window_w - TOTAL_PADDING) / FONTWIDTH;
-  uint32_t cursor_x = cursor_idx % line_len;
-  uint32_t cursor_y = cursor_idx / line_len;
-  uint32_t old_cursor_idx = cursor_idx;
+  uint32_t cursor_x = P.cursor_idx % line_len;
+  uint32_t cursor_y = P.cursor_idx / line_len;
+  uint32_t old_cursor_idx = P.cursor_idx;
   uint8_t update = 1;
   uint8_t moved = 1;
 
 #define MOVEMENT                                                        \
   switch (code) {                                                       \
   case KB_SC_LEFT:                                                      \
-    if (file_buffer == NULL || buffer_idx == 0) { update = 0; break; }  \
-    if (file_buffer[buffer_idx - 1] == '\n') { update = 0; break; }     \
-    --cursor_idx;                                                       \
-    --buffer_idx;                                                       \
+    if (file_buffer == NULL || P.buffer_idx == 0) { update = 0; break; } \
+    if (file_buffer[P.buffer_idx - 1] == '\n') { update = 0; break; }   \
+    --P.cursor_idx;                                                     \
+    --P.buffer_idx;                                                     \
     update_cursor(old_cursor_idx, 1);                                   \
     break;                                                              \
   case KB_SC_RIGHT:                                                     \
-    if (file_buffer == NULL || buffer_idx == file_buffer_len) {         \
+    if (file_buffer == NULL || P.buffer_idx == file_buffer_len) {       \
       update = 0; break;                                                \
     }                                                                   \
-    if (file_buffer[buffer_idx] == '\n') { update = 0; break; }         \
+    if (file_buffer[P.buffer_idx] == '\n') { update = 0; break; }       \
     if (cursor_y == num_lines - 1 && cursor_x == line_len - 1) {        \
       update = 0; break;                                                \
     }                                                                   \
-    ++cursor_idx;                                                       \
-    ++buffer_idx;                                                       \
+    ++P.cursor_idx;                                                     \
+    ++P.buffer_idx;                                                     \
     update_cursor(old_cursor_idx, 1);                                   \
     break;                                                              \
   case KB_SC_UP:                                                        \
-    if (file_buffer == NULL || buffer_idx == 0) { update = 0; break; }  \
+    if (file_buffer == NULL || P.buffer_idx == 0) { update = 0; break; } \
     if (cursor_y == 0) {                                                \
       scroll_up();                                                      \
       render_buffer(0);                                                 \
@@ -637,7 +599,7 @@ static void keyboard_handler(uint8_t code)
       break;                                                            \
     }                                                                   \
     move_up();                                                          \
-    if (cursor_idx != old_cursor_idx)                                   \
+    if (P.cursor_idx != old_cursor_idx)                                 \
       update_cursor(old_cursor_idx, 1);                                 \
     break;                                                              \
   case KB_SC_DOWN:                                                      \
@@ -649,7 +611,7 @@ static void keyboard_handler(uint8_t code)
       break;                                                            \
     }                                                                   \
     move_down();                                                        \
-    if (cursor_idx != old_cursor_idx)                                   \
+    if (P.cursor_idx != old_cursor_idx)                                 \
       update_cursor(old_cursor_idx, 1);                                 \
     break;                                                              \
   default: moved = 0;                                                   \
@@ -669,10 +631,7 @@ static void keyboard_handler(uint8_t code)
       break;
     case KB_SC_V:
       cs = CS_SELECT;
-      selection_cursor_idx = cursor_idx;
-      selection_buffer_idx = buffer_idx;
-      selection_top_idx = top_idx;
-      selection_line_delta = 0;
+      SP = P;
       update_footer_text();
       render_footer();
       break;
@@ -685,16 +644,16 @@ static void keyboard_handler(uint8_t code)
         file_buffer = realloc(file_buffer, file_buffer_capacity);
       }
       memmove(
-        file_buffer + buffer_idx + paste_buffer_len,
-        file_buffer + buffer_idx,
-        file_buffer_len - buffer_idx
+        file_buffer + P.buffer_idx + paste_buffer_len,
+        file_buffer + P.buffer_idx,
+        file_buffer_len - P.buffer_idx
         );
       file_buffer_len += paste_buffer_len;
       file_buffer[file_buffer_len] = '\0';
-      memcpy(file_buffer + buffer_idx, paste_buffer, paste_buffer_len);
-      update_lines(cursor_y, buffer_idx - cursor_x);
+      memcpy(file_buffer + P.buffer_idx, paste_buffer, paste_buffer_len);
+      update_lines(cursor_y, lines[cursor_y].buffer_idx);
       render_buffer(cursor_y);
-      update_cursor(cursor_idx, 0);
+      update_cursor(old_cursor_idx, 0);
       break;
     case KB_SC_O:
       if (buffer_dirty) {
@@ -742,7 +701,6 @@ static void keyboard_handler(uint8_t code)
     }
     char deleted = 0;
     char inserted = 0;
-    uint32_t old_cursor_idx = cursor_idx;
     uint32_t old_line_len = 0;
     switch (code) {
     case KB_SC_ESC:
@@ -751,15 +709,15 @@ static void keyboard_handler(uint8_t code)
       render_footer();
       break;
     case KB_SC_BS:
-      if (file_buffer == NULL || buffer_idx == 0) { update = 0; break; }
-      deleted = file_buffer[buffer_idx - 1];
+      if (file_buffer == NULL || P.buffer_idx == 0) { update = 0; break; }
+      deleted = file_buffer[P.buffer_idx - 1];
       memmove(
-        file_buffer + buffer_idx - 1,
-        file_buffer + buffer_idx,
-        file_buffer_len - buffer_idx
+        file_buffer + P.buffer_idx - 1,
+        file_buffer + P.buffer_idx,
+        file_buffer_len - P.buffer_idx
         );
       --file_buffer_len;
-      --buffer_idx;
+      --P.buffer_idx;
       file_buffer[file_buffer_len] = '\0';
       if (buffer_dirty == 0) {
         buffer_dirty = 1;
@@ -768,21 +726,21 @@ static void keyboard_handler(uint8_t code)
       if (deleted == '\n') {
         if (cursor_y == 0) {
           backspace_scroll_up();
-          update_lines(0, top_idx);
+          update_lines(0, P.top_idx);
           render_buffer(0);
-          cursor_idx = buffer_idx - top_idx;
+          P.cursor_idx = P.buffer_idx - P.top_idx;
           update_cursor(old_cursor_idx, 0);
           break;
         }
         old_line_len = lines[cursor_y - 1].len;
         update_lines(cursor_y - 1, lines[cursor_y - 1].buffer_idx);
         render_buffer(cursor_y - 1);
-        cursor_idx = ((cursor_y - 1) * line_len) + old_line_len - 1;
+        P.cursor_idx = ((cursor_y - 1) * line_len) + old_line_len - 1;
         update_cursor(old_cursor_idx, 0);
         break;
       }
-      --cursor_idx;
-      cursor_y = cursor_idx / line_len;
+      --P.cursor_idx;
+      cursor_y = P.cursor_idx / line_len;
       update_lines(cursor_y, lines[cursor_y].buffer_idx);
       render_buffer(cursor_y);
       update_cursor(old_cursor_idx, 0);
@@ -799,26 +757,26 @@ static void keyboard_handler(uint8_t code)
         render_path();
       }
       memmove(
-        file_buffer + buffer_idx + 2,
-        file_buffer + buffer_idx,
-        file_buffer_len - buffer_idx
+        file_buffer + P.buffer_idx + 2,
+        file_buffer + P.buffer_idx,
+        file_buffer_len - P.buffer_idx
         );
-      file_buffer[buffer_idx] = ' ';
-      file_buffer[buffer_idx + 1] = ' ';
-      buffer_idx += 2;
+      file_buffer[P.buffer_idx] = ' ';
+      file_buffer[P.buffer_idx + 1] = ' ';
+      P.buffer_idx += 2;
       file_buffer_len += 2;
       file_buffer[file_buffer_len] = '\0';
       if (cursor_y == num_lines - 1 && cursor_x >= line_len - 2) {
-        cursor_idx = newline_scroll_down();
-        cursor_idx += cursor_x == line_len - 1;
-        update_lines(0, top_idx);
+        P.cursor_idx = newline_scroll_down();
+        P.cursor_idx += cursor_x == line_len - 1;
+        update_lines(0, P.top_idx);
         render_buffer(0);
         update_cursor(old_cursor_idx, 0);
         break;
       }
       update_lines(cursor_y, lines[cursor_y].buffer_idx);
       render_buffer(cursor_y);
-      cursor_idx += 2;
+      P.cursor_idx += 2;
       update_cursor(old_cursor_idx, 0);
       break;
     default:
@@ -831,12 +789,12 @@ static void keyboard_handler(uint8_t code)
       inserted = scancode_to_ascii(code, lshift || rshift || capslock);
       if (inserted == 0) { update = 0; break; }
       memmove(
-        file_buffer + buffer_idx + 1,
-        file_buffer + buffer_idx,
-        file_buffer_len - buffer_idx
+        file_buffer + P.buffer_idx + 1,
+        file_buffer + P.buffer_idx,
+        file_buffer_len - P.buffer_idx
         );
-      file_buffer[buffer_idx] = inserted;
-      ++buffer_idx;
+      file_buffer[P.buffer_idx] = inserted;
+      ++P.buffer_idx;
       ++file_buffer_len;
       file_buffer[file_buffer_len] = '\0';
       if (buffer_dirty == 0) {
@@ -848,16 +806,16 @@ static void keyboard_handler(uint8_t code)
         && (cursor_x == line_len - 1 || inserted == '\n')
         )
       {
-        cursor_idx = newline_scroll_down();
-        update_lines(0, top_idx);
+        P.cursor_idx = newline_scroll_down();
+        update_lines(0, P.top_idx);
         render_buffer(0);
         update_cursor(old_cursor_idx, 0);
         break;
       }
       update_lines(cursor_y, lines[cursor_y].buffer_idx);
       render_buffer(cursor_y);
-      if (inserted == '\n') cursor_idx = (cursor_y + 1) * line_len;
-      else ++cursor_idx;
+      if (inserted == '\n') P.cursor_idx = (cursor_y + 1) * line_len;
+      else ++P.cursor_idx;
       update_cursor(old_cursor_idx, 0);
       break;
     }
@@ -866,94 +824,81 @@ static void keyboard_handler(uint8_t code)
   }
 
   if (cs == CS_SELECT) {
+    MOVEMENT;
+    if (moved) {
+      if (!update) return;
+
+      clear_selection();
+      render_selection();
+      ui_swap_buffers((uint32_t)ui_buf);
+
+      return;
+    }
+
+    uint32_t lower = SP.buffer_idx;
+    uint32_t higher = P.buffer_idx;
+    if (higher < lower) {
+      lower = P.buffer_idx;
+      higher = SP.buffer_idx;
+    }
+    uint32_t lower_cursor_idx =
+      P.cursor_idx < SP.cursor_idx
+      ? P.cursor_idx : SP.cursor_idx;
+    uint32_t lower_cursor_y = lower_cursor_idx / line_len;
+    uint32_t selection_len = higher - lower;
+
+#define CLEAR                                   \
+    cs = CS_NORMAL;                             \
+    clear_selection();                          \
+    update_footer_text();                       \
+    render_footer();
+
+#define COPY                                                    \
+    if (selection_len == 0) break;                              \
+    free(paste_buffer);                                         \
+    paste_buffer_len = selection_len;                           \
+    paste_buffer = malloc(selection_len + 1);                   \
+    memcpy(paste_buffer, file_buffer + lower, selection_len);   \
+    paste_buffer[selection_len] = '\0';                         \
+
+    switch (code) {
+    case KB_SC_C:
+      COPY;
+      CLEAR;
+      break;
+    case KB_SC_K:
+      COPY;
+      memmove(
+        file_buffer + lower,
+        file_buffer + lower + selection_len,
+        file_buffer_len - lower - selection_len
+        );
+      file_buffer_len -= selection_len;
+      file_buffer[file_buffer_len] = '\0';
+      if (buffer_dirty == 0) {
+        buffer_dirty = 1;
+        render_path();
+      }
+      if (lower < P.top_idx) {
+        P = SP;
+        update_lines(0, P.top_idx);
+        render_buffer(0);
+        update_cursor(old_cursor_idx, 0);
+      } else {
+        P.buffer_idx = lower;
+        update_lines(lower_cursor_y, lines[lower_cursor_y].buffer_idx);
+        render_buffer(lower_cursor_y);
+        P.cursor_idx = lower_cursor_idx;
+        update_cursor(old_cursor_idx, 0);
+      }
+      CLEAR;
+      break;
+    case KB_SC_ESC: CLEAR; break;
+    default: update = 0;
+    }
+
+    if (update) ui_swap_buffers((uint32_t)ui_buf);
     return;
-/*     uint32_t old_cursor_idx = cursor_idx; */
-/*     uint32_t old_top_idx = top_idx; */
-/*     MOVEMENT; */
-/*     if (moved) { */
-/*       if (update) { */
-/*         int32_t delta = 0; */
-/*         if (top_idx != old_top_idx) { */
-/*           int32_t ti = top_idx; */
-/*           int32_t oti = old_top_idx; */
-/*           int32_t diff = ti - oti; */
-/*           diff += diff > 0 ? -1 : 1; */
-/*           delta = (int32_t)round((double)(diff) / line_len) */
-/*             + (top_idx < old_top_idx ? -1 : 1); */
-/*         } */
-/*         selection_line_delta += delta; */
-/*         clear_selection(delta, old_cursor_idx, cursor_idx); */
-/*         render_selection(selection_line_delta); */
-/*         ui_swap_buffers((uint32_t)ui_buf); */
-/*       } */
-/*       return; */
-/*     } */
-/*     uint32_t selection_len = buffer_idx - selection_buffer_idx; */
-/*     uint32_t lower = selection_buffer_idx; */
-/*     if (selection_buffer_idx > buffer_idx) { */
-/*       selection_len = selection_buffer_idx - buffer_idx; */
-/*       lower = buffer_idx; */
-/*     } */
-/*     uint32_t lci = cursor_idx; */
-/*     if (selection_cursor_idx < cursor_idx) lci = selection_cursor_idx; */
-
-/* #define CLEAR                                                   \ */
-/*     cs = CS_NORMAL;                                             \ */
-/*     clear_selection(                                            \ */
-/*       selection_line_delta, selection_cursor_idx, cursor_idx    \ */
-/*       );                                                        \ */
-/*     update_footer_text();                                       \ */
-/*     render_footer(); */
-
-/* #define COPY                                                        \ */
-/*     if (selection_len == 0) break;                                  \ */
-/*     if (paste_buffer == NULL || paste_buffer_len < selection_len) { \ */
-/*       paste_buffer_len = selection_len;                             \ */
-/*       paste_buffer = realloc(paste_buffer, paste_buffer_len + 1);   \ */
-/*     }                                                               \ */
-/*     memcpy(paste_buffer, file_buffer + lower, selection_len);       \ */
-/*     paste_buffer[selection_len] = '\0';                             \ */
-
-/*     switch (code) { */
-/*     case KB_SC_C: */
-/*       COPY; */
-/*       CLEAR; */
-/*       break; */
-/*     case KB_SC_K: */
-/*       COPY; */
-/*       memmove( */
-/*         file_buffer + lower, */
-/*         file_buffer + lower + selection_len, */
-/*         file_buffer_len - lower - selection_len */
-/*         ); */
-/*       file_buffer_len -= selection_len; */
-/*       if (buffer_idx > lower) buffer_idx -= selection_len; */
-/*       file_buffer[file_buffer_len] = '\0'; */
-/*       if (buffer_dirty == 0) { */
-/*         buffer_dirty = 1; */
-/*         render_path(); */
-/*       } */
-/*       if (lower < top_idx) { */
-/*         top_idx = selection_top_idx; */
-/*         buffer_idx = selection_buffer_idx; */
-/*         update_line_lengths(0, top_idx); */
-/*         render_buffer(0, top_idx); */
-/*         update_cursor(selection_cursor_idx, 0); */
-/*       } else { */
-/*         buffer_idx = lower; */
-/*         update_line_lengths(lci / line_len, lower - (lci % line_len)); */
-/*         render_buffer(lci / line_len, lower - (lci % line_len)); */
-/*         update_cursor(lci, 0); */
-/*       } */
-/*       CLEAR; */
-/*       break; */
-/*     case KB_SC_ESC: */
-/*       CLEAR; */
-/*       break; */
-/*     default: update = 0; */
-/*     } */
-/*     if (update) ui_swap_buffers((uint32_t)ui_buf); */
-/*     return; */
   }
 
   if (cs == CS_CONFIRM_SAVE) {
@@ -976,11 +921,11 @@ static void keyboard_handler(uint8_t code)
     case KB_SC_N:
       load_file();
       buffer_dirty = 0;
-      buffer_idx = top_idx;
+      P.buffer_idx = P.top_idx;
       render_path();
       update_lines(0, 0);
       render_buffer(0);
-      cursor_idx = 0;
+      P.cursor_idx = 0;
       update_cursor(0, 0);
       cs = CS_NORMAL;
       update_footer_text();
@@ -1057,11 +1002,11 @@ static void keyboard_handler(uint8_t code)
         update_footer_text();
         render_footer();
         memset(footer_field, 0, sizeof(footer_field));
-        load_file(); buffer_dirty = 0; buffer_idx = top_idx;
+        load_file(); buffer_dirty = 0; P.buffer_idx = P.top_idx;
         render_path();
-        update_lines(0, top_idx);
+        update_lines(0, P.top_idx);
         render_buffer(0);
-        cursor_idx = 0;
+        P.cursor_idx = 0;
         update_cursor(0, 0);
       });
     if (update) ui_swap_buffers((uint32_t)ui_buf);
@@ -1112,14 +1057,14 @@ static void ui_handler(ui_event_t ev)
   if (cs == CS_SELECT) cs = CS_NORMAL;
   load_file();
   buffer_dirty = 0;
-  update_lines(0, top_idx);
-  buffer_idx = top_idx;
+  update_lines(0, P.top_idx);
+  P.buffer_idx = P.top_idx;
   render_path();
   render_footer();
   render_buffer(0);
-  cursor_idx = 0;
+  P.cursor_idx = 0;
   update_cursor(0, 0);
-  buffer_idx = top_idx;
+  P.buffer_idx = P.top_idx;
   if (ev.is_active == 0) render_inactive();
 
   if (dir_path) {
