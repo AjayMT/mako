@@ -143,11 +143,9 @@ static void syscall_msleep(uint32_t duration)
   process_t *current = process_current();
   current->uregs.eax = 0;
   uint32_t wake_time = pit_get_time() + duration;
-  if (duration > 8) {
-    current->is_running = 0;
-    uint32_t res = process_sleep(current, wake_time);
-    if (res) { current->uregs.eax = -res; return; }
-  }
+  current->is_running = 0;
+  uint32_t res = process_sleep(current, wake_time);
+  if (res) { current->uregs.eax = -res; return; }
   interrupt_restore(eflags);
 
   while (wake_time > pit_get_time());

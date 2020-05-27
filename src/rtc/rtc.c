@@ -40,10 +40,10 @@ void rtc_init()
   outb(0x71, prev | 0x40);
 
   // Set the rate to 9 for a frequency of 128 Hz (I think?)
-  outb(0x70, 0x8A);
+  /* outb(0x70, 0x8A);
   prev = inb(0x71);
   outb(0x70, 0x8A);
-  outb(0x71, (prev & 0xF0) | 9);
+  outb(0x71, (prev & 0xF0) | 9); */
 
   register_interrupt_handler(40, local_handler);
   interrupt_restore(eflags);

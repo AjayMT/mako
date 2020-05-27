@@ -270,8 +270,8 @@ static void scheduler_interrupt_handler(
   while (sleep_queue->size) {
     process_sleep_node_t *sleeper = sleep_queue->head->value;
     uint32_t current_time = pit_get_time();
-    // Each RTC tick is approximately 7.8125 ms, but we're using ints.
-    if ((int32_t)(sleeper->wake_time - current_time) <= 8) {
+    // Each RTC tick is approximately 1 ms.
+    if ((int32_t)(sleeper->wake_time - current_time) <= 1) {
       sleeper->process->is_running = 1;
       process_schedule(sleeper->process);
       list_remove(sleep_queue, sleep_queue->head, 1);

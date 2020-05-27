@@ -25,16 +25,16 @@
 #include "text_render.h"
 #include "scancode.h"
 
-#define MAX_DIRENTS 30
-#define FOOTER_LEN  99
+#define PATH_HEIGHT   24
+#define FOOTER_HEIGHT 24
+#define DIRENT_HEIGHT 20
+#define MAX_DIRENTS   ((SCREENHEIGHT - PATH_HEIGHT - FOOTER_HEIGHT) / DIRENT_HEIGHT)
+#define FOOTER_LEN    (SCREENWIDTH / FONTWIDTH)
 
 static const uint32_t BG_COLOR       = 0xffffff;
 static const uint32_t TEXT_COLOR     = 0;
 static const uint32_t INACTIVE_COLOR = 0xb0b0b0;
 static const uint32_t CURSOR_COLOR   = 0xb43a3b;
-static const uint32_t PATH_HEIGHT    = 24;
-static const uint32_t FOOTER_HEIGHT  = 24;
-static const uint32_t DIRENT_HEIGHT  = 20;
 static const uint32_t CURSOR_WIDTH   = 30;
 
 static uint32_t *ui_buf = NULL;
@@ -84,6 +84,7 @@ static void render_text(const char *text, uint32_t x, uint32_t y)
   size_t len = strlen(text);
   size_t w, h;
   text_dimensions(text, len, &w, &h);
+  if (w * h == 0) return;
 
   uint8_t *pixels = malloc(w * h);
   memset(pixels, 0, w * h);
