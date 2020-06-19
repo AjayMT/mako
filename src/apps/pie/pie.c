@@ -19,49 +19,63 @@
 #include "text_render.h"
 #include "scancode.h"
 
-#define FOOTER_LEN          99
-#define LINE_LEN_TABLE_SIZE 40
+#define FOOTER_LEN    (SCREENWIDTH / FONTWIDTH)
+#define LINE_HEIGHT   (FONTHEIGHT + FONTVPADDING)
+#define MAX_NUM_LINES (SCREENHEIGHT / (FONTHEIGHT + FONTVPADDING))
 
 static const uint32_t BG_COLOR       = 0xffffff;
 static const uint32_t TEXT_COLOR     = 0;
 static const uint32_t INACTIVE_COLOR = 0xb0b0b0;
 static const uint32_t PATH_HEIGHT    = 24;
 static const uint32_t FOOTER_HEIGHT  = 24;
-static const uint32_t LINE_HEIGHT    = FONTHEIGHT + FONTVPADDING;
+static const uint32_t TOTAL_PADDING  = 16;
 
+// window state
 static uint32_t window_w = 0;
 static uint32_t window_h = 0;
 static uint32_t *ui_buf = NULL;
 static volatile uint32_t ui_lock = 0;
 
+// Current executable path
 static char *path = NULL;
 
+// 'Command' (footer) state
 typedef enum {
   CS_PENDING,
   CS_EXEC
 } command_state_t;
-
 static command_state_t cs;
 static char footer_text[FOOTER_LEN];
 static char footer_field[FOOTER_LEN];
+
+// lines and text buffer
+typedef struct line_s {
+  uint32_t buffer_idx; // index in text buffer
+  int32_t len;         // length of the line
+} line_t;
+static line_t lines[MAX_NUM_LINES];
 static char *text_buffer = NULL;
-static uint32_t line_lengths[LINE_LEN_TABLE_SIZE];
-static uint32_t top_idx = 0;
 static uint32_t buffer_len = 0;
-static uint32_t screen_line_idx = 0;
+static uint32_t top_idx = 0; // buffer index of first character on screen
+static uint32_t screen_line_idx = 0; // (y) index of last line
+
+// child process state
 static uint32_t proc_write_fd = 0;
 static uint32_t proc_read_fd = 0;
 static pid_t proc_pid = 0;
 
+// set `n` pixels of the buffer to `b` starting at `p`
 __attribute__((always_inline))
 static inline void fill_color(uint32_t *p, uint32_t b, size_t n)
 { for (uint32_t i = 0; i < n; ++i) p[i] = b; }
 
-static uint32_t render_text(const char *text, uint32_t x, uint32_t y)
+// render text at x and y coordinates
+static void render_text(const char *text, uint32_t x, uint32_t y)
 {
   size_t len = strlen(text);
   size_t w, h;
   text_dimensions(text, len, &w, &h);
+  if (w * h == 0) return;
 
   uint8_t *pixels = malloc(w * h);
   memset(pixels, 0, w * h);
@@ -75,9 +89,9 @@ static uint32_t render_text(const char *text, uint32_t x, uint32_t y)
     p += window_w;
   }
   free(pixels);
-  return h;
 }
 
+// gray out all UI elements when the window is inactive
 __attribute__((always_inline))
 static inline void render_inactive()
 {
@@ -87,6 +101,7 @@ static inline void render_inactive()
         ui_buf[(j * window_w) + i] = INACTIVE_COLOR;
 }
 
+// render the path bar at the top of the window
 static void render_path()
 {
   char *str = path == NULL ? "[None]" : path;
@@ -96,6 +111,7 @@ static void render_path()
   fill_color(line_row, INACTIVE_COLOR, window_w);
 }
 
+// render the footer at the bottom of the window
 static void render_footer()
 {
   uint32_t *line_row = ui_buf + ((window_h - FOOTER_HEIGHT) * window_w);
@@ -104,82 +120,70 @@ static void render_footer()
   fill_color(line_row, INACTIVE_COLOR, window_w);
 }
 
-static void render_buffer(uint32_t line_idx, uint32_t char_idx)
+// Render all the text in the buffer starting at line `line_idx`
+static void render_buffer(uint32_t line_idx)
 {
+  if (text_buffer == NULL) return;
+  uint32_t num_lines =
+    (window_h - PATH_HEIGHT - FOOTER_HEIGHT - TOTAL_PADDING) / LINE_HEIGHT;
+
+  // filling the buffer area with the background color {
   uint32_t *top_row =
-    ui_buf + (window_w * (PATH_HEIGHT + 8 + line_idx * LINE_HEIGHT));
+    ui_buf
+    + (window_w * (PATH_HEIGHT + (TOTAL_PADDING / 2) + (line_idx * LINE_HEIGHT)));
   uint32_t fill_size =
     window_w * (
-      window_h - PATH_HEIGHT - FOOTER_HEIGHT - 8 - (line_idx * LINE_HEIGHT)
+      window_h - PATH_HEIGHT - FOOTER_HEIGHT -
+      (TOTAL_PADDING / 2) - (line_idx * LINE_HEIGHT)
       );
   if (line_idx == 0) {
     top_row = ui_buf + (window_w * (PATH_HEIGHT + 1));
     fill_size = window_w * (window_h - PATH_HEIGHT - FOOTER_HEIGHT - 1);
   }
   fill_color(top_row, BG_COLOR, fill_size);
+  // }
 
-  if (char_idx >= buffer_len) return;
-  char *p = text_buffer + char_idx;
-
-  uint32_t len = (window_w - 16) / FONTWIDTH;
-  uint32_t ht = window_h - PATH_HEIGHT - FOOTER_HEIGHT - 16;
-  uint32_t top = PATH_HEIGHT + 8;
-
-  char *buf = calloc(1, len + 1);
-  uint32_t nh = 0;
-  uint32_t llidx = line_idx;
-  uint32_t y = LINE_HEIGHT * line_idx;
-  for (
-    ;
-    y < ht && llidx < LINE_LEN_TABLE_SIZE && p < text_buffer + buffer_len;
-    y += nh, ++llidx
-    )
-  {
-    if (line_lengths[llidx] == 0) {
-      nh = LINE_HEIGHT;
-      ++p;
-      continue;
-    }
-    size_t llen = line_lengths[llidx];
-    strncpy(buf, p, llen);
-    buf[llen] = '\0';
-    nh = render_text(buf, 8, top + y);
-    p += llen + (p[llen] == '\n');
+  // rendering the lines {
+  uint32_t top = PATH_HEIGHT + (TOTAL_PADDING / 2);
+  for (uint32_t i = line_idx; i < num_lines && lines[i].len >= 0; ++i) {
+    if (lines[i].len == 0) continue;
+    uint32_t y = top + i * LINE_HEIGHT;
+    char *line = strndup(text_buffer + lines[i].buffer_idx, lines[i].len);
+    render_text(line, TOTAL_PADDING / 2, y);
+    free(line);
   }
-  free(buf);
+  // }
 }
 
-static void update_line_lengths(uint32_t top_line, uint32_t fidx)
+// Update the array of lines, starting at `line_idx` and index
+// `buf_idx` of the buffer. Updates `screen_line_idx`.
+static void update_lines(uint32_t line_idx, uint32_t buf_idx)
 {
-  memset(line_lengths + top_line, 0, 4 * (LINE_LEN_TABLE_SIZE - top_line));
-  if (top_idx >= buffer_len) return;
+  if (text_buffer == NULL) return;
 
-  uint32_t len = (window_w - 16) / FONTWIDTH;
-  for (
-    uint32_t i = top_line;
-    i < LINE_LEN_TABLE_SIZE && fidx < buffer_len;
-    ++i
-    )
-  {
-    char *p = text_buffer + fidx;
-    if (*p == '\n') {
-      line_lengths[i] = 0;
-      ++fidx;
+  uint32_t num_lines =
+    (window_h - PATH_HEIGHT - FOOTER_HEIGHT - TOTAL_PADDING) / LINE_HEIGHT;
+  uint32_t line_len = (window_w - TOTAL_PADDING) / FONTWIDTH;
+
+  char *p = text_buffer + buf_idx;
+  uint32_t i = line_idx;
+  for (; i < num_lines && p < text_buffer + buffer_len; ++i) {
+    lines[i].buffer_idx = p - text_buffer;
+    char *next_nl = strchr(p, '\n');
+
+    if (next_nl == NULL || next_nl - p >= line_len) {
+      // wrap text around without newline
+      lines[i].len = line_len;
+      p += line_len;
       continue;
     }
 
-    uint32_t llen = len;
-    char *nextnl = strchr(p, '\n');
-    uint8_t nl = 0;
-    if (nextnl && nextnl - p <= len) {
-      nl = 1;
-      llen = nextnl - p;
-    } else if (nextnl == NULL && buffer_len - fidx < len)
-      llen = buffer_len - fidx;
-    fidx += llen + nl;
-    line_lengths[i] = llen;
+    lines[i].len = next_nl - p + 1;
+    p = next_nl + 1;
     screen_line_idx = i;
   }
+  if (i < num_lines) lines[i].len = -1;
+  lines[num_lines].len = -1;
 }
 
 static void update_footer_text()
@@ -192,6 +196,7 @@ static void update_footer_text()
   strncpy(footer_text, str, FOOTER_LEN);
 }
 
+// this thread reads from the child process and writes to the text buffer
 static void exec_thread()
 {
   close(proc_write_fd);
@@ -201,14 +206,18 @@ static void exec_thread()
     if (r <= 0) break;
 
     thread_lock(&ui_lock);
-    //uint32_t line_idx = screen_line_idx;
-    //uint32_t char_idx = buffer_len - line_lengths[line_idx];
-    //if (text_buffer[char_idx] == '\n') ++char_idx;
+
     uint32_t num_lines =
-      (window_h - PATH_HEIGHT - FOOTER_HEIGHT - 16) / LINE_HEIGHT;
-    if (screen_line_idx >= num_lines - 1)
-      top_idx = buffer_len - line_lengths[screen_line_idx];
-    if (buffer_len + r >= 0x2000) {
+      (window_h - PATH_HEIGHT - FOOTER_HEIGHT - TOTAL_PADDING) / LINE_HEIGHT;
+
+    uint8_t scrolled = 0;
+
+    if (screen_line_idx >= num_lines - 1) { // have to scroll
+      top_idx = buffer_len - lines[screen_line_idx].len;
+      scrolled = 1;
+    }
+
+    if (buffer_len + r >= 0x2000) { // have to realloc buffer
       char *new = (char *)pagealloc(2);
       memcpy(new, text_buffer + top_idx, buffer_len - top_idx);
       memset(new, 0, 0x2000 - (buffer_len - top_idx));
@@ -216,15 +225,24 @@ static void exec_thread()
       text_buffer = new;
       buffer_len -= top_idx;
       top_idx = 0;
+      scrolled = 1;
     }
+
     memcpy(text_buffer + buffer_len, buf, r);
     buffer_len += r;
     text_buffer[buffer_len] = 0;
-    //update_line_lengths(line_idx, char_idx);
-    //render_buffer(line_idx, char_idx);
-    update_line_lengths(0, top_idx);
-    render_buffer(0, top_idx);
+
+    if (scrolled) {
+      update_lines(0, top_idx);
+      render_buffer(0);
+    } else {
+      uint32_t old_screen_line_idx = screen_line_idx;
+      update_lines(screen_line_idx, lines[screen_line_idx].buffer_idx);
+      render_buffer(old_screen_line_idx);
+    }
+
     ui_swap_buffers((uint32_t)ui_buf);
+
     thread_unlock(&ui_lock);
   }
 
@@ -244,7 +262,8 @@ static void exec_thread()
   thread_unlock(&ui_lock);
 }
 
-static uint8_t exec_path()
+// Execute the specified file and start a thread to read its output.
+static uint8_t exec_path(char **args)
 {
   uint32_t readfd, writefd;
   int32_t res = pipe(&readfd, &writefd, 0, 1);
@@ -268,7 +287,6 @@ static uint8_t exec_path()
     maketty(1);
     maketty(2);
 
-    char *args[] = { NULL };
     execve(path, args, environ);
     exit(1);
   }
@@ -283,6 +301,7 @@ static uint8_t exec_path()
   return 1;
 }
 
+// check that the path is an executable file
 static uint8_t check_path(char *p)
 {
   struct stat st;
@@ -292,6 +311,7 @@ static uint8_t check_path(char *p)
   return 1;
 }
 
+// handle keyboard interrupts
 static void keyboard_handler(uint8_t code)
 {
   static uint8_t lshift = 0;
@@ -358,23 +378,44 @@ static void keyboard_handler(uint8_t code)
   }                                                                     \
 
   if (cs == CS_PENDING) {
+    // we are not executing a program -- have to execute the specified program
+    // with provided arguments
+
     FIELD_INPUT({
         if (
           strcmp(footer_field, "q") == 0
           && (window_w != SCREENWIDTH || window_h != SCREENHEIGHT)
           ) exit(0);
 
-        uint8_t valid = check_path(footer_field);
-        if (!valid) { update = 0; break; }
+        char **args = malloc(sizeof(char *) * field_len);
+        char *tmp = malloc(field_len + 1);
+        memcpy(tmp, footer_field, field_len + 1);
+
+        // split by space
+        uint32_t i = 0;
+        uint32_t args_len = 0;
+        for (; i < field_len; ++i) {
+          if (tmp[i] == ' ') {
+            tmp[i] = 0;
+            args[args_len] = tmp + i + 1;
+            ++args_len;
+          }
+        }
+        args[args_len] = 0;
+        tmp[i] = 0;
+
+        uint8_t valid = check_path(tmp);
+        if (!valid) { update = 0; free(tmp); free(args); break; }
 
         char buf[1024];
-        int32_t res = resolve(buf, footer_field, 1024);
-        if (res) { update = 0; break; }
+        int32_t res = resolve(buf, tmp, 1024);
+        if (res) { update = 0; free(tmp); free(args); break; }
         free(path);
         path = strdup(buf);
         render_path();
 
-        valid = exec_path();
+        valid = exec_path(args);
+        free(tmp); free(args);
         if (!valid) { update = 0; break; }
         memset(footer_field, 0, sizeof(footer_field));
         cs = CS_EXEC;
@@ -387,6 +428,9 @@ static void keyboard_handler(uint8_t code)
   }
 
   if (cs == CS_EXEC) {
+    // we are currently executing a program -- have to write input to screen
+    // and forward it to the program
+
     uint8_t killed = 0;
     switch (code) {
     case KB_SC_ESC:
@@ -407,14 +451,17 @@ static void keyboard_handler(uint8_t code)
         buf[field_len] = '\n';
         write(proc_write_fd, buf, field_len + 1);
 
-        // uint32_t line_idx = screen_line_idx;
-        // uint32_t char_idx = buffer_len - line_lengths[line_idx];
-        // if (text_buffer[char_idx] == '\n') ++char_idx;
         uint32_t num_lines =
-          (window_h - PATH_HEIGHT - FOOTER_HEIGHT - 16) / LINE_HEIGHT;
-        if (screen_line_idx >= num_lines - 1)
-          top_idx = buffer_len - line_lengths[screen_line_idx];
-        if (buffer_len + field_len + 1 >= 0x2000) {
+          (window_h - PATH_HEIGHT - FOOTER_HEIGHT - TOTAL_PADDING) / LINE_HEIGHT;
+
+        uint8_t scrolled = 0;
+
+        if (screen_line_idx >= num_lines - 1) { // have to scroll
+          top_idx = buffer_len - lines[screen_line_idx].len;
+          scrolled = 1;
+        }
+
+        if (buffer_len + field_len + 1 >= 0x2000) { // have to realloc buffer
           char *new = (char *)pagealloc(2);
           memcpy(new, text_buffer + top_idx, buffer_len - top_idx);
           memset(new, 0, 0x2000 - (buffer_len - top_idx));
@@ -422,14 +469,21 @@ static void keyboard_handler(uint8_t code)
           text_buffer = new;
           buffer_len -= top_idx;
           top_idx = 0;
+          scrolled = 1;
         }
+
         memcpy(text_buffer + buffer_len, buf, field_len + 1);
         buffer_len += field_len + 1;
         text_buffer[buffer_len] = 0;
-        // update_line_lengths(line_idx, char_idx);
-        // render_buffer(line_idx, char_idx);
-        update_line_lengths(0, top_idx);
-        render_buffer(0, top_idx);
+
+        if (scrolled) {
+          update_lines(0, top_idx);
+          render_buffer(0);
+        } else {
+          uint32_t old_screen_line_idx = screen_line_idx;
+          update_lines(screen_line_idx, lines[screen_line_idx].buffer_idx);
+          render_buffer(old_screen_line_idx);
+        }
 
         free(buf);
         memset(footer_field, 0, sizeof(footer_field));
@@ -442,6 +496,7 @@ static void keyboard_handler(uint8_t code)
   }
 }
 
+// handle UI event
 static void ui_handler(ui_event_t ev)
 {
   if (ev.type == UI_EVENT_KEYBOARD) {
