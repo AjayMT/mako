@@ -189,11 +189,15 @@ static void update_lines(uint32_t line_idx, uint32_t buf_idx)
 static void update_footer_text()
 {
   char *str = NULL;
+  char *wd = getcwd(NULL, 0);
+  size_t wlen = strlen(wd);
   switch (cs) {
-  case CS_PENDING: str = "(\"q\" to quit) % "; break;
-  case CS_EXEC:    str = "$ "; break;
+  case CS_PENDING: str = " % "; break;
+  case CS_EXEC:    str = " $ "; break;
   }
-  strncpy(footer_text, str, FOOTER_LEN);
+  strncpy(footer_text, wd, FOOTER_LEN);
+  strncpy(footer_text + wlen, str, FOOTER_LEN - wlen);
+  free(wd);
 }
 
 // this thread reads from the child process and writes to the text buffer
@@ -403,6 +407,19 @@ static void keyboard_handler(uint8_t code)
         }
         args[args_len] = 0;
         tmp[i] = 0;
+
+        if (strcmp(tmp, "cd") == 0) { // "cd" == change directories
+          char *dir = args[0];
+          if (dir == NULL || dir[0] == 0) dir = "/home";
+          chdir(dir);
+          free(tmp); free(args);
+          memset(footer_field, 0, sizeof(footer_field));
+          update_footer_text();
+          render_footer();
+          break;
+        }
+
+        // TODO: search $PATH for the executable
 
         uint8_t valid = check_path(tmp);
         if (!valid) { update = 0; free(tmp); free(args); break; }
