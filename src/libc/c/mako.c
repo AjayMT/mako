@@ -89,3 +89,5 @@ void thread_lock(thread_lock_t l)
 void thread_unlock(thread_lock_t l)
 { __sync_lock_release(l); }
 
+uint32_t systime()
+{ return _syscall0(SYSCALL_SYSTIME); }

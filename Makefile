@@ -25,9 +25,10 @@ all: kernel.elf
 
 user: deps $(APPS) $(BIN)
 
-deps: sysroot lua c4
+deps: sysroot lua c4 doomgeneric
 	cp lua sysroot/bin
 	cp c4 sysroot/bin
+	cp doomgeneric sysroot/apps
 
 c4: $(shell find src/libc -type f) $(shell find deps/lua -type f)
 	$(MAKE) -C deps/c4
@@ -36,6 +37,10 @@ c4: $(shell find src/libc -type f) $(shell find deps/lua -type f)
 lua: $(shell find src/libc -type f) $(shell find deps/lua -type f)
 	$(MAKE) MAKO_PATH=${PWD} -C deps/lua generic
 	cp deps/lua/src/lua .
+
+doomgeneric: $(shell find src/libc -type f) $(shell find deps/doomgeneric -type f)
+	$(MAKE) CROSS_COMPILE=i686-pc-mako- -C deps/doomgeneric/doomgeneric
+	cp deps/doomgeneric/doomgeneric/doomgeneric .
 
 sysroot: crt libc.a libui.a
 	cp -rH src/libc/h/* sysroot/usr/include
@@ -101,4 +106,4 @@ clean:
 	       iso/boot/kernel.elf mako.iso bochslog.txt com1.out      \
 	       iso/modules/rd src/libc/*.o src/libui/*.o               \
 	       sysroot/usr/include/{*,sys/*}.h sysroot/usr/lib/*.{a,o} \
-	       sysroot/bin/* sysroot/apps/* lua c4 $(APPS) $(BIN) hda.img
+	       sysroot/bin/* sysroot/apps/* lua c4 doomgeneric $(APPS) $(BIN) hda.img

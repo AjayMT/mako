@@ -17,5 +17,6 @@ sysroot/usr/include/sys/*.h
 /pie
 /lua
 /c4
+/doomgeneric
 /deps
 /mnt/*

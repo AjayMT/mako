@@ -26,6 +26,7 @@ int32_t msleep(uint32_t duration);
 void yield();
 void thread_lock(thread_lock_t);
 void thread_unlock(thread_lock_t);
+uint32_t systime();
 
 void _init_thread();
 

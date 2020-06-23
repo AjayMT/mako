@@ -645,6 +645,9 @@ static void syscall_maketty(uint32_t fdnum)
   current->uregs.eax = 0;
 }
 
+static void syscall_systime()
+{ process_current()->uregs.eax = pit_get_time(); }
+
 static syscall_t syscall_table[] = {
   syscall_exit,
   syscall_fork,
@@ -687,7 +690,8 @@ static syscall_t syscall_table[] = {
   syscall_ui_yield,
   syscall_rename,
   syscall_resolve,
-  syscall_maketty
+  syscall_maketty,
+  syscall_systime
 };
 
 process_registers_t *syscall_handler(cpu_state_t cs, stack_state_t ss)

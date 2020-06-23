@@ -5,7 +5,7 @@ ARFLAGS = rcs
 LIBC_OBJECTS = _syscall.o heap.o dirent.o fcntl.o errno.o stdio.o  \
                printf.o stdlib.o string.o unistd.o ctype.o math.o  \
                sconv.o libgen.o libintl.o locale.o mako.o signal.o \
-               stat.o time.o utime.o wait.o setjmp.o qsort.o
+               stat.o time.o utime.o wait.o setjmp.o qsort.o strings.o
 
 all: $(out)
 

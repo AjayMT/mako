@@ -39,7 +39,7 @@ void _init_stdio();
 FILE *fopen(const char *path, const char *mode);
 FILE *freopen(const char *path, const char *mode, FILE *stream);
 int32_t fclose(FILE *f);
-int32_t fseek(FILE *stream, uint64_t offset, int32_t whence);
+int32_t fseek(FILE *stream, int64_t offset, int32_t whence);
 int32_t fseeko(FILE *stream, off_t offset, int32_t whence);
 int64_t ftell(FILE *stream);
 off_t ftello(FILE *stream);
@@ -68,6 +68,7 @@ int32_t getchar();
 char *fgets(char *str, int32_t size, FILE *stream);
 int32_t ungetc(int32_t c, FILE *stream);
 int32_t fputs(const char *s, FILE *stream);
+int32_t puts(const char *s);
 
 void perror(char *s);
 char *strerror(int32_t errnum);

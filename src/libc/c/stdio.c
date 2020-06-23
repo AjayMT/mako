@@ -56,7 +56,7 @@ uint32_t parse_mode(const char *mode)
   uint32_t flags = 0;
   if (strchr(mode, 'r')) flags |= O_RDONLY;
   if (strchr(mode, 'w')) flags |= O_WRONLY;
-  if (strchr(mode, '+')) flags |= O_RDWR;
+  if (strchr(mode, '+')) flags = O_RDWR;
   return flags;
 }
 
@@ -77,6 +77,7 @@ FILE *fopen(const char *path, const char *mode)
   f->eof = 0;
   f->offset = 0;
   f->ungetcd = EOF;
+
   return f;
 }
 
@@ -99,7 +100,7 @@ int32_t fclose(FILE *f)
   return r;
 }
 
-int32_t fseek(FILE *f, uint64_t offset, int32_t whence)
+int32_t fseek(FILE *f, int64_t offset, int32_t whence)
 {
   off_t res = lseek(f->fd, offset, whence);
   if (res == -1) return -1;
@@ -109,7 +110,7 @@ int32_t fseek(FILE *f, uint64_t offset, int32_t whence)
   return 0;
 }
 int32_t fseeko(FILE *stream, off_t offset, int32_t whence)
-{ return fseek(stream, (uint64_t)offset, whence); }
+{ return fseek(stream, offset, whence); }
 
 int64_t ftell(FILE *stream)
 { return stream->offset; }
@@ -232,6 +233,9 @@ int32_t ungetc(int32_t c, FILE *stream)
 int32_t fputs(const char *s, FILE *stream)
 { return fwrite(s, strlen(s), 1, stream); }
 
+int32_t puts(const char *s)
+{ return fputs(s, stdout); }
+
 void perror(char *s)
 {
   if (s && s[0]) fprintf(stderr, "%s: ", s);
@@ -251,7 +255,7 @@ int32_t fprintf(FILE *stream, const char *fmt, ...)
   va_start(args, fmt);
   int32_t size = vsnprintf(buffer, 512, fmt, args);
   va_end(args);
-  int32_t out = fwrite(buffer, 1, strlen(buffer), stream);
+  int32_t out = fwrite(buffer, 1, size, stream);
   return out;
 }
 
