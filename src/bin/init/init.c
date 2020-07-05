@@ -14,7 +14,6 @@ int main(int argc, char *argv[])
 {
   open("/dev/null", O_RDONLY);
   open("/dev/null", O_WRONLY);
-  //open("/dev/debug", O_WRONLY);
   open("/dev/debug", O_WRONLY);
 
   setenv("APPS_PATH", "/apps", 0);
@@ -22,10 +21,8 @@ int main(int argc, char *argv[])
 
   if (fork() == 0) {
     chdir("/home");
-    //char *args[] = { "/home/hello.txt", NULL };
-    //execve("/apps/xed", args, environ);
-    char *args[] = { "-iwad", "/home/doom1.wad", NULL };
-    execve("/apps/doomgeneric", args, environ);
+    char *args[] = { "/home/hello.txt", NULL };
+    execve("/apps/xed", args, environ);
   }
 
   while (1) yield();

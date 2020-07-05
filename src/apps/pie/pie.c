@@ -39,6 +39,10 @@ static volatile uint32_t ui_lock = 0;
 // Current executable path
 static char *path = NULL;
 
+// Path and arguments with which to launch app
+static char *app_path = NULL;
+static char **app_args = NULL;
+
 // 'Command' (footer) state
 typedef enum {
   CS_PENDING,
@@ -166,6 +170,7 @@ static void update_lines(uint32_t line_idx, uint32_t buf_idx)
   uint32_t line_len = (window_w - TOTAL_PADDING) / FONTWIDTH;
 
   char *p = text_buffer + buf_idx;
+  screen_line_idx = line_idx;
   uint32_t i = line_idx;
   for (; i < num_lines && p < text_buffer + buffer_len; ++i) {
     lines[i].buffer_idx = p - text_buffer;
@@ -315,6 +320,37 @@ static uint8_t check_path(char *p)
   return 1;
 }
 
+// search for a program in the specified path list ($PATH or $APPS_PATH)
+static char *find_path(char *name, char *path_)
+{
+  char *path = strdup(path_);
+  size_t name_len = strlen(name);
+  size_t path_len = strlen(path);
+
+  for (uint32_t i = 0; i < path_len; ++i)
+    if (path[i] == ':') path[i] = 0;
+
+  size_t step = strlen(path);
+  for (uint32_t i = 0; i < path_len; i += step + 1) {
+    step = strlen(path + i);
+    char *this_path = malloc(step + 1 + name_len + 1);
+    memcpy(this_path, path + i, step);
+    this_path[step] = '/';
+    memcpy(this_path + step + 1, name, name_len);
+    this_path[step + 1 + name_len] = 0;
+
+    if (check_path(this_path)) {
+      free(path);
+      return this_path;
+    }
+
+    free(this_path);
+  }
+
+  free(path);
+  return NULL;
+}
+
 // handle keyboard interrupts
 static void keyboard_handler(uint8_t code)
 {
@@ -391,6 +427,8 @@ static void keyboard_handler(uint8_t code)
           && (window_w != SCREENWIDTH || window_h != SCREENHEIGHT)
           ) exit(0);
 
+        if (field_len == 0) { update = 0; break; }
+
         char **args = malloc(sizeof(char *) * field_len);
         char *tmp = malloc(field_len + 1);
         memcpy(tmp, footer_field, field_len + 1);
@@ -417,22 +455,57 @@ static void keyboard_handler(uint8_t code)
           update_footer_text();
           render_footer();
           break;
+        } else if (strcmp(tmp, "clear") == 0) { // "clear" == clear the screen
+          free(tmp); free(args);
+          memset(footer_field, 0, sizeof(footer_field));
+          update_footer_text();
+          render_footer();
+
+          char *new = (char *)pagealloc(2);
+          memset(new, 0, 0x2000);
+          pagefree((uint32_t)text_buffer, 2);
+          text_buffer = new;
+          buffer_len = 0;
+          top_idx = 0;
+          update_lines(0, top_idx);
+          render_buffer(0);
+          break;
         }
 
-        // TODO: search $PATH for the executable
+        char *apps_path = find_path(tmp, getenv("APPS_PATH"));
+        if (apps_path) {
+          free(app_path);
+          if (app_args) for (uint32_t i = 0; app_args[i]; ++i) free(app_args[i]);
+          free(app_args);
 
-        uint8_t valid = check_path(tmp);
-        if (!valid) { update = 0; free(tmp); free(args); break; }
+          app_path = strdup(apps_path);
+          app_args = malloc(sizeof(char *) * (args_len + 1));
+          uint32_t i = 0;
+          for (; args[i]; ++i) app_args[i] = strdup(args[i]);
+          app_args[i] = 0;
+
+          free(apps_path); free(tmp); free(args);
+          memset(footer_field, 0, sizeof(footer_field));
+          update_footer_text();
+          render_footer();
+          ui_split(UI_SPLIT_UP);
+          break;
+        }
+
+        char *env_path = NULL;
+        if (check_path(tmp)) env_path = strdup(tmp);
+        else env_path = find_path(tmp, getenv("PATH"));
+        if (env_path == NULL) { update = 0; free(tmp); free(args); break; }
 
         char buf[1024];
-        int32_t res = resolve(buf, tmp, 1024);
-        if (res) { update = 0; free(tmp); free(args); break; }
+        int32_t res = resolve(buf, env_path, 1024);
+        if (res) { update = 0; free(tmp); free(env_path); free(args); break; }
         free(path);
         path = strdup(buf);
         render_path();
 
-        valid = exec_path(args);
-        free(tmp); free(args);
+        uint8_t valid = exec_path(args);
+        free(tmp); free(env_path); free(args);
         if (!valid) { update = 0; break; }
         memset(footer_field, 0, sizeof(footer_field));
         cs = CS_EXEC;
@@ -535,9 +608,23 @@ static void ui_handler(ui_event_t ev)
   }
 
   fill_color(ui_buf, BG_COLOR, window_w * window_h);
+
+  memset(lines, 0, sizeof(lines));
+  update_lines(0, top_idx);
+  render_buffer(0);
   render_path();
   render_footer();
   if (ev.is_active == 0) render_inactive();
+
+  if (app_path) {
+    if (fork() == 0) {
+      execve(app_path, app_args, environ);
+      exit(1);
+    }
+    free(app_path); app_path = NULL;
+    if (app_args) for (uint32_t i = 0; app_args[i]; ++i) free(app_args[i]);
+    free(app_args); app_args = NULL;
+  }
 
   ui_swap_buffers((uint32_t)ui_buf);
   thread_unlock(&ui_lock);
