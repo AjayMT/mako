@@ -1,0 +1,16 @@
+
+<svg viewBox="0 0 500 100" xmlns="http://www.w3.org/2000/svg">
+  <line x1="0" y1="100" x2="100" y2="0" stroke="black"   stroke-width="10px"/>
+  <line x1="100" y1="0" x2="100" y2="100" stroke="black" stroke-width="10px"/>
+  <line x1="100" y1="100" x2="200" y2="0" stroke="black" stroke-width="10px"/>
+  <line x1="200" y1="0" x2="200" y2="100" stroke="black" stroke-width="10px"/>
+
+  <line x1="200" y1="100" x2="300" y2="0" stroke="black" stroke-width="10px"/>
+  <line x1="300" y1="0" x2="300" y2="100" stroke="black" stroke-width="10px"/>
+  <line x1="250" y1="50" x2="300" y2="50" stroke="black" stroke-width="10px"/>
+
+  <line x1="300" y1="50" x2="350" y2="0"   stroke="black" stroke-width="10px"/>
+  <line x1="300" y1="50" x2="350" y2="100" stroke="black" stroke-width="10px"/>
+
+  <circle cx="400" cy="50" r="45" stroke="#b43a3b" stroke-width="10px" fill="white"/>
+</svg>
