@@ -1,5 +1,9 @@
 
-= Mako
+:title: Mako
+
+++++
+<img src="./res/logo.svg" width="50%" style="display:block;margin-left:auto;margin-right:auto;padding:50px" />
+++++
 
 Mako is an operating system for 32-bit x86-compatible computers. Among its features are:
 
@@ -60,7 +64,6 @@ Long term goals:
 Mako depends on:
 
 - the http://lua.org[Lua] programming language
-- https://github.com/rswier/c4[c4], a wonderfully simple implementation of C.
 
 I wrote Mako to better understand how operating systems work and learnt a lot of cool stuff in the process. This project would not exist without:
 
