@@ -147,50 +147,34 @@ static uint32_t ata_read(
   uint32_t start_block = offset / SECTOR_SIZE;
   uint32_t start_offset = offset % SECTOR_SIZE;
   uint32_t end_block = (offset + size - 1) / SECTOR_SIZE;
-  uint32_t end_offset = (offset + size) % SECTOR_SIZE;
+  uint32_t end_offset = (offset + size - 1) % SECTOR_SIZE;
   uint32_t read_size = 0;
 
-  if (start_offset || size < SECTOR_SIZE) {
-    uint32_t prefix_size = SECTOR_SIZE - start_offset;
-    if (prefix_size > size) prefix_size = size;
-
-    uint8_t *tmp_buf = kmalloc(SECTOR_SIZE);
-    CHECK(tmp_buf == NULL, "No memory.", read_size);
-
-    uint32_t res = ata_read_sector(dev, start_block, tmp_buf);
-    CHECK(res, "Error reading ATA device.", read_size);
-
-    u_memcpy(buf, tmp_buf + start_offset, prefix_size);
-    kfree(tmp_buf);
-    read_size += prefix_size;
-    ++start_block;
-  }
-
-  if (end_offset && start_block <= end_block) {
-    uint8_t *tmp_buf = kmalloc(SECTOR_SIZE);
-    CHECK(tmp_buf == NULL, "No memory.", read_size);
-
-    uint32_t res = ata_read_sector(dev, end_block, tmp_buf);
-    CHECK(res, "Error reading ATA device.", read_size);
-
-    u_memcpy(buf + size - end_offset, tmp_buf, end_offset);
-    kfree(tmp_buf);
-    read_size += end_offset;
-    --end_block;
-  }
-
+  uint8_t *bufp = buf;
   uint32_t current_block = start_block;
-  uint32_t buf_idx = 0;
-  for (
-    ;
-    current_block <= end_block;
-    ++current_block, read_size += SECTOR_SIZE, buf_idx += SECTOR_SIZE
-    )
-  {
-    uint32_t res = ata_read_sector(dev, current_block, buf + buf_idx);
+  uint8_t *tmp_buf = kmalloc(SECTOR_SIZE);
+  CHECK(tmp_buf == NULL, "No memory.", read_size);
+
+  while (current_block <= end_block) {
+    uint32_t res = ata_read_sector(dev, current_block, tmp_buf);
     CHECK(res, "Error reading ATA device.", read_size);
+
+    uint32_t offset = 0;
+    uint32_t size = SECTOR_SIZE;
+    if (current_block == start_block) {
+      offset = start_offset;
+      size -= start_offset;
+    }
+    if (current_block == end_block)
+      size = end_offset - offset + 1;
+
+    u_memcpy(bufp, tmp_buf + offset, size);
+    bufp += size;
+    read_size += size;
+    ++current_block;
   }
 
+  kfree(tmp_buf);
   return read_size;
 }
 
@@ -275,56 +259,37 @@ static uint32_t ata_write(
   uint32_t start_block = offset / SECTOR_SIZE;
   uint32_t start_offset = offset % SECTOR_SIZE;
   uint32_t end_block = (offset + size - 1) / SECTOR_SIZE;
-  uint32_t end_offset = (offset + size) % SECTOR_SIZE;
+  uint32_t end_offset = (offset + size - 1) % SECTOR_SIZE;
   uint32_t written_size = 0;
 
-  if (start_offset || size < SECTOR_SIZE) {
-    uint32_t prefix_size = SECTOR_SIZE - start_offset;
-    if (prefix_size > size) prefix_size = size;
-
-    uint8_t *tmp_buf = kmalloc(SECTOR_SIZE);
-    CHECK(tmp_buf == NULL, "No memory.", written_size);
-
-    uint32_t res = ata_read_sector(dev, start_block, tmp_buf);
-    CHECK(res, "Error reading ATA device.", written_size);
-
-    u_memcpy(tmp_buf + start_offset, buf, prefix_size);
-    res = ata_write_sector(dev, start_block, tmp_buf);
-    CHECK(res, "Error writing ATA device.", written_size);
-
-    kfree(tmp_buf);
-    written_size += prefix_size;
-    ++start_block;
-  }
-
-  if (end_offset && start_block <= end_block) {
-    uint8_t *tmp_buf = kmalloc(SECTOR_SIZE);
-    CHECK(tmp_buf == NULL, "No memory.", written_size);
-
-    uint32_t res = ata_read_sector(dev, end_block, tmp_buf);
-    CHECK(res, "Error reading ATA device.", written_size);
-
-    u_memcpy(tmp_buf, buf + size - end_offset, end_offset);
-    res = ata_write_sector(dev, end_block, tmp_buf);
-    CHECK(res, "Error writing ATA device.", written_size);
-
-    kfree(tmp_buf);
-    written_size += end_offset;
-    --end_block;
-  }
-
+  uint8_t *bufp = buf;
   uint32_t current_block = start_block;
-  uint32_t buf_idx = 0;
-  for (
-    ;
-    current_block <= end_block;
-    ++current_block, written_size += SECTOR_SIZE, buf_idx += SECTOR_SIZE
-    )
-  {
-    uint32_t res = ata_write_sector(dev, current_block, buf + buf_idx);
+  uint8_t *tmp_buf = kmalloc(SECTOR_SIZE);
+  CHECK(tmp_buf == NULL, "No memory.", written_size);
+
+  while (current_block <= end_block) {
+    uint32_t res = ata_read_sector(dev, current_block, tmp_buf);
+    CHECK(res, "Error reading ATA device.", written_size);
+
+    uint32_t offset = 0;
+    uint32_t size = SECTOR_SIZE;
+    if (current_block == start_block) {
+      offset = start_offset;
+      size -= start_offset;
+    }
+    if (current_block == end_block)
+      size = end_offset - offset + 1;
+
+    u_memcpy(tmp_buf + offset, bufp, size);
+    res = ata_write_sector(dev, current_block, tmp_buf);
     CHECK(res, "Error writing ATA device.", written_size);
+
+    bufp += size;
+    written_size += size;
+    ++current_block;
   }
 
+  kfree(tmp_buf);
   return written_size;
 }
 

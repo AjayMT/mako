@@ -125,7 +125,10 @@ static uint32_t alloc_block(ext2_fs_t *self)
   uint8_t *bg_buf = kmalloc(self->block_size);
   CHECK_UNLOCK_B(bg_buf == NULL, "No memory.", 0);
   for (uint32_t i = 0; i < self->group_count; ++i) {
-    if (self->bgds[i].free_block_count == 0) continue;
+    if (
+      self->bgds[i].free_block_count <= 0
+      || self->bgds[i].free_block_count >= (self->block_size << 3)
+      ) continue;
 
     res = read_block(self, self->bgds[i].block_bitmap, bg_buf);
     CHECK_UNLOCK_B(res != self->block_size, "Failed to read block.", 0);
@@ -137,7 +140,7 @@ static uint32_t alloc_block(ext2_fs_t *self)
 
   if (block_num == 0) { kfree(bg_buf); return 0; }
 
-  bg_buf[block_offset >> 3] |= 1 << (block_offset % 8);
+  bg_buf[block_offset >> 3] |= setbit(block_offset);
   res = write_block(self, self->bgds[group_num].block_bitmap, bg_buf);
   CHECK_UNLOCK_B(res != self->block_size, "Failed to write block.", 0);
   --(self->bgds[group_num].free_block_count);
@@ -623,6 +626,7 @@ static uint32_t write_inode_block(
     "Failed to get disk block number.",
     0
     );
+
   return write_block(self, disk_block_num, buf);
 }
 
@@ -973,6 +977,7 @@ static uint32_t ext2_write(
         );
       continue;
     }
+
     u_memcpy(
       blk_buf, buffer + written_size - start_offset, self->block_size
       );
