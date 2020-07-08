@@ -252,11 +252,9 @@ static void render_selection()
 // un-highlight the selected region
 static void clear_selection()
 {
-  // TODO this can be made faster?
-  for (uint32_t i = 0; i < window_w * window_h; ++i) {
+  for (uint32_t i = 0; i < window_w * window_h; ++i)
     if (ui_buf[i] == SELECTION_COLOR)
       ui_buf[i] = BG_COLOR;
-  }
 }
 
 // Update the array of lines, starting at `line_idx` and index
@@ -271,11 +269,15 @@ static void update_lines(uint32_t line_idx, uint32_t buf_idx)
 
   char *p = file_buffer + buf_idx;
   uint32_t i = line_idx;
-  for (; i < num_lines && p < file_buffer + file_buffer_len; ++i) {
+  for (; i < num_lines && p <= file_buffer + file_buffer_len; ++i) {
     lines[i].buffer_idx = p - file_buffer;
     char *next_nl = strchr(p, '\n');
 
-    if (next_nl == NULL || next_nl - p >= line_len) {
+    if (next_nl == NULL && file_buffer_len - lines[i].buffer_idx < line_len) {
+      // end of buffer is on this line
+      lines[i].len = file_buffer_len - lines[i].buffer_idx;
+      ++i; break;
+    } else if (next_nl == NULL || next_nl - p >= line_len) {
       // wrap text around without newline
       lines[i].len = line_len;
       p += line_len;
@@ -285,8 +287,7 @@ static void update_lines(uint32_t line_idx, uint32_t buf_idx)
     lines[i].len = next_nl - p + 1;
     p = next_nl + 1;
   }
-  if (i < num_lines) lines[i].len = -1;
-  lines[num_lines].len = -1;
+  for (; i <= num_lines; ++i) lines[i].len = -1;
 }
 
 // redraw the cursor at position `P.cursor_idx`.
