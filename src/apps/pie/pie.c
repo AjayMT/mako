@@ -172,6 +172,7 @@ static void update_lines(uint32_t line_idx, uint32_t buf_idx)
   char *p = text_buffer + buf_idx;
   screen_line_idx = line_idx;
   uint32_t i = line_idx;
+  lines[i].buffer_idx = buf_idx; lines[i].len = 0;
   for (; i < num_lines && p < text_buffer + buffer_len; ++i) {
     lines[i].buffer_idx = p - text_buffer;
     char *next_nl = strchr(p, '\n');
