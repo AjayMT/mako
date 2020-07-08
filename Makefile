@@ -18,7 +18,7 @@ OBJECTS = boot.o gdt.o idt.o pic.o interrupt.o paging.o pmm.o  \
           process.o pit.o elf.o syscall.o klock.o ringbuffer.o \
           pipe.o fpu.o rtc.o ui.o
 APPS = dex xed pie
-BIN = init pwd ls
+BIN = init pwd ls read
 export
 
 all: kernel.elf
@@ -30,7 +30,7 @@ deps: sysroot lua c4 doomgeneric
 	cp c4 sysroot/bin
 	cp doomgeneric sysroot/apps
 
-c4: $(shell find src/libc -type f) $(shell find deps/lua -type f)
+c4: $(shell find src/libc -type f) $(shell find deps/c4 -type f)
 	$(MAKE) -C deps/c4
 	cp deps/c4/c4 .
 
