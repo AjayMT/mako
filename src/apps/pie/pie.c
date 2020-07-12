@@ -610,7 +610,12 @@ static void ui_handler(ui_event_t ev)
 
   fill_color(ui_buf, BG_COLOR, window_w * window_h);
 
-  memset(lines, 0, sizeof(lines));
+  char *new = (char *)pagealloc(2);
+  memset(new, 0, 0x2000);
+  pagefree((uint32_t)text_buffer, 2);
+  text_buffer = new;
+  buffer_len = 0;
+  top_idx = 0;
   update_lines(0, top_idx);
   render_buffer(0);
   render_path();
