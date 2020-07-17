@@ -24,14 +24,15 @@
 #define LINE_HEIGHT   (FONTHEIGHT + FONTVPADDING)
 #define MAX_NUM_LINES (SCREENHEIGHT / (FONTHEIGHT + FONTVPADDING))
 
-static const uint32_t BG_COLOR        = 0xffffff;
-static const uint32_t TEXT_COLOR      = 0;
-static const uint32_t INACTIVE_COLOR  = 0xb0b0b0;
-static const uint32_t CURSOR_COLOR    = 0x190081;
-static const uint32_t SELECTION_COLOR = 0xb0d5ff;
-static const uint32_t PATH_HEIGHT     = 24;
-static const uint32_t FOOTER_HEIGHT   = 24;
-static const uint32_t TOTAL_PADDING   = 16;
+static const uint32_t BG_COLOR          = 0xffffeb;
+static const uint32_t INACTIVE_BG_COLOR = 0xffffff;
+static const uint32_t TEXT_COLOR        = 0;
+static const uint32_t INACTIVE_COLOR    = 0xb0b0b0;
+static const uint32_t CURSOR_COLOR      = 0x190081;
+static const uint32_t SELECTION_COLOR   = 0xb0d5ff;
+static const uint32_t PATH_HEIGHT       = 24;
+static const uint32_t FOOTER_HEIGHT     = 24;
+static const uint32_t TOTAL_PADDING     = 16;
 
 static const uint32_t DEFAULT_BUFFER_CAPACITY = 512;
 
@@ -125,8 +126,9 @@ static inline void render_inactive()
 {
   for (uint32_t i = 0; i < window_w; ++i)
     for (uint32_t j = 0; j < window_h; ++j)
-      if (ui_buf[(j * window_w) + i] != BG_COLOR)
-        ui_buf[(j * window_w) + i] = INACTIVE_COLOR;
+      ui_buf[(j * window_w) + i] =
+        ui_buf[(j * window_w) + i] == BG_COLOR
+        ? INACTIVE_BG_COLOR : INACTIVE_COLOR;
 }
 
 // render the path bar at the top of the window
