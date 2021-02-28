@@ -8,8 +8,6 @@
 #ifndef _CONSTANTS_H_
 #define _CONSTANTS_H_
 
-#include <stdint.h>
-
 #define SYSCALL_INT_IDX             0x80
 #define SEGMENT_SELECTOR_KERNEL_CS  8
 #define SEGMENT_SELECTOR_KERNEL_DS  0x10
