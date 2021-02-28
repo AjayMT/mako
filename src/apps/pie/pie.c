@@ -336,6 +336,9 @@ static char *find_path(char *name, char *path_)
   size_t step = strlen(path);
   for (uint32_t i = 0; i < path_len; i += step + 1) {
     step = strlen(path + i);
+    if (strncmp(path + i, name, step) == 0 && check_path(name))
+      return name;
+
     char *this_path = malloc(step + 1 + name_len + 1);
     memcpy(this_path, path + i, step);
     this_path[step] = '/';
