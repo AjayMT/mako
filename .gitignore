@@ -19,5 +19,6 @@ sysroot/usr/include/sys/*.h
 /lua
 /c4
 /doomgeneric
+/img
 /deps
 /mnt/*
