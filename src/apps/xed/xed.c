@@ -999,7 +999,7 @@ static void keyboard_handler(uint8_t code)
         } else {
           free(dir_path);
           dir_path = strdup(footer_field);
-          ui_split(UI_SPLIT_LEFT);
+          ui_split(UI_SPLIT_RIGHT);
         }
         cs = CS_NORMAL;
         update_footer_text();

@@ -494,7 +494,7 @@ static void keyboard_handler(uint8_t code)
           memset(footer_field, 0, sizeof(footer_field));
           update_footer_text();
           render_footer();
-          ui_split(UI_SPLIT_UP);
+          ui_split(UI_SPLIT_RIGHT);
           break;
         }
 
