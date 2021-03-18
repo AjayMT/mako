@@ -1,0 +1,20 @@
+
+= img Documentation
+
+This document describes the interface and functionality of `img', the PNG Image
+Viewer.
+
+== Interface
+
+img displays a single PNG image in its window, and nothing else. The image is
+scaled to fit inside the window and is displayed on a black background.
+
+== Usage
+
+img accepts a single command-line argument that specifies the PNG file to display:
+
+  img <filename>
+
+Pressing 'q' will quit img.
+
+Pressing 'o' will open (with dex) the directory containing the displayed file.
