@@ -18,7 +18,7 @@ OBJECTS = boot.o gdt.o idt.o pic.o interrupt.o paging.o pmm.o  \
           process.o pit.o elf.o syscall.o klock.o ringbuffer.o \
           pipe.o fpu.o rtc.o ui.o
 APPS = dex xed pie img
-BIN = init pwd ls read gotest
+BIN = init pwd ls read
 export
 
 all: kernel.elf
