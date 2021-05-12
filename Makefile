@@ -7,7 +7,7 @@ LD = i386-elf-ld
 LDFLAGS = -T link.ld
 AS = nasm
 ASFLAGS = -g -I${PWD}/src/ -f elf
-
+BUILD_ROOT=${PWD}
 DRIVER_OBJECTS = io.o serial.o keyboard.o ata.o \
                  pci.o
 ASM_OBJECTS = boot.s.o gdt.s.o idt.s.o interrupt.s.o paging.s.o \
@@ -16,7 +16,7 @@ ASM_OBJECTS = boot.s.o gdt.s.o idt.s.o interrupt.s.o paging.s.o \
 OBJECTS = boot.o gdt.o idt.o pic.o interrupt.o paging.o pmm.o  \
           debug.o util.o kheap.o fs.o ext2.o ds.o rd.o tss.o   \
           process.o pit.o elf.o syscall.o klock.o ringbuffer.o \
-          pipe.o fpu.o rtc.o ui.o
+          pipe.o fpu.o rtc.o ui.o ustar.o
 APPS = dex xed pie img
 BIN = init pwd ls read
 export
@@ -35,11 +35,11 @@ c4: $(shell find src/libc -type f) $(shell find deps/c4 -type f)
 	cp deps/c4/c4 .
 
 lua: $(shell find src/libc -type f) $(shell find deps/lua -type f)
-	$(MAKE) MAKO_PATH=${PWD} -C deps/lua generic
+	$(MAKE) -C deps/lua generic
 	cp deps/lua/src/lua .
 
 doomgeneric: $(shell find src/libc -type f) $(shell find deps/doomgeneric -type f)
-	$(MAKE) CROSS_COMPILE=i686-pc-mako- -C deps/doomgeneric/doomgeneric
+	$(MAKE) -C deps/doomgeneric/doomgeneric
 	cp deps/doomgeneric/doomgeneric/doomgeneric .
 
 sysroot: crt libc.a libui.a
