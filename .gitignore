@@ -6,3 +6,6 @@ bochslog.txt
 iso/modules/rd
 hda.img
 *.a
+/lua/src/lua
+/lua/src/luac
+/c4/c4

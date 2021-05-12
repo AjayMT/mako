@@ -11,12 +11,11 @@ else
 	VB=@
 endif
 
-
-CC=$(CROSS_COMPILE)gcc  # gcc or g++
-CFLAGS=-ggdb3 -Os
-LDFLAGS=-Wl,--gc-sections
-CFLAGS=-ggdb3 -Wall -DNORMALUNIX -DLINUX -DSNDSERV # -DUSEASM
-LIBS=-lui -lc
+CROSS_COMPILE=i386-elf-
+CC=$(CROSS_COMPILE)gcc
+LDFLAGS=-Wl,--gc-sections -nostdlib
+CFLAGS=-ggdb3 -Wall -DNORMALUNIX -DLINUX -DSNDSERV -I${BUILD_ROOT}/sysroot/usr/include # -DUSEASM
+LIBS=${BUILD_ROOT}/sysroot/usr/lib/crt0.o ${BUILD_ROOT}/sysroot/usr/lib/crti.o ${BUILD_ROOT}/sysroot/usr/lib/crtn.o ${BUILD_ROOT}/sysroot/usr/lib/libui.a ${BUILD_ROOT}/sysroot/usr/lib/libc.a -lgcc
 
 # subdirectory for objects
 OBJDIR=build

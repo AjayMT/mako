@@ -6,23 +6,23 @@
 # Your platform. See PLATS for possible values.
 PLAT= none
 
-CC= i686-pc-mako-gcc
+CC= i386-elf-gcc
 # CFLAGS= -O2 -Wall -Wextra -DLUA_COMPAT_5_2 $(SYSCFLAGS) $(MYCFLAGS)
 CFLAGS= -Wall -Wextra -DLUA_COMPAT_5_2 $(SYSCFLAGS) $(MYCFLAGS)
 LDFLAGS= $(SYSLDFLAGS) $(MYLDFLAGS)
 LIBS= $(SYSLIBS) $(MYLIBS)
 
-AR= i686-pc-mako-ar rcu
-RANLIB= i686-pc-mako-ranlib
+AR= i386-elf-ar rcu
+RANLIB= i386-elf-ranlib
 RM= rm -f
 
 SYSCFLAGS=
 SYSLDFLAGS=
 SYSLIBS=
 
-MYCFLAGS=
-MYLDFLAGS=
-MYLIBS=
+MYCFLAGS=-Wno-builtin-declaration-mismatch -I${BUILD_ROOT}/sysroot/usr/include
+MYLDFLAGS=-nostdlib
+MYLIBS=${BUILD_ROOT}/sysroot/usr/lib/crt0.o ${BUILD_ROOT}/sysroot/usr/lib/crti.o ${BUILD_ROOT}/sysroot/usr/lib/crtn.o ${BUILD_ROOT}/sysroot/usr/lib/libc.a -lgcc
 MYOBJS=
 
 # == END OF USER SETTINGS -- NO NEED TO CHANGE ANYTHING BELOW THIS LINE =======
