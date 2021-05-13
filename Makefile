@@ -23,8 +23,10 @@ export
 
 all: kernel.elf
 
+.PHONY: user
 user: deps $(APPS) $(BIN)
 
+.PHONY: deps
 deps: sysroot lua c4 doomgeneric
 	cp lua sysroot/bin
 	cp c4 sysroot/bin
@@ -42,6 +44,7 @@ doomgeneric: $(shell find src/libc -type f) $(shell find deps/doomgeneric -type 
 	$(MAKE) -C deps/doomgeneric/doomgeneric
 	cp deps/doomgeneric/doomgeneric/doomgeneric .
 
+.PHONY: sysroot
 sysroot: crt libc.a libui.a
 	cp -rH src/libc/h/* sysroot/usr/include
 	cp -rH src/libui/h/* sysroot/usr/include
@@ -57,6 +60,7 @@ $(BIN): $(shell find src/bin -type f)
 	$(MAKE) out=${PWD}/$@ -C src/bin/$@
 	cp $@ sysroot/bin
 
+.PHONY: crt
 crt: crt0.o crti.o crtn.o
 
 crt0.o: src/libc/crt0.s
@@ -86,6 +90,7 @@ $(OBJECTS): $(shell find src -type f)
 $(DRIVER_OBJECTS): $(shell find src/drivers -type f)
 	$(MAKE) out=${PWD}/$@ -C src/drivers/$(basename $@)
 
+.PHONY: rd
 rd: make_rd.py $(shell find rdroot -type f)
 	python3 make_rd.py
 
@@ -93,9 +98,11 @@ mako.iso: kernel.elf rd
 	cp kernel.elf iso/boot/kernel.elf
 	i386-elf-grub-mkrescue -o mako.iso iso
 
+.PHONY: bochs
 bochs: mako.iso
 	bochs -f bochsrc.txt -q
 
+.PHONY: qemu
 qemu: mako.iso
 	qemu-system-i386 -serial file:com1.out -cdrom mako.iso -m 256M \
 	                 -drive format=raw,file=hda.img -d cpu_reset
