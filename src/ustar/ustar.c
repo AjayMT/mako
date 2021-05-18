@@ -344,13 +344,18 @@ struct dirent *ustar_readdir(fs_node_t *node, uint32_t idx)
   CHECK(ent == NULL, "No memory.", NULL);
   u_memset(ent, 0, sizeof(struct dirent));
 
-  if (idx < 2) {
-    char *name = idx == 0 ? "." : "..";
-    u_memcpy(ent->name, name, u_strlen(name) + 1);
-    return ent;
+  // don't create "." and ".." entries for root directory
+  if (node->inode != 0) {
+    if (idx < 2) {
+      char *name = idx == 0 ? "." : "..";
+      u_memcpy(ent->name, name, u_strlen(name) + 1);
+      ent->ino = idx == 0 ? node->inode : 0;
+      return ent;
+    }
+    idx -= 2;
   }
-  idx -= 2;
 
+  uint32_t i = 0;
   uint32_t disk_offset = 0;
   while (1) {
     ustar_metadata_t data;
@@ -365,19 +370,30 @@ struct dirent *ustar_readdir(fs_node_t *node, uint32_t idx)
 
     if (data.type == FREE) continue;
 
+    uint32_t data_name_len = u_strlen(data.name);
+    if (data_name_len == 1) continue; // root dir
+
+    uint32_t end_idx = data_name_len;
+    uint32_t basename_idx = data_name_len - 1;
+    if (data.name[basename_idx] == FS_PATH_SEP) { --basename_idx; --end_idx; }
+    while (data.name[basename_idx] != FS_PATH_SEP) --basename_idx;
+    ++basename_idx;
+    uint32_t name_len = u_strlen(node->name);
+
     if (
-      u_strncmp(data.name, node->name, u_strlen(node->name)) == 0
-      && ustar_name_match(data.name, node->name) != 0
+      u_strncmp(data.name, node->name, basename_idx) == 0
+      && basename_idx == name_len
       )
-      --idx;
+      ++i;
 
-    if (idx != 0) continue;
+    if (i <= idx) continue;
 
-    u_memcpy(ent->name, data.name, u_strlen(data.name) + 1);
+    u_memcpy(ent->name, data.name + basename_idx, end_idx - basename_idx);
     ent->ino = ent_offset;
     return ent;
   }
 
+  kfree(ent);
   return NULL;
 }
 
