@@ -91,8 +91,8 @@ $(DRIVER_OBJECTS): $(shell find src/drivers -type f)
 	$(MAKE) out=${PWD}/$@ -C src/drivers/$(basename $@)
 
 .PHONY: rd
-rd: make_rd.py $(shell find rdroot -type f)
-	python3 make_rd.py
+rd: tools/make_rd.py $(shell find rdroot -type f)
+	python3 tools/make_rd.py
 
 mako.iso: kernel.elf rd
 	cp kernel.elf iso/boot/kernel.elf

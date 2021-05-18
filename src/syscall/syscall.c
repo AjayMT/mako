@@ -334,6 +334,7 @@ static void syscall_readdir(int32_t fdnum, struct dirent *ent, uint32_t index)
   struct dirent *res = fs_readdir(&(fd->node), index);
   if (res == NULL) { current->uregs.eax = -ENOENT; return; }
   u_memcpy(ent, res, sizeof(struct dirent));
+  kfree(res);
   current->uregs.eax = 0;
 }
 

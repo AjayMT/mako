@@ -25,6 +25,7 @@
 #include <elf/elf.h>
 #include <drivers/ata/ata.h>
 #include <ext2/ext2.h>
+#include <ustar/ustar.h>
 #include <fpu/fpu.h>
 #include <ui/ui.h>
 #include <common/multiboot.h>
@@ -125,8 +126,8 @@ void kmain(
   CHECK(res, "rd");
   res = ata_init();
   CHECK(res, "ata");
-  res = ext2_init("/dev/hda");
-  CHECK(res, "ext2");
+  res = ustar_init("/dev/hda");
+  CHECK(res, "ustar");
   res = keyboard_init();
   CHECK(res, "keyboard");
 

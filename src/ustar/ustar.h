@@ -10,7 +10,7 @@
 
 #include <stdint.h>
 
-#define USTAR_ROOT "/ustar"
+#define USTAR_ROOT "/"
 
 uint32_t ustar_init(const char *);
 
