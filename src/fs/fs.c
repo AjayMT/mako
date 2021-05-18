@@ -80,7 +80,7 @@ struct dirent *fs_readdir(fs_node_t *node, uint32_t index)
         }
         --index;
       }
-    }
+    } else index -= tnode->children->size;
   }
 
   if (node->readdir)
