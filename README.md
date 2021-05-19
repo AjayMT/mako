@@ -20,7 +20,7 @@ Mako is named after the [mako shark](https://marinebio.org/species/shortfin-mako
 Download `mako.iso` and `mako-hda.img` from [here](https://github.com/AjayMT/mako/tree/release).
 
 ## Build from source
-This build process has been tested on macOS. It *should* work on most Linux-like platforms; if you are having trouble building Mako, please reach out to me or raise an issue on this repository.
+This build process has been tested on macOS. It *should* work on most Linux-like platforms; if you have trouble building Mako, please reach out to me or raise an issue on this repository.
 
 Steps:
 1. Build or acquire a [cross-compiling GCC toolchain](https://wiki.osdev.org/GCC_Cross-Compiler) that targets the `i386-elf` platform. This is the hardest and most time consuming step -- if you can find precompiled binaries of `i386-elf-gcc` and binutils for your platform, save yourself the effort and use them instead of building GCC from source. After this is complete, you should have `i386-elf` versions of GCC and binutils:
