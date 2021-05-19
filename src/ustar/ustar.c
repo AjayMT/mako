@@ -455,7 +455,9 @@ int32_t ustar_create_entry(
     path[len] = FS_PATH_SEP;
     ++len;
   }
-  u_memcpy(path + len, name, u_strlen(name));
+  uint32_t name_len = u_strlen(name);
+  u_memcpy(path + len, name, name_len);
+  if (type == DIR) path[len + name_len] = FS_PATH_SEP;
 
   ustar_metadata_t data;
   u_memset(&data, 0, sizeof(data));
