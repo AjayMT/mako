@@ -21,7 +21,7 @@ APPS = dex xed pie img
 BIN = init pwd ls read
 export
 
-all: kernel.elf
+all: mako.iso
 
 .PHONY: user
 user: deps $(APPS) $(BIN)
@@ -45,7 +45,7 @@ doomgeneric: $(shell find src/libc -type f) $(shell find deps/doomgeneric -type 
 	cp deps/doomgeneric/doomgeneric/doomgeneric .
 
 .PHONY: sysroot
-sysroot: crt libc.a libui.a
+sysroot: crt0.o crti.o crtn.o libc.a libui.a
 	cp -rH src/libc/h/* sysroot/usr/include
 	cp -rH src/libui/h/* sysroot/usr/include
 	cp libc.a sysroot/usr/lib
@@ -59,9 +59,6 @@ $(APPS): $(shell find src/apps -type f)
 $(BIN): $(shell find src/bin -type f)
 	$(MAKE) out=${PWD}/$@ -C src/bin/$@
 	cp $@ sysroot/bin
-
-.PHONY: crt
-crt: crt0.o crti.o crtn.o
 
 crt0.o: src/libc/crt0.s
 	$(AS) $(ASFLAGS) src/libc/crt0.s -o crt0.o
@@ -90,17 +87,10 @@ $(OBJECTS): $(shell find src -type f)
 $(DRIVER_OBJECTS): $(shell find src/drivers -type f)
 	$(MAKE) out=${PWD}/$@ -C src/drivers/$(basename $@)
 
-.PHONY: rd
-rd: tools/make_rd.py $(shell find rdroot -type f)
+mako.iso: kernel.elf tools/make_rd.py $(shell find rdroot -type f)
 	python3 tools/make_rd.py
-
-mako.iso: kernel.elf rd
 	cp kernel.elf iso/boot/kernel.elf
 	i386-elf-grub-mkrescue -o mako.iso iso
-
-.PHONY: bochs
-bochs: mako.iso
-	bochs -f bochsrc.txt -q
 
 .PHONY: qemu
 qemu: mako.iso
@@ -113,4 +103,5 @@ clean:
 	       iso/boot/kernel.elf mako.iso bochslog.txt com1.out      \
 	       iso/modules/rd src/libc/*.o src/libui/*.o               \
 	       sysroot/usr/include/{*,sys/*}.h sysroot/usr/lib/*.{a,o} \
-	       sysroot/bin/* sysroot/apps/* lua c4 doomgeneric $(APPS) $(BIN) hda.img
+	       sysroot/bin/* sysroot/apps/* lua c4 doomgeneric $(APPS) \
+	       $(BIN) hda.img hda.tar ustar_image
