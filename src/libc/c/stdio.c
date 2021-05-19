@@ -86,7 +86,8 @@ FILE *freopen(const char *path, const char *mode, FILE *stream)
   FILE *f = fopen(path, mode);
   if (f == NULL) return NULL;
 
-  fclose(stream);
+  fflush(stream);
+  close(stream->fd);
   memcpy(stream, f, sizeof(FILE));
   free(f);
   return stream;
