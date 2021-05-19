@@ -56,7 +56,7 @@ typedef struct ustar_metadata_s ustar_metadata_t;
 #define BLOCKDEV '4'
 #define DIR      '5'
 #define PIPE     '6'
-#define FREE     '8'
+#define FREE     '~'
 
 #define USTAR_MAGIC "ustar"
 #define BLOCK_SIZE 512
@@ -142,6 +142,7 @@ void ustar_open(fs_node_t *node, uint32_t flags)
 {
   if ((flags & O_TRUNC) == 0) return;
 
+
   ustar_fs_t *self = node->device;
   uint32_t disk_offset = node->inode;
   ustar_metadata_t data;
@@ -167,6 +168,10 @@ void ustar_open(fs_node_t *node, uint32_t flags)
   }
 
   uint32_t size = parse_oct(data.size, sizeof(data.size));
+  if (size == 0) return;
+
+  klock(&(self->lock));
+
   uint32_t new_size = block_align_up(size) - BLOCK_SIZE;
   write_oct(data.size, 0, sizeof(data.size));
   uint32_t write_size = fs_write(
@@ -174,6 +179,7 @@ void ustar_open(fs_node_t *node, uint32_t flags)
     );
   if (write_size != BLOCK_SIZE) {
     log_error("ustar", "Failed to update metadata.\n");
+    kunlock(&(self->lock));
     return;
   }
   ustar_metadata_t new_data = data;
@@ -183,6 +189,9 @@ void ustar_open(fs_node_t *node, uint32_t flags)
   write_size = fs_write(
     self->block_device, disk_offset + BLOCK_SIZE, BLOCK_SIZE, (uint8_t *)&new_data
     );
+
+  kunlock(&(self->lock));
+
   if (write_size != BLOCK_SIZE) {
     log_error("ustar", "Failed to update metadata.\n");
     return;
