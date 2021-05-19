@@ -14,7 +14,7 @@ endif
 CROSS_COMPILE=i386-elf-
 CC=$(CROSS_COMPILE)gcc
 LDFLAGS=-Wl,--gc-sections -nostdlib
-CFLAGS=-ggdb3 -Wall -DNORMALUNIX -DLINUX -DSNDSERV -I${BUILD_ROOT}/sysroot/usr/include # -DUSEASM
+CFLAGS=-ggdb3 -Wall -Wno-builtin-declaration-mismatch -DNORMALUNIX -DLINUX -DSNDSERV -I${BUILD_ROOT}/sysroot/usr/include # -DUSEASM
 LIBS=${BUILD_ROOT}/sysroot/usr/lib/crt0.o ${BUILD_ROOT}/sysroot/usr/lib/crti.o ${BUILD_ROOT}/sysroot/usr/lib/crtn.o ${BUILD_ROOT}/sysroot/usr/lib/libui.a ${BUILD_ROOT}/sysroot/usr/lib/libc.a -lgcc
 
 # subdirectory for objects
