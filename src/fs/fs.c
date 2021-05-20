@@ -538,6 +538,12 @@ uint32_t fs_open_node(fs_node_t *out_node, const char *path, uint32_t flags)
 
   fs_node_t *node = mount_point;
   while (path_idx < path_len) {
+    fs_node_t *new_node = fs_finddir(node, mpath + path_idx);
+    if (node != mount_point) { fs_close(node); kfree(node); }
+    node = new_node;
+    if (node == NULL) { kfree(mpath); return ENOENT; }
+    path_idx += u_strlen(mpath + path_idx) + 1;
+
     if ((node->flags & FS_SYMLINK) && (flags & O_NOFOLLOW) == 0) {
       char *target = kmalloc(1024);
       CHECK(target == NULL, "No memory.", ENOMEM);
@@ -562,7 +568,8 @@ uint32_t fs_open_node(fs_node_t *out_node, const char *path, uint32_t flags)
 
       u_memset(target, 0, 1024);
       u_memcpy(target, rtarget, rpath_len);
-      u_memcpy(target + rpath_len + 1, mpath + path_idx, path_len - path_idx);
+      if (path_idx < path_len)
+        u_memcpy(target + rpath_len + 1, mpath + path_idx, path_len - path_idx);
 
       path_len += rpath_len - path_idx + 1;
       path_idx = 0;
@@ -573,12 +580,6 @@ uint32_t fs_open_node(fs_node_t *out_node, const char *path, uint32_t flags)
       if (mount_point == NULL) { kfree(mpath); return ENOENT; }
       node = mount_point;
     }
-
-    fs_node_t *new_node = fs_finddir(node, mpath + path_idx);
-    if (node != mount_point) kfree(node); // Not sure about this.
-    node = new_node;
-    if (node == NULL) { kfree(mpath); return ENOENT; }
-    path_idx += u_strlen(mpath + path_idx) + 1;
   }
 
   fs_open(node, flags & (~O_CREAT));
