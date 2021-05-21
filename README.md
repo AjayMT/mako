@@ -40,14 +40,14 @@ This program has absolutely no warranty.
 ```
 2. Install `grub-mkrescue`, which depends on `xorriso` and `mtools` to create bootable ISOs. Most (?) Linux distributions come with `grub-mkrescue` installed. (<https://www.gnu.org/software/grub/>)
 3. Install [NASM](https://www.nasm.us/).
-3. Clone the Mako repository and run the following commands:
+4. Clone the Mako repository and run the following commands:
 ```sh
 ./fetch-deps.sh
 make user # Ignore warnings
 ./gen-hda.sh # Ignore the segfault message
 make
 ```
-4. You should now have the `mako.iso` and `hda.img` disk images!
+5. You should now have the `mako.iso` and `hda.img` disk images!
 
 ## Run it
 Mako only works on [qemu](https://www.qemu.org/) at the moment.
