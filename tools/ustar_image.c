@@ -70,6 +70,7 @@ int main(int argc, char *argv[])
     memset(data.name, 0, sizeof(data.name));
     memcpy(data.name, new_name, strlen(new_name) + 1);
     free(new_name);
+    memcpy(data.ustar_magic, "ustar", 6); // Always NULL-terminate ustar_magic
     fseek(f, off, SEEK_SET);
     r = fwrite(&data, 1, sizeof(data), f);
     fseek(f, file_size, SEEK_CUR);
