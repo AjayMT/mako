@@ -19,6 +19,10 @@ OBJECTS = boot.o gdt.o idt.o pic.o interrupt.o paging.o pmm.o  \
           pipe.o fpu.o rtc.o ui.o ustar.o
 APPS = dex xed pie img
 BIN = init pwd ls read
+GRUB_MKRESCUE = grub-mkrescue
+ifeq ($(shell uname -s), Darwin)
+	GRUB_MKRESCUE = i386-elf-grub-mkrescue
+endif
 export
 
 all: mako.iso
@@ -90,7 +94,7 @@ $(DRIVER_OBJECTS): $(shell find src/drivers -type f)
 mako.iso: kernel.elf tools/make_rd.py $(shell find rdroot -type f)
 	python3 tools/make_rd.py
 	cp kernel.elf iso/boot/kernel.elf
-	i386-elf-grub-mkrescue -o mako.iso iso
+	$(GRUB_MKRESCUE) -o mako.iso iso
 
 .PHONY: qemu
 qemu: mako.iso

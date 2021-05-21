@@ -23,7 +23,7 @@ Download `mako.iso` and `mako-hda.img` from [here](https://github.com/AjayMT/mak
 This build process has been tested on macOS. It *should* work on most Linux-like platforms; if you have trouble building Mako, please reach out to me or raise an issue on this repository.
 
 Steps:
-1. Build or acquire a [cross-compiling GCC toolchain](https://wiki.osdev.org/GCC_Cross-Compiler) that targets the `i386-elf` platform. This is the hardest and most time consuming step -- if you can find precompiled binaries of `i386-elf-gcc` and binutils for your platform, save yourself the effort and use them instead of building GCC from source. After this is complete, you should have `i386-elf` versions of GCC and binutils:
+1. Build or acquire a [cross-compiling GCC toolchain](https://wiki.osdev.org/GCC_Cross-Compiler) that targets the `i386-elf` platform. This is the hardest and most time consuming step -- if you can find precompiled binaries of `i386-elf-gcc` and binutils for your platform, save yourself the effort and use them instead of building GCC from source. If you are building on macOS, use [this](https://github.com/nativeos/homebrew-i386-elf-toolchain) Homebrew tap and skip step 2. After this is complete, you should have `i386-elf` versions of GCC and binutils:
 ```sh
 $ i386-elf-gcc --version
 i386-elf-gcc (GCC) 9.2.0
@@ -38,7 +38,8 @@ This program is free software; you may redistribute it under the terms of
 the GNU General Public License version 3 or (at your option) a later version.
 This program has absolutely no warranty.
 ```
-2. Install `xorriso` and build/acquire the `i386-elf` version of `grub-mkrescue`: <https://wiki.osdev.org/GRUB#Installing_GRUB_2_on_OS_X> (these instructions are for macOS but AFAIK they should work on most platforms).
+2. Install `grub-mkrescue`, which depends on `xorriso` and `mtools` to create bootable ISOs. Most (?) Linux distributions come with `grub-mkrescue` installed. (<https://www.gnu.org/software/grub/>)
+3. Install [NASM](https://www.nasm.us/).
 3. Clone the Mako repository and run the following commands:
 ```sh
 ./fetch-deps.sh
