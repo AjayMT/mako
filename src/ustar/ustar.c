@@ -142,7 +142,6 @@ void ustar_open(fs_node_t *node, uint32_t flags)
 {
   if ((flags & O_TRUNC) == 0) return;
 
-
   ustar_fs_t *self = node->device;
   uint32_t disk_offset = node->inode;
   ustar_metadata_t data;
@@ -183,7 +182,6 @@ void ustar_open(fs_node_t *node, uint32_t flags)
     return;
   }
   ustar_metadata_t new_data = data;
-  u_memcpy(new_data.ustar_magic, USTAR_MAGIC, u_strlen(USTAR_MAGIC) + 1);
   write_oct(new_data.size, new_size, sizeof(new_data.size));
   new_data.type = FREE;
   write_size = fs_write(
@@ -270,7 +268,7 @@ uint32_t ustar_write(
     if (u_strcmp(tmp_data.ustar_magic, USTAR_MAGIC) != 0) break;
     if (tmp_data.type != FREE) break;
 
-    uint32_t tmp_size = block_align_up(parse_oct(tmp_data.size, sizeof(tmp_data)));
+    uint32_t tmp_size = block_align_up(parse_oct(tmp_data.size, sizeof(tmp_data.size)));
     space += BLOCK_SIZE + tmp_size;
     tmp_offset += BLOCK_SIZE + tmp_size;
   }
