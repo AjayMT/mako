@@ -19,7 +19,7 @@ int32_t _syscall0(const uint32_t num)
 int32_t _syscall1(const uint32_t num, const uint32_t a1)
 {
   int32_t ret;
-  asm volatile ("movl %0, %%ebx" : : "r"(a1));
+  asm volatile ("movl %0, %%edi" : : "r"(a1));
   asm volatile ("movl %0, %%eax" : : "r"(num));
   asm volatile ("int $0x80");
   asm volatile ("movl %%eax, %0" : "=r"(ret));
@@ -29,7 +29,7 @@ int32_t _syscall2(const uint32_t num, const uint32_t a1, const uint32_t a2)
 {
   int32_t ret;
   asm volatile ("movl %0, %%ecx" : : "r"(a2));
-  asm volatile ("movl %0, %%ebx" : : "r"(a1));
+  asm volatile ("movl %0, %%edi" : : "r"(a1));
   asm volatile ("movl %0, %%eax" : : "r"(num));
   asm volatile ("int $0x80");
   asm volatile ("movl %%eax, %0" : "=r"(ret));
@@ -45,7 +45,7 @@ int32_t _syscall3(
   int32_t ret;
   asm volatile ("movl %0, %%edx" : : "r"(a3));
   asm volatile ("movl %0, %%ecx" : : "r"(a2));
-  asm volatile ("movl %0, %%ebx" : : "r"(a1));
+  asm volatile ("movl %0, %%edi" : : "r"(a1));
   asm volatile ("movl %0, %%eax" : : "r"(num));
   asm volatile ("int $0x80");
   asm volatile ("movl %%eax, %0" : "=r"(ret));
@@ -63,7 +63,7 @@ int32_t _syscall4(
   asm volatile ("movl %0, %%esi" : : "r"(a4));
   asm volatile ("movl %0, %%edx" : : "r"(a3));
   asm volatile ("movl %0, %%ecx" : : "r"(a2));
-  asm volatile ("movl %0, %%ebx" : : "r"(a1));
+  asm volatile ("movl %0, %%edi" : : "r"(a1));
   asm volatile ("movl %0, %%eax" : : "r"(num));
   asm volatile ("int $0x80");
   asm volatile ("movl %%eax, %0" : "=r"(ret));

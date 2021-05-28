@@ -527,7 +527,7 @@ static void syscall_thread(uint32_t eip, uint32_t data)
   if (res) { current->uregs.eax = -res; return; }
 
   child->uregs.eip = child->thread_start;
-  child->uregs.ebx = eip;
+  child->uregs.edi = eip;
   child->uregs.ecx = data;
   child->uregs.eax = 0;
   current->uregs.eax = child->pid;
@@ -702,7 +702,7 @@ process_registers_t *syscall_handler(cpu_state_t cs, stack_state_t ss)
   process_t *current = process_current();
   current->in_kernel = 1;
   uint32_t syscall_num = cs.eax;
-  uint32_t a1 = cs.ebx;
+  uint32_t a1 = cs.edi;
   uint32_t a2 = cs.ecx;
   uint32_t a3 = cs.edx;
   uint32_t a4 = cs.esi;
@@ -720,7 +720,7 @@ process_registers_t *syscall_handler(cpu_state_t cs, stack_state_t ss)
     current->signal_pending = current->next_signal;
     current->next_signal = 0;
     current->uregs.eip = current->signal_eip;
-    current->uregs.ebx = current->signal_pending;
+    current->uregs.edi = current->signal_pending;
   } else if (
     current->ui_event_queue->size
     && current->ui_event_pending == 0

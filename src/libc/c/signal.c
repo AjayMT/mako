@@ -17,11 +17,11 @@ static sig_t signal_handler_table[NUM_SIGNALS + 1];
 
 static void handle_sig()
 {
-  uint32_t ebx;
-  asm volatile ("movl %%ebx, %0" : "=r"(ebx));
-  if (ebx == SIGKILL || ebx == SIGSTOP) exit(0);
-  if (signal_handler_table[ebx])
-    signal_handler_table[ebx](ebx);
+  uint32_t edi;
+  asm volatile ("movl %%edi, %0" : "=r"(edi));
+  if (edi == SIGKILL || edi == SIGSTOP) exit(0);
+  if (signal_handler_table[edi])
+    signal_handler_table[edi](edi);
   else exit(1);
   _syscall0(SYSCALL_SIGNAL_RESUME);
 }

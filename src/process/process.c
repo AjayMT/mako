@@ -160,7 +160,7 @@ uint32_t process_switch_next()
     next->signal_pending = next->next_signal;
     next->next_signal = 0;
     next->uregs.eip = next->signal_eip;
-    next->uregs.ebx = next->signal_pending;
+    next->uregs.edi = next->signal_pending;
   } else if (
     next->ui_event_queue->size
     && next->ui_event_pending == 0
