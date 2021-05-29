@@ -155,6 +155,7 @@ void ustar_open(fs_node_t *node, uint32_t flags)
   if (
     u_strcmp(data.ustar_magic, USTAR_MAGIC) != 0
     || ustar_name_match(data.name, node->name) != 0
+    || data.type == FREE
     ) {
     disk_offset = ustar_find(self, node->name);
     if (disk_offset == (uint32_t)-1) {
@@ -214,6 +215,7 @@ uint32_t ustar_read(
   if (
     u_strcmp(data.ustar_magic, USTAR_MAGIC) != 0
     || ustar_name_match(data.name, node->name) != 0
+    || data.type == FREE
     ) {
     disk_offset = ustar_find(self, node->name);
     CHECK(disk_offset == (uint32_t)-1, "File does not exist.", ENOENT);
@@ -246,6 +248,7 @@ uint32_t ustar_write(
   if (
     u_strcmp(data.ustar_magic, USTAR_MAGIC) != 0
     || ustar_name_match(data.name, node->name) != 0
+    || data.type == FREE
     ) {
     disk_offset = ustar_find(self, node->name);
     CHECK_UNLOCK(disk_offset == (uint32_t)-1, "File does not exist.", ENOENT);
@@ -525,6 +528,7 @@ int32_t ustar_readlink(fs_node_t *node, char *buf, size_t len)
   if (
     u_strcmp(data.ustar_magic, USTAR_MAGIC) != 0
     || ustar_name_match(data.name, node->name) != 0
+    || data.type == FREE
     ) {
     disk_offset = ustar_find(self, node->name);
     CHECK(disk_offset == (uint32_t)-1, "File does not exist.", -ENOENT);

@@ -227,7 +227,7 @@ static void page_fault_handler(
       if (res != PAGING_OK) goto die;
       current_process->mmap.stack_bottom = vaddr;
       log_info(
-        "process", "grew the stack to %x for process %u",
+        "process", "grew the stack to %x for process %u\n",
         vaddr, current_process->pid
         );
       return;
