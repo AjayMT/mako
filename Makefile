@@ -17,6 +17,7 @@ OBJECTS = boot.o gdt.o idt.o pic.o interrupt.o paging.o pmm.o  \
           debug.o util.o kheap.o fs.o ext2.o ds.o rd.o tss.o   \
           process.o pit.o elf.o syscall.o klock.o ringbuffer.o \
           pipe.o fpu.o rtc.o ui.o ustar.o
+LIBS = libc.a libui.a libnanoc.a
 APPS = dex xed pie img
 BIN = init pwd ls read
 GRUB_MKRESCUE = grub-mkrescue
@@ -31,10 +32,11 @@ all: mako.iso
 user: deps $(APPS) $(BIN)
 
 .PHONY: deps
-deps: sysroot lua c4 doomgeneric
+deps: sysroot lua c4 doomgeneric nanoc
 	cp lua sysroot/bin
 	cp c4 sysroot/bin
 	cp doomgeneric sysroot/apps
+	cp nanoc sysroot/bin
 
 c4: $(shell find src/libc -type f) $(shell find deps/c4 -type f)
 	$(MAKE) -C deps/c4
@@ -44,16 +46,21 @@ lua: $(shell find src/libc -type f) $(shell find deps/lua -type f)
 	$(MAKE) -C deps/lua generic
 	cp deps/lua/src/lua .
 
+nanoc: $(shell find src/libc -type f) $(shell find deps/nanoc -type f)
+	$(MAKE) -C deps/nanoc
+	cp deps/nanoc/nanoc .
+
 doomgeneric: $(shell find src/libc -type f) $(shell find deps/doomgeneric -type f)
 	$(MAKE) -C deps/doomgeneric/doomgeneric
 	cp deps/doomgeneric/doomgeneric/doomgeneric .
 
 .PHONY: sysroot
-sysroot: crt0.o crti.o crtn.o libc.a libui.a
+sysroot: crt0.o crti.o crtn.o $(LIBS)
 	cp -rH src/libc/h/* sysroot/usr/include
 	cp -rH src/libui/h/* sysroot/usr/include
 	cp libc.a sysroot/usr/lib
 	cp libui.a sysroot/usr/lib
+	cp libnanoc.a sysroot/usr/lib
 	cp crt{0,i,n}.o sysroot/usr/lib
 
 $(APPS): $(shell find src/apps -type f)
@@ -73,11 +80,8 @@ crti.o: src/libc/crti.s
 crtn.o: src/libc/crtn.s
 	$(AS) $(ASFLAGS) src/libc/crtn.s -o crtn.o
 
-libc.a: $(shell find src -type f)
-	$(MAKE) out=${PWD}/libc.a -C src/libc
-
-libui.a: $(shell find src -type f)
-	$(MAKE) out=${PWD}/libui.a -C src/libui
+$(LIBS): $(shell find src -type f)
+	$(MAKE) out=${PWD}/$@ -C src/$(basename $@)
 
 kernel.elf: $(OBJECTS) $(ASM_OBJECTS) $(DRIVER_OBJECTS)
 	$(LD) $(LDFLAGS) $(OBJECTS) $(ASM_OBJECTS) $(DRIVER_OBJECTS) -o kernel.elf
@@ -103,9 +107,9 @@ qemu: mako.iso
 
 .PHONY: clean
 clean:
-	rm -rf *.o *.a kernel.elf                                      \
-	       iso/boot/kernel.elf mako.iso bochslog.txt com1.out      \
-	       iso/modules/rd src/libc/*.o src/libui/*.o               \
-	       sysroot/usr/include/{*,sys/*}.h sysroot/usr/lib/*.{a,o} \
-	       sysroot/bin/* sysroot/apps/* lua c4 doomgeneric $(APPS) \
-	       $(BIN) hda.img hda.tar ustar_image
+	rm -rf *.o *.a kernel.elf                                         \
+	       iso/boot/kernel.elf mako.iso bochslog.txt com1.out         \
+	       iso/modules/rd src/libc/*.o src/libui/*.o src/libnanoc/*.o \
+	       sysroot/usr/include/{*,sys/*}.h sysroot/usr/lib/*.{a,o}    \
+	       sysroot/bin/* sysroot/apps/* lua c4 doomgeneric nanoc      \
+	       $(APPS) $(BIN) hda.img hda.tar ustar_image
