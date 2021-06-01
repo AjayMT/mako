@@ -1005,6 +1005,16 @@ void write_text(uint8_t *b, uint32_t n)
   text_loc += n;
 }
 
+void write_data(uint8_t *b, uint32_t n)
+{
+  if (data_loc + n > DATA_CAP) {
+    printf("Too much data.\n");
+    exit(1);
+  }
+  memcpy(data + data_loc, b, n);
+  data_loc += n;
+}
+
 typedef enum {
   rMOV_EAX, rOFFSET, rIMM
 } relocation_type_t;
@@ -1108,8 +1118,7 @@ symbol_type_t codegen_expr(ast_node_t *expr, symbol_t *symtab)
     // write to data section
     uint32_t addr = DATA_START + data_loc;
     uint32_t len = strlen(expr->s);
-    memcpy(data + data_loc, expr->s, len + 1);
-    data_loc += len + 1;
+    write_data((uint8_t *)(expr->s), len + 1);
 
     // movl addr, %eax
     uint8_t tmp = 0xb8;
@@ -1606,6 +1615,10 @@ void codegen(ast_node_t *ast)
     uint32_t size = construct_symtab(current, root_symtab, NULL, 0, 0);
 
     if (current->type == nSTMT) {
+      if (data_loc + size > DATA_CAP) {
+        printf("Too much data.\n");
+        exit(1);
+      }
       data_loc += size;
       current = current->next;
       continue;
@@ -1651,7 +1664,7 @@ void relocate()
   relocation_t *current = relocs;
   while (current != NULL) {
     symbol_t *sym = symtab_get(current->symtab, current->name);
-    if (sym->loc == (uint32_t) -1) {
+    if (sym == NULL || sym->loc == (uint32_t) -1) {
       printf("Undefined symbol %s\n", current->name);
       exit(1);
     }
@@ -1758,43 +1771,66 @@ void read_elf(uint8_t *buffer, uint32_t len)
   char *shstrtab = (char *)(buffer + shstrtab_hdr->sh_offset);
 
   Elf32_Shdr *symtab_hdr = NULL, *rel_text_hdr = NULL, *strtab_hdr = NULL;
-  Elf32_Shdr *text_hdr = NULL, *data_hdr = NULL;
-  uint32_t text_idx = 0;
+  Elf32_Shdr *text_hdr = NULL, *data_hdr = NULL, *bss_hdr = NULL, *rodata_hdr = NULL;
+  uint32_t text_idx = 0, data_idx = 0, bss_idx = 0, rodata_idx = 0, unused_idx = 0;
+
   for (uint32_t i = 0; i < hdr->e_shnum; ++i) {
     Elf32_Shdr *current =
       (Elf32_Shdr *)(buffer + hdr->e_shoff + (hdr->e_shentsize * i));
-    if (strcmp(shstrtab + current->sh_name, ".symtab") == 0) {
-      symtab_hdr = current; continue;
+
+#define FIND_SECTION(name, hdr, idx)                        \
+    if (strcmp(shstrtab + current->sh_name, (name)) == 0) { \
+      (idx) = i;                                            \
+      (hdr) = current; continue;                            \
     }
-    if (strcmp(shstrtab + current->sh_name, ".rel.text") == 0) {
-      rel_text_hdr = current; continue;
-    }
-    if (strcmp(shstrtab + current->sh_name, ".strtab") == 0) {
-      strtab_hdr = current; continue;
-    }
-    if (strcmp(shstrtab + current->sh_name, ".text") == 0) {
-      text_idx = i;
-      text_hdr = current; continue;
-    }
-    if (strcmp(shstrtab + current->sh_name, ".data") == 0) {
-      data_hdr = current; continue;
-    }
+
+    FIND_SECTION(".symtab", symtab_hdr, unused_idx);
+    FIND_SECTION(".rel.text", rel_text_hdr, unused_idx);
+    FIND_SECTION(".strtab", strtab_hdr, unused_idx);
+    FIND_SECTION(".text", text_hdr, text_idx);
+    FIND_SECTION(".data", data_hdr, data_idx);
+    FIND_SECTION(".bss", bss_hdr, bss_idx);
+    FIND_SECTION(".rodata", rodata_hdr, rodata_idx);
   }
 
-  uint32_t prog_text_offset = text_loc;
+  uint32_t text_offset = text_loc;
   write_text(buffer + text_hdr->sh_offset, text_hdr->sh_size);
+
+  uint32_t data_offset = data_loc;
+  if (data_hdr != NULL)
+    write_data(buffer + data_hdr->sh_offset, data_hdr->sh_size);
+  uint32_t rodata_offset = data_loc;
+  if (rodata_hdr != NULL)
+    write_data(buffer + rodata_hdr->sh_offset, rodata_hdr->sh_size);
+  uint32_t bss_offset = data_loc;
+  if (bss_hdr != NULL) {
+    if (data_loc + bss_hdr->sh_size > DATA_CAP) {
+      printf("Too much data.\n");
+      exit(1);
+    }
+    memset(data + data_loc, 0, bss_hdr->sh_size);
+    data_loc += bss_hdr->sh_size;
+  }
 
   char *strtab = (char *)(buffer + strtab_hdr->sh_offset);
   Elf32_Sym *symtab = (Elf32_Sym *)(buffer + symtab_hdr->sh_offset);
   Elf32_Sym *current = symtab;
   while ((uintptr_t)current - (uintptr_t)symtab < symtab_hdr->sh_size) {
-    if (current->st_shndx != text_idx) { ++current; continue; }
+    int32_t offset = -1;
+    loc_type_t loc_type = lDATA;
+    if (current->st_shndx == text_idx && text_hdr != NULL) {
+      offset = text_offset; loc_type = lTEXT;
+    }
+    if (current->st_shndx == data_idx && data_hdr != NULL) offset = data_offset;
+    if (current->st_shndx == rodata_idx && rodata_hdr != NULL) offset = rodata_offset;
+    if (current->st_shndx == bss_idx && bss_hdr != NULL) offset = bss_offset;
+    if (offset == -1) { ++current; continue; }
     char *name = strtab + current->st_name;
     symbol_t sym; memset(&sym, 0, sizeof(sym));
     sym.name = name;
     sym.type = tINT;
-    sym.loc = prog_text_offset + current->st_value;
-    sym.loc_type = lTEXT;
+    sym.loc = offset + current->st_value;
+    sym.loc_type = loc_type;
     symtab_insert(root_symtab, sym);
     ++current;
   }
@@ -1806,7 +1842,7 @@ void read_elf(uint8_t *buffer, uint32_t len)
     relocation_type_t type = rOFFSET;
     if (ELF32_R_TYPE(current_rel->r_info) == R_386_32) type = rIMM;
     add_relocation(
-      prog_text_offset + current_rel->r_offset,
+      text_offset + current_rel->r_offset,
       strtab + sym->st_name,
       root_symtab, type
       );
@@ -1838,7 +1874,7 @@ void read_archive(char *name)
 int main(int argc, char *argv[])
 {
   if (argc < 2) {
-    printf("Usage: nanoc <filename>\n");
+    printf("Usage: nanoc <filename> [<archive>]\n");
     return 1;
   }
 
