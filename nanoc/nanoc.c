@@ -295,15 +295,120 @@ void check_lval(ast_node_t *root, uint32_t pos)
   }
 }
 
+ast_node_t *parse_expr();
+
+ast_node_t *parse_operand()
+{
+  ast_node_t *root;
+  token_t tok = next_token();
+
+  if (tok.type == LPAREN) {
+    root = parse_expr();
+    tok = next_token();
+    if (tok.type != RPAREN) {
+      printf("Expected ')' at position %u\n", tok.pos);
+      exit(1);
+    }
+
+    goto parse_call;
+  }
+
+  root = malloc(sizeof(ast_node_t));
+  memset(root, 0, sizeof(ast_node_t));
+  root->type = nEXPR;
+
+  if (tok.type == INT_LITERAL) {
+    root->variant = vINT_LITERAL;
+    root->i = atoi(tok.str);
+    return root;
+  }
+
+  if (tok.type == CHAR_LITERAL) {
+    root->variant = vCHAR_LITERAL;
+    root->i = tok.str[0];
+    return root;
+  }
+
+  if (tok.type == STR_LITERAL) {
+    root->variant = vSTRING_LITERAL;
+    root->s = tok.str;
+    return root;
+  }
+
+  if (tok.type == IDENT) {
+    root->variant = vIDENT;
+    root->s = tok.str;
+    goto parse_call;
+  }
+
+  printf("Malformed expression at position %u\n", tok.pos);
+  exit(1);
+  return root;
+
+parse_call:
+  tok = next_token();
+  while (tok.type == LPAREN) {
+    ast_node_t *callee = root;
+    root = malloc(sizeof(ast_node_t));
+    memset(root, 0, sizeof(ast_node_t));
+    root->type = nEXPR;
+    root->variant = vCALL;
+    root->children = callee;
+
+    ast_node_t **current_arg = &(callee->next);
+
+    tok = next_token();
+    while (tok.type != RPAREN) {
+      buffer_token(tok);
+      *current_arg = parse_expr();
+      tok = next_token();
+      if (tok.type == COMMA) tok = next_token();
+      current_arg = &((*current_arg)->next);
+    }
+
+    tok = next_token();
+  }
+  buffer_token(tok);
+
+  return root;
+}
+
 ast_node_t *parse_expr()
 {
   ast_node_t *root;
   token_t tok = next_token();
 
+  uint8_t is_unary_op = 1;
+  ast_node_variant_t unary_op_variant;
+
+  switch (tok.type) {
+  case BIT_AND: unary_op_variant = vADDRESSOF; break;
+  case ASTERISK: unary_op_variant = vDEREF; break;
+  case BIT_NOT: unary_op_variant = vBIT_NOT; break;
+  case NOT: unary_op_variant = vNOT; break;
+  case PLUS_PLUS: unary_op_variant = vINCREMENT; break;
+  case MINUS_MINUS: unary_op_variant = vDECREMENT; break;
+  default: is_unary_op = 0;
+  }
+
+  if (is_unary_op) {
+    ast_node_t *child = parse_operand();
+    if (unary_op_variant == vINCREMENT || unary_op_variant == vDECREMENT)
+      check_lval(child, tok.pos);
+    root = malloc(sizeof(ast_node_t));
+    memset(root, 0, sizeof(ast_node_t));
+    root->type = nEXPR;
+    root->variant = unary_op_variant;
+    root->children = child;
+  } else {
+    buffer_token(tok);
+    root = parse_operand();
+  }
+
 #define PARSE_BINOP(tok_type, variant_type, transform)  \
   if (tok.type == (tok_type)) {                         \
     ast_node_t *left = root;                            \
-    ast_node_t *right = parse_expr();                   \
+    ast_node_t *right = parse_operand();                \
     root = malloc(sizeof(ast_node_t));                  \
     memset(root, 0, sizeof(ast_node_t));                \
     root->type = nEXPR;                                 \
@@ -314,263 +419,157 @@ ast_node_t *parse_expr()
     return root;                                        \
   }                                                     \
 
-  if (tok.type == LPAREN) {
-    root = parse_expr();
-    tok = next_token();
-    if (tok.type != RPAREN) {
-      printf("Expected ')' at position %u\n", tok.pos);
-      exit(1);
-    }
+  tok = next_token();
 
-  parse_call:
-    tok = next_token();
-    if (tok.type == LPAREN) {
-      ast_node_t *callee = root;
-      root = malloc(sizeof(ast_node_t));
-      memset(root, 0, sizeof(ast_node_t));
-      root->type = nEXPR;
-      root->variant = vCALL;
-      root->children = callee;
+  PARSE_BINOP(PLUS, vADD, {});
+  PARSE_BINOP(MINUS, vSUBTRACT, {});
+  PARSE_BINOP(ASTERISK, vMULTIPLY, {});
+  PARSE_BINOP(SLASH, vDIVIDE, {});
+  PARSE_BINOP(PERCENT, vMODULO, {});
+  PARSE_BINOP(LT, vLT, {});
+  PARSE_BINOP(GT, vGT, {});
+  PARSE_BINOP(EQUAL, vEQUAL, {});
+  PARSE_BINOP(LTE, vGT, {
+      ast_node_t *not_node = malloc(sizeof(ast_node_t));
+      memset(not_node, 0, sizeof(ast_node_t));
+      not_node->type = nEXPR;
+      not_node->variant = vNOT;
+      not_node->children = root;
+      root = not_node;
+    });
+  PARSE_BINOP(GTE, vLT, {
+      ast_node_t *not_node = malloc(sizeof(ast_node_t));
+      memset(not_node, 0, sizeof(ast_node_t));
+      not_node->type = nEXPR;
+      not_node->variant = vNOT;
+      not_node->children = root;
+      root = not_node;
+    });
+  PARSE_BINOP(NEQUAL, vEQUAL, {
+      ast_node_t *not_node = malloc(sizeof(ast_node_t));
+      memset(not_node, 0, sizeof(ast_node_t));
+      not_node->type = nEXPR;
+      not_node->variant = vNOT;
+      not_node->children = root;
+      root = not_node;
+    });
+  PARSE_BINOP(AND, vAND, {});
+  PARSE_BINOP(OR, vOR, {});
+  PARSE_BINOP(BIT_AND, vBIT_AND, {});
+  PARSE_BINOP(BIT_OR, vBIT_OR, {});
+  PARSE_BINOP(BIT_XOR, vBIT_XOR, {});
+  PARSE_BINOP(EQ, vASSIGN, { check_lval(left, tok.pos); });
+  PARSE_BINOP(PLUS_EQ, vADD, {
+      check_lval(left, tok.pos);
+      ast_node_t *new_left = malloc(sizeof(ast_node_t));
+      memcpy(new_left, left, sizeof(ast_node_t));
+      new_left->next = root;
+      ast_node_t *new_root = malloc(sizeof(ast_node_t));
+      memset(new_root, 0, sizeof(ast_node_t));
+      new_root->type = nEXPR;
+      new_root->variant = vASSIGN;
+      new_root->children = new_left;
+      root = new_root;
+    });
+  PARSE_BINOP(MINUS_EQ, vSUBTRACT, {
+      check_lval(left, tok.pos);
+      ast_node_t *new_left = malloc(sizeof(ast_node_t));
+      memcpy(new_left, left, sizeof(ast_node_t));
+      new_left->next = root;
+      ast_node_t *new_root = malloc(sizeof(ast_node_t));
+      memset(new_root, 0, sizeof(ast_node_t));
+      new_root->type = nEXPR;
+      new_root->variant = vASSIGN;
+      new_root->children = new_left;
+      root = new_root;
+    });
+  PARSE_BINOP(ASTERISK_EQ, vMULTIPLY, {
+      check_lval(left, tok.pos);
+      ast_node_t *new_left = malloc(sizeof(ast_node_t));
+      memcpy(new_left, left, sizeof(ast_node_t));
+      new_left->next = root;
+      ast_node_t *new_root = malloc(sizeof(ast_node_t));
+      memset(new_root, 0, sizeof(ast_node_t));
+      new_root->type = nEXPR;
+      new_root->variant = vASSIGN;
+      new_root->children = new_left;
+      root = new_root;
+    });
+  PARSE_BINOP(SLASH_EQ, vDIVIDE, {
+      check_lval(left, tok.pos);
+      ast_node_t *new_left = malloc(sizeof(ast_node_t));
+      memcpy(new_left, left, sizeof(ast_node_t));
+      new_left->next = root;
+      ast_node_t *new_root = malloc(sizeof(ast_node_t));
+      memset(new_root, 0, sizeof(ast_node_t));
+      new_root->type = nEXPR;
+      new_root->variant = vASSIGN;
+      new_root->children = new_left;
+      root = new_root;
+    });
+  PARSE_BINOP(PERCENT_EQ, vMODULO, {
+      check_lval(left, tok.pos);
+      ast_node_t *new_left = malloc(sizeof(ast_node_t));
+      memcpy(new_left, left, sizeof(ast_node_t));
+      new_left->next = root;
+      ast_node_t *new_root = malloc(sizeof(ast_node_t));
+      memset(new_root, 0, sizeof(ast_node_t));
+      new_root->type = nEXPR;
+      new_root->variant = vASSIGN;
+      new_root->children = new_left;
+      root = new_root;
+    });
+  PARSE_BINOP(AND_EQ, vBIT_AND, {
+      check_lval(left, tok.pos);
+      ast_node_t *new_left = malloc(sizeof(ast_node_t));
+      memcpy(new_left, left, sizeof(ast_node_t));
+      new_left->next = root;
+      ast_node_t *new_root = malloc(sizeof(ast_node_t));
+      memset(new_root, 0, sizeof(ast_node_t));
+      new_root->type = nEXPR;
+      new_root->variant = vASSIGN;
+      new_root->children = new_left;
+      root = new_root;
+    });
+  PARSE_BINOP(OR_EQ, vBIT_OR, {
+      check_lval(left, tok.pos);
+      ast_node_t *new_left = malloc(sizeof(ast_node_t));
+      memcpy(new_left, left, sizeof(ast_node_t));
+      new_left->next = root;
+      ast_node_t *new_root = malloc(sizeof(ast_node_t));
+      memset(new_root, 0, sizeof(ast_node_t));
+      new_root->type = nEXPR;
+      new_root->variant = vASSIGN;
+      new_root->children = new_left;
+      root = new_root;
+    });
+  PARSE_BINOP(XOR_EQ, vBIT_XOR, {
+      check_lval(left, tok.pos);
+      ast_node_t *new_left = malloc(sizeof(ast_node_t));
+      memcpy(new_left, left, sizeof(ast_node_t));
+      new_left->next = root;
+      ast_node_t *new_root = malloc(sizeof(ast_node_t));
+      memset(new_root, 0, sizeof(ast_node_t));
+      new_root->type = nEXPR;
+      new_root->variant = vASSIGN;
+      new_root->children = new_left;
+      root = new_root;
+    });
+  PARSE_BINOP(NOT_EQ, vBIT_NOT, {
+      check_lval(left, tok.pos);
+      ast_node_t *new_left = malloc(sizeof(ast_node_t));
+      memcpy(new_left, left, sizeof(ast_node_t));
+      new_left->next = root;
+      ast_node_t *new_root = malloc(sizeof(ast_node_t));
+      memset(new_root, 0, sizeof(ast_node_t));
+      new_root->type = nEXPR;
+      new_root->variant = vASSIGN;
+      new_root->children = new_left;
+      root = new_root;
+    });
 
-      ast_node_t **current_arg = &(callee->next);
+  buffer_token(tok);
 
-      tok = next_token();
-      while (tok.type != RPAREN) {
-        buffer_token(tok);
-        *current_arg = parse_expr();
-        tok = next_token();
-        if (tok.type == COMMA) tok = next_token();
-        current_arg = &((*current_arg)->next);
-      }
-    } else buffer_token(tok);
-
-  parse_binops:
-    tok = next_token();
-
-    PARSE_BINOP(PLUS, vADD, {});
-    PARSE_BINOP(MINUS, vSUBTRACT, {});
-    PARSE_BINOP(ASTERISK, vMULTIPLY, {});
-    PARSE_BINOP(SLASH, vDIVIDE, {});
-    PARSE_BINOP(PERCENT, vMODULO, {});
-    PARSE_BINOP(LT, vLT, {});
-    PARSE_BINOP(GT, vGT, {});
-    PARSE_BINOP(EQUAL, vEQUAL, {});
-    PARSE_BINOP(LTE, vGT, {
-        ast_node_t *not_node = malloc(sizeof(ast_node_t));
-        memset(not_node, 0, sizeof(ast_node_t));
-        not_node->type = nEXPR;
-        not_node->variant = vNOT;
-        not_node->children = root;
-        root = not_node;
-      });
-    PARSE_BINOP(GTE, vLT, {
-        ast_node_t *not_node = malloc(sizeof(ast_node_t));
-        memset(not_node, 0, sizeof(ast_node_t));
-        not_node->type = nEXPR;
-        not_node->variant = vNOT;
-        not_node->children = root;
-        root = not_node;
-      });
-    PARSE_BINOP(NEQUAL, vEQUAL, {
-        ast_node_t *not_node = malloc(sizeof(ast_node_t));
-        memset(not_node, 0, sizeof(ast_node_t));
-        not_node->type = nEXPR;
-        not_node->variant = vNOT;
-        not_node->children = root;
-        root = not_node;
-      });
-    PARSE_BINOP(AND, vAND, {});
-    PARSE_BINOP(OR, vOR, {});
-    PARSE_BINOP(BIT_AND, vBIT_AND, {});
-    PARSE_BINOP(BIT_OR, vBIT_OR, {});
-    PARSE_BINOP(BIT_XOR, vBIT_XOR, {});
-    PARSE_BINOP(EQ, vASSIGN, { check_lval(left, tok.pos); });
-    PARSE_BINOP(PLUS_EQ, vADD, {
-        check_lval(left, tok.pos);
-        ast_node_t *new_left = malloc(sizeof(ast_node_t));
-        memcpy(new_left, left, sizeof(ast_node_t));
-        new_left->next = root;
-        ast_node_t *new_root = malloc(sizeof(ast_node_t));
-        memset(new_root, 0, sizeof(ast_node_t));
-        new_root->type = nEXPR;
-        new_root->variant = vASSIGN;
-        new_root->children = new_left;
-        root = new_root;
-      });
-    PARSE_BINOP(MINUS_EQ, vSUBTRACT, {
-        check_lval(left, tok.pos);
-        ast_node_t *new_left = malloc(sizeof(ast_node_t));
-        memcpy(new_left, left, sizeof(ast_node_t));
-        new_left->next = root;
-        ast_node_t *new_root = malloc(sizeof(ast_node_t));
-        memset(new_root, 0, sizeof(ast_node_t));
-        new_root->type = nEXPR;
-        new_root->variant = vASSIGN;
-        new_root->children = new_left;
-        root = new_root;
-      });
-    PARSE_BINOP(ASTERISK_EQ, vMULTIPLY, {
-        check_lval(left, tok.pos);
-        ast_node_t *new_left = malloc(sizeof(ast_node_t));
-        memcpy(new_left, left, sizeof(ast_node_t));
-        new_left->next = root;
-        ast_node_t *new_root = malloc(sizeof(ast_node_t));
-        memset(new_root, 0, sizeof(ast_node_t));
-        new_root->type = nEXPR;
-        new_root->variant = vASSIGN;
-        new_root->children = new_left;
-        root = new_root;
-      });
-    PARSE_BINOP(SLASH_EQ, vDIVIDE, {
-        check_lval(left, tok.pos);
-        ast_node_t *new_left = malloc(sizeof(ast_node_t));
-        memcpy(new_left, left, sizeof(ast_node_t));
-        new_left->next = root;
-        ast_node_t *new_root = malloc(sizeof(ast_node_t));
-        memset(new_root, 0, sizeof(ast_node_t));
-        new_root->type = nEXPR;
-        new_root->variant = vASSIGN;
-        new_root->children = new_left;
-        root = new_root;
-      });
-    PARSE_BINOP(PERCENT_EQ, vMODULO, {
-        check_lval(left, tok.pos);
-        ast_node_t *new_left = malloc(sizeof(ast_node_t));
-        memcpy(new_left, left, sizeof(ast_node_t));
-        new_left->next = root;
-        ast_node_t *new_root = malloc(sizeof(ast_node_t));
-        memset(new_root, 0, sizeof(ast_node_t));
-        new_root->type = nEXPR;
-        new_root->variant = vASSIGN;
-        new_root->children = new_left;
-        root = new_root;
-      });
-    PARSE_BINOP(AND_EQ, vBIT_AND, {
-        check_lval(left, tok.pos);
-        ast_node_t *new_left = malloc(sizeof(ast_node_t));
-        memcpy(new_left, left, sizeof(ast_node_t));
-        new_left->next = root;
-        ast_node_t *new_root = malloc(sizeof(ast_node_t));
-        memset(new_root, 0, sizeof(ast_node_t));
-        new_root->type = nEXPR;
-        new_root->variant = vASSIGN;
-        new_root->children = new_left;
-        root = new_root;
-      });
-    PARSE_BINOP(OR_EQ, vBIT_OR, {
-        check_lval(left, tok.pos);
-        ast_node_t *new_left = malloc(sizeof(ast_node_t));
-        memcpy(new_left, left, sizeof(ast_node_t));
-        new_left->next = root;
-        ast_node_t *new_root = malloc(sizeof(ast_node_t));
-        memset(new_root, 0, sizeof(ast_node_t));
-        new_root->type = nEXPR;
-        new_root->variant = vASSIGN;
-        new_root->children = new_left;
-        root = new_root;
-      });
-    PARSE_BINOP(XOR_EQ, vBIT_XOR, {
-        check_lval(left, tok.pos);
-        ast_node_t *new_left = malloc(sizeof(ast_node_t));
-        memcpy(new_left, left, sizeof(ast_node_t));
-        new_left->next = root;
-        ast_node_t *new_root = malloc(sizeof(ast_node_t));
-        memset(new_root, 0, sizeof(ast_node_t));
-        new_root->type = nEXPR;
-        new_root->variant = vASSIGN;
-        new_root->children = new_left;
-        root = new_root;
-      });
-    PARSE_BINOP(NOT_EQ, vBIT_NOT, {
-        check_lval(left, tok.pos);
-        ast_node_t *new_left = malloc(sizeof(ast_node_t));
-        memcpy(new_left, left, sizeof(ast_node_t));
-        new_left->next = root;
-        ast_node_t *new_root = malloc(sizeof(ast_node_t));
-        memset(new_root, 0, sizeof(ast_node_t));
-        new_root->type = nEXPR;
-        new_root->variant = vASSIGN;
-        new_root->children = new_left;
-        root = new_root;
-      });
-
-    buffer_token(tok);
-
-    return root;
-  }
-
-  root = malloc(sizeof(ast_node_t));
-  memset(root, 0, sizeof(ast_node_t));
-  root->type = nEXPR;
-
-  if (tok.type == INT_LITERAL) {
-    root->variant = vINT_LITERAL;
-    root->i = atoi(tok.str);
-    goto parse_binops;
-  }
-
-  if (tok.type == CHAR_LITERAL) {
-    root->variant = vCHAR_LITERAL;
-    root->i = tok.str[0];
-    goto parse_binops;
-  }
-
-  if (tok.type == STR_LITERAL) {
-    root->variant = vSTRING_LITERAL;
-    root->s = tok.str;
-    goto parse_binops;
-  }
-
-  if (tok.type == IDENT) {
-    root->variant = vIDENT;
-    root->s = tok.str;
-    goto parse_call;
-  }
-
-  if (tok.type == BIT_AND) {
-    ast_node_t *child = parse_expr();
-    root->variant = vADDRESSOF;
-    root->children = child;
-    goto parse_binops;
-  }
-
-  if (tok.type == ASTERISK) {
-    ast_node_t *child = parse_expr();
-    root->variant = vDEREF;
-    root->children = child;
-    goto parse_binops;
-  }
-
-  if (tok.type == BIT_NOT) {
-    ast_node_t *child = parse_expr();
-    root->variant = vBIT_NOT;
-    root->children = child;
-    goto parse_binops;
-  }
-
-  if (tok.type == NOT) {
-    ast_node_t *child = parse_expr();
-    root->variant = vNOT;
-    root->children = child;
-    goto parse_binops;
-  }
-
-  if (tok.type == PLUS_PLUS) {
-    ast_node_t *child = parse_expr();
-    root->variant = vINCREMENT;
-    root->children = child;
-    goto parse_binops;
-  }
-
-  if (tok.type == MINUS_MINUS) {
-    ast_node_t *child = parse_expr();
-    root->variant = vDECREMENT;
-    root->children = child;
-    goto parse_binops;
-  }
-
-  printf("Malformed expression at position %u\n", tok.pos);
-  exit(1);
   return root;
 }
 

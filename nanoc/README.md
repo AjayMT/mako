@@ -27,7 +27,7 @@ As of now, the compiler is just under 1800 lines of code. It only outputs 32-bit
 
 ## Differences with C
 nanoc is not a strict subset of C, as there are some small semantic differences between the two languages:
-- Operators do not take precedence over each other; they are applied sequentially from right to left. For example, the expression `2 * 3 + 4 - 2` will evaluate to 10.
+- Operators do not take precedence over each other; the order in which they are applied must be specified explicitly with parentheses. For example, `1 + 2 * 3` is not a valid expression but `1 + (2 * 3)` is.
 - "Pointer arithmetic" does not exist: pointers are simply integers, so adding 1 to an `int*` will increment it by 1 instead of 4 (or whatever `sizeof(int)` is).
 - There is no explicit type casting (or any type checking at all), all types are cast implicitly.
 - Boolean operators always evaluate both of their operands. For example, `0` will always be evaluated in the expression `1 || 0`, and `1` will always be evaluated in the expression `0 && 1`.
@@ -39,10 +39,7 @@ Most existing "little C compiler" projects output some form of assembly. Because
 
 As of now, nanoc produces very inefficient code. This is not desirable, but I would not sacrifice portability or too much simplicity for code efficiency. It is also a very rudimentary linker -- in particular, the way nanoc combines `.data`, `.rodata` and `.bss` sections and handles global variables is questionable at best and non-functional at worst.
 
-TODOs to be addressed in the short-term:
-- Not all escaped characters inside string or character literals are escaped correctly.
-- The multiplication operator does not handle overflow correctly when multiplying `char`s
-- Documentation and code quality (of course)
+TODO.md lists TODOs to be addressed in the short-term.
 
 ## Build and Usage
 To compile nanoc:

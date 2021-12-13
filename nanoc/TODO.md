@@ -1,0 +1,3 @@
+- Not all escaped characters inside string or character literals are escaped correctly.
+- The multiplication operator does not handle overflow correctly when multiplying `char`s
+- Documentation and code quality
