@@ -179,7 +179,7 @@ static void update_lines(uint32_t line_idx, uint32_t buf_idx)
     lines[i].buffer_idx = p - text_buffer;
     char *next_nl = strchr(p, '\n');
 
-    if (next_nl == NULL || next_nl - p >= line_len) {
+    if (next_nl == NULL || next_nl - p >= (int32_t)line_len) {
       // wrap text around without newline
       lines[i].len = line_len;
       p += line_len;

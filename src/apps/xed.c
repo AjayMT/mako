@@ -279,7 +279,7 @@ static void update_lines(uint32_t line_idx, uint32_t buf_idx)
       // end of buffer is on this line
       lines[i].len = file_buffer_len - lines[i].buffer_idx;
       ++i; break;
-    } else if (next_nl == NULL || next_nl - p >= line_len) {
+    } else if (next_nl == NULL || next_nl - p >= (int32_t)line_len) {
       // wrap text around without newline
       lines[i].len = line_len;
       p += line_len;
@@ -440,7 +440,7 @@ static void scroll_up()
   // }
 
   // Moving {
-  if (P.cursor_idx >= lines[0].len)
+  if (P.cursor_idx >= (uint32_t)lines[0].len)
     P.cursor_idx = lines[0].len - 1;
   P.buffer_idx = P.top_idx + P.cursor_idx;
   // }
@@ -501,7 +501,7 @@ static void move_up()
 
   P.cursor_idx -= line_len;
   --cy;
-  if (cx >= lines[cy].len) {
+  if (cx >= (uint32_t)lines[cy].len) {
     cx = lines[cy].len - 1;
     P.cursor_idx = (cy * line_len) + cx;
   }
@@ -523,7 +523,7 @@ static void move_down()
 
   P.cursor_idx += line_len;
   ++cy;
-  if (cx >= lines[cy].len) {
+  if (cx >= (uint32_t)lines[cy].len) {
     cx = lines[cy].len - 1;
     P.cursor_idx = (cy * line_len) + cx;
   }
