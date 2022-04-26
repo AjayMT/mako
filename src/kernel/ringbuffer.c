@@ -134,10 +134,16 @@ uint32_t ringbuffer_finish_write(
 
 void ringbuffer_destroy(ringbuffer_t *rb)
 {
-  while (rb->readers->size)
-    list_remove(rb->readers, rb->readers->head, 0);
-  while (rb->writers->size)
-    list_remove(rb->writers, rb->writers->head, 0);
+  while (rb->readers->size) {
+    list_node_t *head = rb->readers->head;
+    list_remove(rb->readers, head, 0);
+    kfree(head);
+  }
+  while (rb->writers->size) {
+    list_node_t *head = rb->writers->head;
+    list_remove(rb->writers, head, 0);
+    kfree(head);
+  }
   list_destroy(rb->readers);
   list_destroy(rb->writers);
   kfree(rb->buffer);

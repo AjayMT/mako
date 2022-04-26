@@ -15,6 +15,7 @@ KERNEL_ASM_OBJECTS := $(filter-out constants.s.o,$(notdir $(patsubst %.s,%.s.o,$
 KERNEL_OBJECTS := $(notdir $(patsubst %.c,%.o,$(wildcard src/kernel/*.c)))
 
 LIBC_OBJECTS := $(notdir $(patsubst %.c,%.o,$(wildcard src/libc/*.c)))
+CRT_OBJECTS := crt0.o crti.o crtn.o
 
 DEPS := nanoc lua doomgeneric
 APPS := dex xed pie img
@@ -55,27 +56,27 @@ hda.img: $(APPS) $(BIN) $(DEPS) libnanoc.a
 	./gen-hda.sh
 
 # $(DEPS)
-lua: $(shell find deps/lua -type f) libc.a crt0.o crti.o crtn.o
+lua: $(shell find deps/lua -type f) libc.a $(CRT_OBJECTS)
 	$(MAKE) -C deps/lua generic
 	mv deps/lua/src/lua .
-nanoc: $(wildcard deps/nanoc/*) libc.a crt0.o crti.o crtn.o
-	$(CC) $(CFLAGS) -Isrc/libc/ deps/nanoc/nanoc.c crt0.o crti.o crtn.o libc.a -lgcc -o nanoc
-doomgeneric: $(shell find deps/doomgeneric -type f) libui.a libc.a crt0.o crti.o crtn.o
+nanoc: $(wildcard deps/nanoc/*) libc.a $(CRT_OBJECTS)
+	$(CC) $(CFLAGS) -Isrc/libc/ deps/nanoc/nanoc.c $(CRT_OBJECTS) libc.a -lgcc -o nanoc
+doomgeneric: $(shell find deps/doomgeneric -type f) libui.a libc.a $(CRT_OBJECTS)
 	$(MAKE) -C deps/doomgeneric/doomgeneric
 	mv deps/doomgeneric/doomgeneric/doomgeneric .
 
 # Need two rules for $(APPS) since they have different dependencies
-dex xed pie: $(wildcard src/apps/*) libc.a libui.a crt0.o crti.o crtn.o
+dex xed pie: $(wildcard src/apps/*) libc.a libui.a $(CRT_OBJECTS)
 	$(CC) $(CFLAGS) -Isrc/libc/ -Isrc/libui/ src/apps/$@.c src/apps/font_monaco.c \
-	src/apps/text_render.c src/apps/scancode.c crt0.o crti.o crtn.o libc.a libui.a -lgcc -o $@
-img: src/apps/img.c src/apps/lodepng.c src/apps/lodepng.h src/apps/scancode.h libc.a libui.a crt0.o crti.o crtn.o
+	src/apps/text_render.c src/apps/scancode.c $(CRT_OBJECTS) libc.a libui.a -lgcc -o $@
+img: src/apps/img.c src/apps/lodepng.c src/apps/lodepng.h src/apps/scancode.h libc.a libui.a $(CRT_OBJECTS)
 	$(CC) $(CFLAGS) -Isrc/libc/ -Isrc/libui/ src/apps/img.c src/apps/lodepng.c \
-	crt0.o crti.o crtn.o libc.a libui.a -lgcc -o $@
+	$(CRT_OBJECTS) libc.a libui.a -lgcc -o $@
 
-$(BIN): $(wildcard src/bin/*.c) libc.a crt0.o crti.o crtn.o
-	$(CC) $(CFLAGS) -Isrc/libc/ src/bin/$@.c crt0.o crti.o crtn.o libc.a -lgcc -o $@
+$(BIN): $(wildcard src/bin/*.c) libc.a $(CRT_OBJECTS)
+	$(CC) $(CFLAGS) -Isrc/libc/ src/bin/$@.c $(CRT_OBJECTS) libc.a -lgcc -o $@
 
-libnanoc.a: src/nanoc.c
+libnanoc.a: src/nanoc.c $(wildcard src/common/*)
 	$(CC) $(CFLAGS) -ffreestanding -c src/nanoc.c -o nanoc.o
 	$(AR) $(ARFLAGS) libnanoc.a nanoc.o
 
@@ -86,7 +87,7 @@ libui.a: $(wildcard src/libui/*) $(wildcard src/common/*) libc.a
 libc.a: $(LIBC_OBJECTS) setjmp.o
 	$(AR) $(ARFLAGS) libc.a $(LIBC_OBJECTS) setjmp.o
 
-crt0.o crti.o crtn.o: $(wildcard src/libc/*.s)
+$(CRT_OBJECTS): $(wildcard src/libc/*.s)
 	$(AS) $(ASFLAGS) src/libc/$(basename $@).s -o $@
 
 $(LIBC_OBJECTS): $(wildcard src/libc/*.c) $(wildcard src/libc/*.h) $(wildcard src/common/*)
@@ -98,7 +99,7 @@ setjmp.o: src/libc/setjmp.s
 # ==== /HDD Image ====
 
 .PHONY: qemu
-qemu: mako.iso
+qemu: mako.iso hda.img
 	qemu-system-i386 -serial file:com1.out -cdrom mako.iso -m 256M \
 	                 -drive format=raw,file=hda.img -d cpu_reset
 
