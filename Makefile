@@ -2,7 +2,7 @@
 # TODO: remove extraneous dependencies
 
 CC := i386-elf-gcc
-CFLAGS := -nostdlib -finline-small-functions -Wno-unused -Wall -Wextra -Werror -Wno-implicit-fallthrough \
+CFLAGS := -g -nostdlib -finline-small-functions -Wno-unused -Wall -Wextra -Werror -Wno-implicit-fallthrough \
           -Wno-builtin-declaration-mismatch
 LD := i386-elf-ld
 LDFLAGS := -T link.ld
@@ -34,7 +34,7 @@ all: mako.iso hda.img
 
 mako.iso: $(KERNEL_ASM_OBJECTS) $(KERNEL_OBJECTS)
 	$(LD) $(LDFLAGS) $(KERNEL_OBJECTS) $(KERNEL_ASM_OBJECTS) -o kernel.elf
-	mv kernel.elf iso/boot/kernel.elf
+	cp kernel.elf iso/boot/kernel.elf
 	$(GRUB_MKRESCUE) -o mako.iso iso
 
 $(KERNEL_OBJECTS): $(wildcard src/kernel/*.c) $(wildcard src/kernel/*.h) $(wildcard src/common/*)

@@ -6,6 +6,7 @@
 // Author: Ajay Tatachar <ajaymt2@illinois.edu>
 
 #include <stddef.h>
+#include "constants.h"
 #include "../common/stdint.h"
 #include "util.h"
 
@@ -51,3 +52,13 @@ int32_t u_strncmp(const char *s1, const char *s2, size_t n)
   if (i == n) return 0;
   return *s1 - *s2;
 }
+
+size_t u_page_align_up(size_t a)
+{
+  if (a != (a & 0xFFFFF000))
+    a = (a & 0xFFFFF000) + PAGE_SIZE;
+  return a;
+}
+
+size_t u_page_align_down(uint32_t a)
+{ return a & 0xFFFFF000; }

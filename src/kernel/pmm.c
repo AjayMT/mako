@@ -35,16 +35,6 @@ static memory_map_t pmm_mmap;
 static uint32_t free_page_bitmap[BITMAP_ARRAY_SIZE];
 static uint32_t free_page_count = 0;
 
-// Page alignment functions.
-static inline uint32_t page_align_up(uint32_t addr)
-{
-  if (addr != (addr & 0xFFFFF000))
-    addr = (addr & 0xFFFFF000) + PAGE_SIZE;
-  return addr;
-}
-static inline uint32_t page_align_down(uint32_t addr)
-{ return addr & 0xFFFFF000; }
-
 // Mark a physical page frame as free.
 static void mark_page_free(uint32_t page_number)
 {
@@ -72,8 +62,8 @@ static void bitmap_init(memory_map_t mmap)
 {
   for (uint32_t i = 0; i < mmap.size; ++i) {
     memory_map_entry_t entry = mmap.entries[i];
-    uint32_t start_addr = page_align_up(entry.addr);
-    uint32_t end_addr = page_align_down(entry.addr + entry.len);
+    uint32_t start_addr = u_page_align_up(entry.addr);
+    uint32_t end_addr = u_page_align_down(entry.addr + entry.len);
     uint32_t page_number = start_addr >> PHYS_ADDR_OFFSET;
     uint32_t end_number = end_addr >> PHYS_ADDR_OFFSET;
     for (; page_number < end_number; ++page_number)
@@ -183,7 +173,7 @@ uint32_t pmm_alloc(uint32_t size)
 // Free multiple contiguous physical pages.
 void pmm_free(uint32_t addr, uint32_t size)
 {
-  addr = page_align_down(addr);
+  addr = u_page_align_down(addr);
   for (uint32_t i = 0; i < size; ++i, addr += PAGE_SIZE)
     mark_page_free(addr >> PHYS_ADDR_OFFSET);
 }

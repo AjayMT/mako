@@ -40,13 +40,6 @@ static const uint32_t USER_MODE_CS = 0x18;
 static const uint32_t USER_MODE_DS = 0x20;
 static const uint32_t ENV_VADDR    = KERNEL_START_VADDR - PAGE_SIZE;
 
-static inline uint32_t page_align_up(uint32_t addr)
-{
-  if (addr != (addr & 0xFFFFF000))
-    addr = (addr & 0xFFFFF000) + PAGE_SIZE;
-  return addr;
-}
-
 static uint32_t next_pid = 0;
 static process_t *init_process = NULL;
 static process_t *current_process = NULL;
@@ -523,7 +516,7 @@ uint32_t process_load(process_t *process, process_image_t img)
   uint32_t err = paging_clear_user_space();
   CHECK_RESTORE(err, "Failed to clear user address space.", err);
 
-  uint32_t npages = page_align_up(img.text_len) >> PHYS_ADDR_OFFSET;
+  uint32_t npages = u_page_align_up(img.text_len) >> PHYS_ADDR_OFFSET;
   page_table_entry_t flags; u_memset(&flags, 0, sizeof(flags));
   flags.user = 1;
   flags.rw = 1;
@@ -538,7 +531,7 @@ uint32_t process_load(process_t *process, process_image_t img)
 
   u_memcpy((uint8_t *)img.text_vaddr, img.text, img.text_len);
 
-  npages = page_align_up(img.data_len) >> PHYS_ADDR_OFFSET;
+  npages = u_page_align_up(img.data_len) >> PHYS_ADDR_OFFSET;
   for (uint32_t i = 0; i < npages; ++i) {
     uint32_t paddr = pmm_alloc(1);
     CHECK_RESTORE(paddr == 0, "No memory.", ENOMEM);
@@ -571,9 +564,9 @@ uint32_t process_load(process_t *process, process_image_t img)
   process->mmap.stack_bottom = stack_vaddr;
   process->mmap.stack_top = stack_vaddr + PAGE_SIZE - 1;
   process->mmap.data = img.data_vaddr;
-  process->mmap.heap = img.data_vaddr + page_align_up(img.data_len);
+  process->mmap.heap = img.data_vaddr + u_page_align_up(img.data_len);
   if (process->mmap.heap == 0)
-    process->mmap.heap = img.text_vaddr + page_align_up(img.text_len);
+    process->mmap.heap = img.text_vaddr + u_page_align_up(img.text_len);
   process->uregs.eip = img.entry;
   process->uregs.esp = process->mmap.stack_top;
 
