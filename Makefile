@@ -105,6 +105,6 @@ qemu: mako.iso hda.img
 
 .PHONY: clean
 clean:
-	rm -rf *.o *.a iso/boot/kernel.elf mako.iso com1.out              \
-	       sysroot/lib/* sysroot/bin/* sysroot/apps/* lua c4 doomgeneric nanoc   \
+	rm -rf *.elf *.o *.a iso/boot/kernel.elf mako.iso com1.out                 \
+	       sysroot/lib/* sysroot/bin/* sysroot/apps/* lua c4 doomgeneric nanoc \
 	       $(APPS) $(BIN) $(DEPS) hda.img hda.tar ustar_image
