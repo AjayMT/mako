@@ -23,9 +23,9 @@
 #define CHECK(err, msg, code) if ((err)) {      \
     log_error("ata", msg "\n"); return (code);  \
   }
-#define CHECK_UNLOCK(err, msg, code) if ((err)) {   \
-    log_error("ata", msg "\n"); kunlock(&ata_lock); \
-    return (code);                                  \
+#define CHECK_UNLOCK(err, msg, code) if ((err)) {       \
+    log_error("ata", msg "\n"); kunlock(&ata_lock);     \
+    return (code);                                      \
   }
 
 // PCI info.

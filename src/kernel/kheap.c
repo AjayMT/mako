@@ -32,7 +32,7 @@ typedef struct block_s block_t;
 
 static block_t *head = NULL;
 
-// Simple pure block ops.
+// Simple block properties.
 static inline uint32_t size(block_t *block) { return block->size_next & (~1); }
 static inline block_t *next(block_t *block) { return (block_t *)((uint32_t)(block + 1) + size(block)); }
 static inline uint8_t is_free(block_t *block) { return block->next_free || block->prev_free; }

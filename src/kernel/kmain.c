@@ -55,9 +55,9 @@ uint32_t debug_write(fs_node_t *n, size_t offset, size_t size, uint8_t *buf)
   return size;
 }
 
-#define CHECK(err, name) if ((err)) {                       \
-    log_error("kmain", "Failed to initialize " name "\n");  \
-  }                                                         \
+#define CHECK(err, name) if ((err)) {                           \
+    log_error("kmain", "Failed to initialize " name "\n");      \
+  }                                                             \
 
 void kmain(
   uint32_t mb_info_addr,

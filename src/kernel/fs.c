@@ -19,9 +19,9 @@
 #define CHECK(err, msg, code) if ((err)) {      \
     log_error("fs", msg "\n"); return (code);   \
   }
-#define CHECK_UNLOCK(err, msg, code) if ((err)) {   \
-    log_error("fs", msg "\n"); kunlock(&fs_lock);   \
-    return (code);                                  \
+#define CHECK_UNLOCK(err, msg, code) if ((err)) {       \
+    log_error("fs", msg "\n"); kunlock(&fs_lock);       \
+    return (code);                                      \
   }
 
 // Filesystem mountpoint tree.

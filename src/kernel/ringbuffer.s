@@ -13,7 +13,6 @@ extern ringbuffer_finish_read
 extern ringbuffer_check_write
 extern ringbuffer_wait_write
 extern ringbuffer_finish_write
-extern debug
 
 %macro ringbuffer_io 1
 global ringbuffer_%1
