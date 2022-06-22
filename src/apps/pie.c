@@ -278,11 +278,11 @@ static void exec_thread()
 static uint8_t exec_path(char **args)
 {
   uint32_t readfd, writefd;
-  int32_t res = pipe(&readfd, &writefd, 0, 1);
+  int32_t res = pipe(&readfd, &writefd);
   if (res) return 0;
 
   uint32_t readfd2, writefd2;
-  res = pipe(&readfd2, &writefd2, 1, 1);
+  res = pipe(&readfd2, &writefd2);
   if (res) return 0;
 
   proc_pid = fork();

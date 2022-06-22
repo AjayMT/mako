@@ -27,12 +27,12 @@
 #include "../common/errno.h"
 #include "process.h"
 
-#define CHECK(err, msg, code) if ((err)) {          \
-    log_error("process", msg "\n"); return (code);  \
+#define CHECK(err, msg, code) if ((err)) {              \
+    log_error("process", msg "\n"); return (code);      \
   }
-#define CHECK_UNLOCK(err, msg, code) if ((err)) {                   \
-    log_error("process", msg "\n"); kunlock(&process_tree_lock);    \
-    return (code);                                                  \
+#define CHECK_UNLOCK(err, msg, code) if ((err)) {                       \
+    log_error("process", msg "\n"); kunlock(&process_tree_lock);        \
+    return (code);                                                      \
   }
 
 // Constants.
@@ -103,8 +103,8 @@ static uint32_t process_destroy(process_t *);
 // Switch to next scheduled process.
 uint32_t process_switch_next()
 {
-  disable_interrupts();
   CHECK(current_process == NULL, "No current process", 1);
+  disable_interrupts();
 
   list_node_t *insertion_node = current_process->list_node;
   while (ready_queue->size) {
@@ -473,11 +473,6 @@ uint32_t process_fork(
   list_foreach(lchild, process->fds) {
     process_fd_t *fd = lchild->value;
     if (fd) ++(fd->refcount);
-    if (fd && (fd->node.flags & FS_PIPE)) {
-      pipe_t *p = fd->node.device;
-      if (p && fd->node.read) ++(p->read_refcount);
-      else if (p && fd->node.write) ++(p->write_refcount);
-    }
     list_push_back(fds, fd);
   }
   child->fds = fds;
@@ -718,12 +713,8 @@ static uint32_t process_destroy(process_t *process)
     kfree(head);
     if (fd == NULL) continue;
     --(fd->refcount);
-    fs_close(&(fd->node));
     if (fd->refcount) continue;
-    if (fd->node.flags & FS_PIPE) {
-      pipe_t *p = fd->node.device;
-      if (p && p->read_closed && p->write_closed) kfree(p);
-    }
+    fs_close(&(fd->node));
     kfree(fd);
   }
 

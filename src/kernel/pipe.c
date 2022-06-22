@@ -1,142 +1,191 @@
 
-// pipe.c
+// pipe.h
 //
-// Unix-style pipe for IPC.
+// Pipe for IPC.
 //
 // Author: Ajay Tatachar <ajaymt2@illinois.edu>
 
-#include "../common/stdint.h"
-#include "kheap.h"
-#include "process.h"
-#include "../common/errno.h"
-#include "../common/signal.h"
-#include "util.h"
-#include "log.h"
-#include "fs.h"
-#include "ringbuffer.h"
 #include "pipe.h"
+#include "kheap.h"
+#include "util.h"
+#include "process.h"
+#include "../common/signal.h"
+#include "../common/errno.h"
+#include "log.h"
+#include "klock.h"
+#include "interrupt.h"
 
 #define CHECK(err, msg, code) if ((err)) {      \
     log_error("pipe", msg "\n"); return (code); \
   }
 
-static const uint32_t PIPE_SIZE = 512;
+#define MAX_READERS 4
+static const uint32_t DEFAULT_SIZE = 512;
 
-static void pipe_destroy(pipe_t *pipe)
+typedef struct {
+  process_t *process;
+  uint32_t size;
+} pipe_reader_t;
+
+typedef struct {
+  uint8_t *buf;
+  uint32_t head;
+  uint32_t count;
+  uint32_t size;
+  uint8_t write_closed;
+  volatile uint32_t lock;
+  pipe_reader_t readers[MAX_READERS];
+  volatile uint32_t readers_lock;
+} pipe_t;
+
+uint32_t pipe_suspend(process_registers_t *regs, uint32_t updated);
+
+static void pipe_wait(pipe_t *self, uint32_t size)
 {
-  ringbuffer_destroy(pipe->rb);
-  pipe->rb = NULL;
-}
+  process_t *current_process = process_current();
 
-static uint32_t pipe_read(
-  fs_node_t *node, uint32_t offset, uint32_t size, uint8_t *buf
-  )
-{
-  pipe_t *self = node->device;
-  if (self == NULL || self->rb == NULL) return 0;
-  if (self->read_buffered == 0) {
-    uint32_t s;
-    while ((s = ringbuffer_check_read(self->rb)) == 0)
-      if (self->write_closed) return 0;
-    if (s > size) s = size;
-    uint32_t r = ringbuffer_read(self->rb, s, buf);
-    return r;
-  }
-
-  uint32_t read_size = 0;
-  while (read_size < size) {
-    if (self->write_closed) return read_size;
-    uint32_t r = ringbuffer_read(self->rb, 1, buf + read_size);
-    if (r && ((char *)buf)[read_size] == '\n')
-      return read_size + r;
-    read_size += r;
-  }
-
-  return read_size;
-}
-
-static uint32_t pipe_write(
-  fs_node_t *node, uint32_t offset, uint32_t size, uint8_t *buf
-  )
-{
-  pipe_t *self = node->device;
-  if (self == NULL || self->rb == NULL) return 0;
-  if (self->write_buffered == 0) {
-    uint32_t s;
-    while ((s = ringbuffer_check_write(self->rb)) == 0)
-      if (self->read_closed) {
-        process_signal(process_current(), SIGPIPE);
-        return 0;
-      }
-    if (s > size) s = size;
-    uint32_t r = ringbuffer_write(self->rb, s, buf);
-    return r;
-  }
-
-  uint32_t written_size = 0;
-  while (written_size < size) {
-    if (self->read_closed) {
-      process_signal(process_current(), SIGPIPE);
-      return written_size;
+  klock(&(self->readers_lock));
+  uint8_t updated = 0;
+  for (uint32_t i = 0; i < MAX_READERS; ++i) {
+    if (self->readers[i].process == NULL) {
+      self->readers[i].process = current_process;
+      self->readers[i].size = size;
+      updated = 1;
+      break;
     }
-    uint32_t s = ringbuffer_check_write(self->rb);
-    if (s > size - written_size) s = size - written_size;
-    uint32_t w = ringbuffer_write(self->rb, s, buf + written_size);
-    written_size += w;
   }
 
-  return written_size;
+  disable_interrupts();
+  kunlock(&(self->readers_lock));
+
+  if (updated) current_process->is_running = 0;
+  pipe_suspend(&(current_process->kregs), updated);
+}
+
+static uint32_t pipe_read(fs_node_t *node, uint32_t offset, uint32_t size, uint8_t *buf)
+{
+  (void)offset;
+  pipe_t *self = node->device;
+
+  if (self->write_closed) return 0;
+
+  klock(&(self->lock));
+
+  while (self->count == 0 && !self->write_closed) {
+    kunlock(&(self->lock));
+    pipe_wait(self, size);
+    klock(&(self->lock));
+  }
+
+  if (size > self->count) size = self->count;
+  for (uint32_t i = 0; i < size; ++i) {
+    buf[i] = self->buf[self->head];
+    self->head = (self->head + 1) % self->size;
+  }
+  self->count -= size;
+  node->length = self->count;
+
+  kunlock(&(self->lock));
+  return size;
+}
+
+static uint32_t pipe_write(fs_node_t *node, uint32_t offset, uint32_t size, uint8_t *buf)
+{
+  (void)offset;
+  pipe_t *self = node->device;
+
+  if (self->buf == NULL) {
+    process_signal(process_current(), SIGPIPE);
+    return 0;
+  }
+
+  klock(&(self->lock));
+  uint32_t space = self->size - self->count;
+  if (size > space) size = space;
+  for (uint32_t i = 0; i < size; ++i) {
+    uint32_t buf_idx = (self->head + self->count + i) % self->size;
+    self->buf[buf_idx] = buf[i];
+  }
+  self->count += size;
+  node->length = self->count;
+  kunlock(&(self->lock));
+
+  klock(&(self->readers_lock));
+  uint32_t remaining_size = size;
+  for (uint32_t i = 0; i < MAX_READERS; ++i) {
+    if (self->readers[i].process == NULL) continue;
+
+    self->readers[i].process->is_running = 1;
+    process_schedule(self->readers[i].process);
+    self->readers[i].process = NULL;
+    if (self->readers[i].size >= remaining_size) break;
+    else remaining_size -= self->readers[i].size;
+  }
+  kunlock(&(self->readers_lock));
+
+  return size;
 }
 
 static void pipe_close_read(fs_node_t *node)
 {
   pipe_t *self = node->device;
-  if (self == NULL) return;
-  --(self->read_refcount);
-  if (self->read_refcount) return;
-  self->read_closed = 1;
-  if (self->write_closed) pipe_destroy(self);
+
+  if (self->write_closed) {
+    kfree(self);
+    node->device = NULL;
+    node->length = 0;
+    return;
+  }
+
+  klock(&(self->lock));
+  kfree(self->buf);
+  self->buf = NULL;
+  self->size = 0;
+  self->count = 0;
+  self->head = 0;
+  kunlock(&(self->lock));
 }
 
 static void pipe_close_write(fs_node_t *node)
 {
   pipe_t *self = node->device;
-  if (self == NULL) return;
-  --(self->write_refcount);
-  if (self->write_refcount) return;
+
+  if (self->buf == NULL) {
+    kfree(self);
+    node->device = NULL;
+    node->length = 0;
+    return;
+  }
+
   self->write_closed = 1;
-  if (self->read_closed) pipe_destroy(self);
-  else ringbuffer_close_write(self->rb);
+
+  klock(&(self->readers_lock));
+  for (uint32_t i = 0; i < MAX_READERS; ++i) {
+    if (self->readers[i].process == NULL) continue;
+
+    self->readers[i].process->is_running = 1;
+    process_schedule(self->readers[i].process);
+    self->readers[i].process = NULL;
+  }
+  kunlock(&(self->readers_lock));
 }
 
-uint32_t pipe_create(
-  fs_node_t *read_node, fs_node_t *write_node, uint8_t rb, uint8_t wb
-  )
+uint32_t pipe_create(fs_node_t *read_node, fs_node_t *write_node)
 {
   pipe_t *pipe = kmalloc(sizeof(pipe_t));
   CHECK(pipe == NULL, "No memory.", ENOMEM);
   u_memset(pipe, 0, sizeof(pipe_t));
-  pipe->rb = ringbuffer_create(PIPE_SIZE);
-  CHECK(pipe->rb == NULL, "No memory.", ENOMEM);
-  pipe->read_node = read_node;
-  pipe->write_node = write_node;
-  pipe->read_refcount = 1;
-  pipe->write_refcount = 1;
-  pipe->read_buffered = rb;
-  pipe->write_buffered = wb;
+  pipe->buf = kmalloc(DEFAULT_SIZE);
+  CHECK(pipe->buf == NULL, "No memory.", ENOMEM);
+  u_memset(pipe->buf, 0, DEFAULT_SIZE);
+  pipe->size = DEFAULT_SIZE;
 
-  u_memcpy(read_node->name, "pipe", 5);
-  u_memcpy(write_node->name, "pipe", 5);
   read_node->device = pipe;
-  write_node->device = pipe;
   read_node->read = pipe_read;
-  write_node->write = pipe_write;
   read_node->close = pipe_close_read;
-  write_node->close = pipe_close_write;
-  read_node->mask = 0666;
-  write_node->mask = 0666;
-  read_node->flags |= FS_PIPE;
-  write_node->flags |= FS_PIPE;
 
+  write_node->device = pipe;
+  write_node->write = pipe_write;
+  write_node->close = pipe_close_write;
   return 0;
 }

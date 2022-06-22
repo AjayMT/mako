@@ -286,12 +286,10 @@ static void syscall_close(int32_t fdnum)
   process_fd_t *fd = lnode->value;
   if (fd == NULL) goto fail;
   --(fd->refcount);
-  fs_close(&(fd->node));
-  if (fd->node.flags & FS_PIPE) {
-    pipe_t *p = fd->node.device;
-    if (p && p->read_closed && p->write_closed) kfree(p);
+  if (fd->refcount == 0) {
+    fs_close(&(fd->node));
+    kfree(fd);
   }
-  if (fd->refcount == 0) kfree(fd);
   lnode->value = NULL;
 
   current->uregs.eax = 0;
@@ -365,9 +363,7 @@ static void syscall_symlink(char *path1, char *path2)
 static void syscall_mkdir(char *path, uint32_t mode)
 { process_current()->uregs.eax = fs_mkdir(path, mode); }
 
-static void syscall_pipe(
-  uint32_t *read_fdnum, uint32_t *write_fdnum, uint32_t rb, uint32_t wb
-  )
+static void syscall_pipe(uint32_t *read_fdnum, uint32_t *write_fdnum)
 {
   process_t *current = process_current();
   uint32_t eflags = interrupt_save_disable();
@@ -382,7 +378,7 @@ static void syscall_pipe(
   u_memset(write_fd, 0, sizeof(process_fd_t));
   write_fd->refcount = 1;
 
-  uint32_t res = pipe_create(&(read_fd->node), &(write_fd->node), rb, wb);
+  uint32_t res = pipe_create(&(read_fd->node), &(write_fd->node));
   if (res) { current->uregs.eax = -res; return; }
 
   list_push_back(current->fds, read_fd);
@@ -547,11 +543,6 @@ static void syscall_dup(uint32_t fdnum)
     return;
   }
   ++(fd1->refcount);
-  if (fd1->node.flags & FS_PIPE) {
-    pipe_t *p = fd1->node.device;
-    if (fd1->node.read) ++(p->read_refcount);
-    else if (fd1->node.write) ++(p->write_refcount);
-  }
   list_push_back(current->fds, fd1);
   current->uregs.eax = current->fds->size - 1;
   interrupt_restore(eflags);
