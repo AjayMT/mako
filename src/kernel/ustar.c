@@ -197,9 +197,6 @@ void ustar_open(fs_node_t *node, uint32_t flags)
   }
 }
 
-void ustar_close(fs_node_t *node)
-{}
-
 uint32_t ustar_read(
   fs_node_t *node, uint32_t offset, uint32_t size, uint8_t *buf
   )
@@ -593,7 +590,6 @@ static void make_ustar_node(
   out->device = self;
   out->length = file_size;
   out->open = ustar_open;
-  out->close = ustar_close;
   if (data.type == NORMAL || data.type == NORMAL_) {
     out->flags |= FS_FILE;
     out->read = ustar_read;
