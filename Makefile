@@ -48,22 +48,22 @@ $(KERNEL_ASM_OBJECTS): $(wildcard src/kernel/*.s)
 # ==== HDD Image ===
 
 hda.img: $(APPS) $(BIN) $(DEPS) libnanoc.a
-	mv libnanoc.a sysroot/lib
-	mv $(APPS) sysroot/apps
-	mv $(BIN) sysroot/bin
-	mv nanoc lua sysroot/bin
-	mv doomgeneric sysroot/apps
+	cp libnanoc.a sysroot/lib
+	cp $(APPS) sysroot/apps
+	cp $(BIN) sysroot/bin
+	cp nanoc lua sysroot/bin
+	cp doomgeneric sysroot/apps
 	./gen-hda.sh
 
 # $(DEPS)
 lua: $(shell find deps/lua -type f) libc.a $(CRT_OBJECTS)
 	$(MAKE) -C deps/lua generic
-	mv deps/lua/src/lua .
+	cp deps/lua/src/lua .
 nanoc: $(wildcard deps/nanoc/*) libc.a $(CRT_OBJECTS)
 	$(CC) $(CFLAGS) -Isrc/libc/ deps/nanoc/nanoc.c $(CRT_OBJECTS) libc.a -lgcc -o nanoc
 doomgeneric: $(shell find deps/doomgeneric -type f) libui.a libc.a $(CRT_OBJECTS)
 	$(MAKE) -C deps/doomgeneric/doomgeneric
-	mv deps/doomgeneric/doomgeneric/doomgeneric .
+	cp deps/doomgeneric/doomgeneric/doomgeneric .
 
 # Need two rules for $(APPS) since they have different dependencies
 dex xed pie: $(wildcard src/apps/*) libc.a libui.a $(CRT_OBJECTS)
