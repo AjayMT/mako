@@ -1,7 +1,7 @@
 
-// kheap.c
+// heap.c
 //
-// Kernel heap.
+// User heap.
 //
 // Author: Ajay Tatachar <ajaymt2@illinois.edu>
 
