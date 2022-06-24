@@ -179,10 +179,10 @@ void kfree(void *ptr)
 {
   if (ptr == NULL) return;
 
-  block_t *block = (block_t *)ptr - 1;
-  if (!is_free(block)) return;
-
   uint32_t eflags = interrupt_save_disable();
+
+  block_t *block = (block_t *)ptr - 1;
+  if (!is_free(block)) { interrupt_restore(eflags); return; }
 
   push_front(block);
 
