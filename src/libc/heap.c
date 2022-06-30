@@ -171,7 +171,7 @@ void free(void *ptr)
   thread_lock(&heap_lock);
 
   block_t *block = (block_t *)ptr - 1;
-  if (!is_free(block)) { thread_unlock(&heap_lock); return; }
+  if (is_free(block)) { thread_unlock(&heap_lock); return; }
 
   push_front(block);
 
