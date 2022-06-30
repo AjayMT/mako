@@ -14,6 +14,9 @@
 #include "ds.h"
 
 #define PROCESS_NAME_LEN 256
+#define MAX_PROCESS_COUNT 64
+#define MAX_PROCESS_FDS 16
+#define PROCESS_ENV_VADDR (KERNEL_START_VADDR - PAGE_SIZE)
 
 // Registers struct to save the state of a process.
 // The order of fields is important -- see process.s.
@@ -67,8 +70,9 @@ typedef struct process_s {
   uint32_t pid;
   uint32_t gid;
   char name[PROCESS_NAME_LEN];
+
   char *wd;
-  list_t *fds;
+  process_fd_t *fds[MAX_PROCESS_FDS]; // TODO protect FDs and WD with a lock
 
   uint8_t is_running;
   uint8_t is_thread;
@@ -140,9 +144,6 @@ uint32_t process_load(process_t *, process_image_t);
 
 // Fork a process.
 uint32_t process_fork(process_t *, process_t *, uint8_t);
-
-// Set a process's argv and envp.
-uint32_t process_set_env(process_t *p, char *argv[], char *envp[]);
 
 // Add a process to the scheduler queue.
 void process_schedule(process_t *);

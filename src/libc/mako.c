@@ -33,13 +33,6 @@ int32_t resolve(char *out, char *in, size_t l)
   return res;
 }
 
-int32_t maketty(uint32_t fd)
-{
-  int32_t res = _syscall1(SYSCALL_MAKETTY, fd);
-  if (res < 0) { errno = -res; res = -1; }
-  return res;
-}
-
 uint32_t pagealloc(uint32_t npages)
 { return _syscall1(SYSCALL_PAGEALLOC, npages); }
 int32_t pagefree(uint32_t vaddr, uint32_t npages)

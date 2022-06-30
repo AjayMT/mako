@@ -40,6 +40,44 @@ static void syscall_fork()
   process_schedule(child);
 }
 
+static void execve_set_env(char *argv[], char *envp[])
+{
+  uint32_t argc = 0;
+  for (; argv[argc]; ++argc);
+  uint32_t argv_vaddr = PROCESS_ENV_VADDR + ((argc + 1) * sizeof(char *));
+  uint32_t argv_idx = 0;
+  uint32_t *ptr_ptr = (uint32_t *)PROCESS_ENV_VADDR;
+  uint32_t ptr = argv_vaddr;
+  for (; argv_idx < argc && ptr < PROCESS_ENV_VADDR + (PAGE_SIZE / 2); ++argv_idx) {
+    ptr_ptr = (uint32_t *)(PROCESS_ENV_VADDR + (argv_idx * (sizeof(char *))));
+    *ptr_ptr = ptr;
+    u_memcpy((char *)ptr, argv[argv_idx], u_strlen(argv[argv_idx]) + 1);
+    ptr += u_strlen(argv[argv_idx]) + 1;
+  }
+  ptr_ptr = (uint32_t *)(PROCESS_ENV_VADDR + (argc * (sizeof(char *))));
+  *ptr_ptr = 0;
+
+  uint32_t envc = 0;
+  for (; envp[envc]; ++envc);
+  uint32_t envp_vaddr = PROCESS_ENV_VADDR + (PAGE_SIZE / 2)
+    + ((envc + 1) * sizeof(char *));
+  uint32_t envp_idx = 0;
+  ptr_ptr = (uint32_t *)(PROCESS_ENV_VADDR + (PAGE_SIZE / 2));
+  ptr = envp_vaddr;
+  for (; envp_idx < envc && ptr < KERNEL_START_VADDR; ++envp_idx) {
+    ptr_ptr = (uint32_t *)(
+      PROCESS_ENV_VADDR + (PAGE_SIZE / 2) + (envp_idx * (sizeof(char *)))
+      );
+    *ptr_ptr = ptr;
+    u_memcpy((char *)ptr, envp[envp_idx], u_strlen(envp[envp_idx]) + 1);
+    ptr += u_strlen(envp[envp_idx]) + 1;
+  }
+  ptr_ptr = (uint32_t *)(
+    PROCESS_ENV_VADDR + (PAGE_SIZE / 2) + (envc * (sizeof(char *)))
+    );
+  *ptr_ptr = 0;
+}
+
 static void syscall_execve(char *path, char *argv[], char *envp[])
 {
   process_t *current = process_current();
@@ -85,8 +123,7 @@ static void syscall_execve(char *path, char *argv[], char *envp[])
     if (res) { current->uregs.eax = -res; return; }
     res = process_load(current, p);
     if (res) { current->uregs.eax = -res; return; }
-    res = process_set_env(current, kargv, kenvp);
-    if (res) { current->uregs.eax = -res; return; }
+    execve_set_env(kargv, kenvp);
 
     for (uint32_t i = 0; kargv[i]; ++i) kfree(kargv[i]);
     kfree(kargv);
@@ -236,19 +273,6 @@ static void syscall_signal_send(uint32_t pid, uint32_t signum)
 static void syscall_getpid()
 { process_current()->uregs.eax = process_current()->pid; }
 
-static list_node_t *find_fd(uint32_t fdnum)
-{
-  process_t *current = process_current();
-  uint32_t eflags = interrupt_save_disable();
-  list_node_t *lnode = NULL;
-  list_foreach(fdnode, current->fds) {
-    if (fdnum == 0) lnode = fdnode;
-    --fdnum;
-  }
-  interrupt_restore(eflags);
-  return lnode;
-}
-
 static void syscall_open(char *path, uint32_t flags, uint32_t mode)
 {
   process_t *current = process_current();
@@ -267,42 +291,35 @@ static void syscall_open(char *path, uint32_t flags, uint32_t mode)
   }
   fd->refcount = 1;
 
-  list_push_back(current->fds, fd);
-  current->uregs.eax = current->fds->size - 1;
+  current->uregs.eax = -EMFILE;
+  for (uint32_t i = 0; i < MAX_PROCESS_FDS; ++i) {
+    if (current->fds[i] != NULL) continue;
+    current->fds[i] = fd;
+    current->uregs.eax = i;
+    break;
+  }
+  if ((int32_t)current->uregs.eax == -EMFILE) kfree(fd);
 }
 
 static void syscall_close(int32_t fdnum)
 {
   process_t *current = process_current();
-  uint32_t eflags = interrupt_save_disable();
-  list_node_t *lnode = find_fd(fdnum);
-  if (lnode == NULL) {
-  fail:
-    current->uregs.eax = -EBADF;
-    interrupt_restore(eflags);
-    return;
-  }
-
-  process_fd_t *fd = lnode->value;
-  if (fd == NULL) goto fail;
+  if (fdnum >= MAX_PROCESS_FDS || current->fds[fdnum] == NULL) { current->uregs.eax = -EBADF; return; }
+  process_fd_t *fd = current->fds[fdnum];
   --(fd->refcount);
   if (fd->refcount == 0) {
     fs_close(&(fd->node));
     kfree(fd);
   }
-  lnode->value = NULL;
-
+  current->fds[fdnum] = NULL;
   current->uregs.eax = 0;
-  interrupt_restore(eflags);
 }
 
 static void syscall_read(uint32_t fdnum, uint8_t *buf, uint32_t size)
 {
   process_t *current = process_current();
-  list_node_t *lnode = find_fd(fdnum);
-  if (lnode == NULL) { current->uregs.eax = -EBADF; return; }
-  process_fd_t *fd = lnode->value;
-  if (fd == NULL) { current->uregs.eax = -EBADF; return; }
+  if (fdnum >= MAX_PROCESS_FDS || current->fds[fdnum] == NULL) { current->uregs.eax = -EBADF; return; }
+  process_fd_t *fd = current->fds[fdnum];
   int32_t res = fs_read(&(fd->node), fd->offset, size, buf);
   if (res < 0) { current->uregs.eax = res; return; }
   fd->offset += res;
@@ -312,10 +329,8 @@ static void syscall_read(uint32_t fdnum, uint8_t *buf, uint32_t size)
 static void syscall_write(uint32_t fdnum, uint8_t *buf, uint32_t size)
 {
   process_t *current = process_current();
-  list_node_t *lnode = find_fd(fdnum);
-  if (lnode == NULL) { current->uregs.eax = -EBADF; return; }
-  process_fd_t *fd = lnode->value;
-  if (fd == NULL) { current->uregs.eax = -EBADF; return; }
+  if (fdnum >= MAX_PROCESS_FDS || current->fds[fdnum] == NULL) { current->uregs.eax = -EBADF; return; }
+  process_fd_t *fd = current->fds[fdnum];
   int32_t res = fs_write(&(fd->node), fd->offset, size, buf);
   if (res < 0) { current->uregs.eax = res; return; }
   fd->offset += res;
@@ -325,10 +340,8 @@ static void syscall_write(uint32_t fdnum, uint8_t *buf, uint32_t size)
 static void syscall_readdir(int32_t fdnum, struct dirent *ent, uint32_t index)
 {
   process_t *current = process_current();
-  list_node_t *lnode = find_fd(fdnum);
-  if (lnode == NULL) { current->uregs.eax = -EBADF; return; }
-  process_fd_t *fd = lnode->value;
-  if (fd == NULL) { current->uregs.eax = -EBADF; return; }
+  if (fdnum >= MAX_PROCESS_FDS || current->fds[fdnum] == NULL) { current->uregs.eax = -EBADF; return; }
+  process_fd_t *fd = current->fds[fdnum];
   struct dirent *res = fs_readdir(&(fd->node), index);
   if (res == NULL) { current->uregs.eax = -ENOENT; return; }
   u_memcpy(ent, res, sizeof(struct dirent));
@@ -366,7 +379,6 @@ static void syscall_mkdir(char *path, uint32_t mode)
 static void syscall_pipe(uint32_t *read_fdnum, uint32_t *write_fdnum)
 {
   process_t *current = process_current();
-  uint32_t eflags = interrupt_save_disable();
 
   process_fd_t *read_fd = kmalloc(sizeof(process_fd_t));
   if (read_fd == NULL) { current->uregs.eax = -ENOMEM; return; }
@@ -381,37 +393,39 @@ static void syscall_pipe(uint32_t *read_fdnum, uint32_t *write_fdnum)
   uint32_t res = pipe_create(&(read_fd->node), &(write_fd->node));
   if (res) { current->uregs.eax = -res; return; }
 
-  list_push_back(current->fds, read_fd);
-  *read_fdnum = current->fds->size - 1;
-  list_push_back(current->fds, write_fd);
-  *write_fdnum = current->fds->size - 1;
+  current->uregs.eax = -EMFILE;
+  uint32_t i = 0;
+  for (; i < MAX_PROCESS_FDS; ++i) {
+    if (current->fds[i] != NULL) continue;
+    current->fds[i] = read_fd;
+    *read_fdnum = i;
+    break;
+  }
+  for (; i < MAX_PROCESS_FDS; ++i) {
+    if (current->fds[i] != NULL) continue;
+    current->fds[i] = write_fd;
+    *write_fdnum = i;
+    current->uregs.eax = 0;
+    break;
+  }
 
-  current->uregs.eax = 0;
-  interrupt_restore(eflags);
+  if (current->uregs.eax != 0) {
+    fs_close(&(read_fd->node)); fs_close(&(write_fd->node));
+    kfree(read_fd); kfree(write_fd);
+  }
 }
 
 static void syscall_movefd(uint32_t fdn1, uint32_t fdn2)
 {
   process_t *current = process_current();
-  uint32_t eflags = interrupt_save_disable();
 
-  list_node_t *lnode = find_fd(fdn1);
-  if (lnode == NULL) { current->uregs.eax = -EBADF; return; }
-  process_fd_t *fd1 = lnode->value;
-  list_node_t *lnode2 = find_fd(fdn2);
-  if (lnode2 == NULL) { current->uregs.eax = -EBADF; return; }
-  process_fd_t *fd2 = lnode2->value;
-
-  syscall_close(fdn2);
-  if (current->uregs.eax != 0) {
-    interrupt_restore(eflags); return;
+  if (fdn1 >= MAX_PROCESS_FDS || current->fds[fdn1] == NULL || fdn2 >= MAX_PROCESS_FDS) {
+    current->uregs.eax = -EBADF; return;
   }
-
-  lnode->value = NULL;
-  lnode2->value = fd1;
+  syscall_close(fdn2);
+  current->fds[fdn2] = current->fds[fdn1];
+  current->fds[fdn1] = NULL;
   current->uregs.eax = 0;
-
-  interrupt_restore(eflags);
 }
 
 static void syscall_chdir(char *path)
@@ -428,12 +442,10 @@ static void syscall_chdir(char *path)
   res = resolve_path(&rpath, path);
   if (res) { current->uregs.eax = -res; return; }
   uint32_t len = u_strlen(rpath);
-  uint32_t eflags = interrupt_save_disable();
   kfree(current->wd);
   current->wd = kmalloc(len + 1);
   u_memcpy(current->wd, rpath, len + 1);
   kfree(rpath);
-  interrupt_restore(eflags);
   current->uregs.eax = 0;
 }
 
@@ -459,11 +471,9 @@ static void syscall_wait(uint32_t pid, struct _wait_result *w)
 static void syscall_fstat(uint32_t fdnum, struct stat *st)
 {
   process_t *current = process_current();
-  list_node_t *lnode = find_fd(fdnum);
-  if (lnode == NULL) { current->uregs.eax = -EBADF; return; }
+  if (fdnum >= MAX_PROCESS_FDS || current->fds[fdnum] == NULL) { current->uregs.eax = -EBADF; return; }
 
-  process_fd_t *fd = lnode->value;
-  if (fd == NULL) { current->uregs.eax = -EBADF; return; }
+  process_fd_t *fd = current->fds[fdnum];
   u_memset(st, 0, sizeof(struct stat));
   st->st_dev = fd->node.flags;
   st->st_ino = fd->node.inode;
@@ -503,10 +513,8 @@ static void syscall_lstat(char *path, struct stat *st)
 static void syscall_lseek(uint32_t fd, int32_t offset, uint32_t whence)
 {
   process_t *current = process_current();
-  list_node_t *lnode = find_fd(fd);
-  if (lnode == NULL) { current->uregs.eax = -EBADF; return; }
-  process_fd_t *pfd = lnode->value;
-  if (pfd == NULL) { current->uregs.eax = -EBADF; return; }
+  if (fd >= MAX_PROCESS_FDS || current->fds[fd] == NULL) { current->uregs.eax = -EBADF; return; }
+  process_fd_t *pfd = current->fds[fd];
   if (whence == 1) pfd->offset += offset;
   else if (whence == 2) pfd->offset = pfd->node.length + offset;
   else pfd->offset = offset;
@@ -522,6 +530,8 @@ static void syscall_thread(uint32_t eip, uint32_t data)
   uint32_t res = process_fork(child, current, 1);
   if (res) { current->uregs.eax = -res; return; }
 
+  child->uregs.ebp = child->mmap.stack_top;
+  child->uregs.esp = child->uregs.ebp;
   child->uregs.eip = child->thread_start;
   child->uregs.edi = eip;
   child->uregs.ecx = data;
@@ -533,19 +543,17 @@ static void syscall_thread(uint32_t eip, uint32_t data)
 static void syscall_dup(uint32_t fdnum)
 {
   process_t *current = process_current();
-  list_node_t *lnode = find_fd(fdnum);
-  if (lnode == NULL) { current->uregs.eax = -EBADF; return; }
-  uint32_t eflags = interrupt_save_disable();
-  process_fd_t *fd1 = lnode->value;
-  if (fd1 == NULL) {
-    interrupt_restore(eflags);
-    current->uregs.eax = -EBADF;
-    return;
+  if (fdnum >= MAX_PROCESS_FDS || current->fds[fdnum] == NULL) { current->uregs.eax = -EBADF; return; }
+  process_fd_t *fd = current->fds[fdnum];
+
+  current->uregs.eax = -EMFILE;
+  for (uint32_t i = 0; i < MAX_PROCESS_FDS; ++i) {
+    if (current->fds[i] != NULL) continue;
+    current->fds[i] = fd;
+    ++(fd->refcount);
+    current->uregs.eax = i;
+    break;
   }
-  ++(fd1->refcount);
-  list_push_back(current->fds, fd1);
-  current->uregs.eax = current->fds->size - 1;
-  interrupt_restore(eflags);
 }
 
 static void syscall_thread_register(uint32_t start)
@@ -625,18 +633,6 @@ static void syscall_resolve(char *outpath, char *inpath, size_t len)
   current->uregs.eax = 0;
 }
 
-static void syscall_maketty(uint32_t fdnum)
-{
-  process_t *current = process_current();
-  list_node_t *lnode = find_fd(fdnum);
-  if (lnode == NULL || lnode->value == NULL) {
-    current->uregs.eax = -EBADF; return;
-  }
-  process_fd_t *fd = lnode->value;
-  fd->node.flags |= FS_TTY;
-  current->uregs.eax = 0;
-}
-
 static void syscall_systime()
 { process_current()->uregs.eax = pit_get_time(); }
 
@@ -682,7 +678,6 @@ static syscall_t syscall_table[] = {
   syscall_ui_yield,
   syscall_rename,
   syscall_resolve,
-  syscall_maketty,
   syscall_systime
 };
 

@@ -295,10 +295,6 @@ static uint8_t exec_path(char **args)
     movefd(writefd, 1);
     movefd(errfd, 2);
 
-    maketty(0);
-    maketty(1);
-    maketty(2);
-
     execve(path, args, environ);
     exit(1);
   }

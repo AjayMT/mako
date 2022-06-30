@@ -66,5 +66,5 @@ resume_kernel:
     mov esp, [eax + 32]
     mov eax, [eax]
 
-    sti
+    sti                         ; TODO fix jmp_eip race condition?
     jmp [jmp_eip]

@@ -363,19 +363,13 @@ uint32_t process_create_init(process_t *out_init, process_image_t img)
 {
   uint32_t eflags = interrupt_save_disable();
 
-  process_t *init = kmalloc(sizeof(process_t));
-  CHECK(init == NULL, "No memory.", ENOMEM);
+  process_t *init = kmalloc(sizeof(process_t)); CHECK(init == NULL, "No memory.", ENOMEM);
   u_memset(init, 0, sizeof(process_t));
   u_memcpy(init->name, "init", 5);
-  init->wd = kmalloc(u_strlen("/") + 1);
-  CHECK(init->wd == NULL, "No memory.", ENOMEM);
+  init->wd = kmalloc(2); CHECK(init->wd == NULL, "No memory.", ENOMEM);
   u_memcpy(init->wd, "/", u_strlen("/") + 1);
   init->is_running = 1;
-  init->fds = kmalloc(sizeof(list_t));
-  CHECK(init->fds == NULL, "No memory.", ENOMEM);
-  u_memset(init->fds, 0, sizeof(list_t));
-  init->ui_event_queue = kmalloc(sizeof(list_t));
-  CHECK(init->ui_event_queue == NULL, "No memory.", ENOMEM);
+  init->ui_event_queue = kmalloc(sizeof(list_t)); CHECK(init->ui_event_queue == NULL, "No memory.", ENOMEM);
   u_memset(init->ui_event_queue, 0, sizeof(list_t));
 
   page_directory_t kernel_pd; uint32_t kernel_cr3;
@@ -408,96 +402,75 @@ uint32_t process_create_init(process_t *out_init, process_image_t img)
   return 0;
 }
 
+#define CHECK_RESTORE(err, msg, code) if ((err)) {              \
+    log_error("process", msg "\n"); paging_set_cr3(cr3);        \
+    interrupt_restore(eflags); return (code);                   \
+  }
+
 // Fork a process.
 uint32_t process_fork(
-  process_t *out_child, process_t *process, uint8_t is_thread
+  process_t *child, process_t *process, uint8_t is_thread
   )
 {
-  klock(&process_tree_lock);
-
-  process_t *child = out_child;
   u_memcpy(child, process, sizeof(process_t));
   child->in_kernel = 0;
   child->is_thread = is_thread;
-  child->wd = kmalloc(u_strlen(process->wd) + 1);
-  CHECK_UNLOCK(child->wd == NULL, "No memory.", ENOMEM);
+  child->wd = kmalloc(u_strlen(process->wd) + 1); CHECK(child->wd == NULL, "No memory.", ENOMEM);
   u_memcpy(child->wd, process->wd, u_strlen(process->wd) + 1);
   child->pid = ++next_pid;
   child->gid = child->pid;
   tree_node_t *node = tree_init(child);
   child->tree_node = node;
-  tree_insert(process->tree_node, node);
+  klock(&process_tree_lock); tree_insert(process->tree_node, node); kunlock(&process_tree_lock);
   child->list_node = NULL;
-  child->ui_event_queue = kmalloc(sizeof(list_t));
-  CHECK_UNLOCK(child->ui_event_queue == NULL, "No memory.", ENOMEM);
+  child->ui_event_queue = kmalloc(sizeof(list_t)); CHECK(child->ui_event_queue == NULL, "No memory.", ENOMEM);
   u_memset(child->ui_event_queue, 0, sizeof(list_t));
   child->ui_eip = 0; child->ui_event_buffer = 0; child->ui_event_pending = 0;
-  if (is_thread == 0) {
-    uint32_t err = paging_clone_process_directory(&(child->cr3), process->cr3);
-    CHECK_UNLOCK(err, "Failed to clone page directory.", err);
-  } else {
+
+  if (is_thread) {
     child->gid = process->gid;
     uint32_t eflags = interrupt_save_disable();
     uint32_t cr3 = paging_get_cr3();
     paging_set_cr3(process->cr3);
 
     uint32_t stack_vaddr = paging_prev_vaddr(1, process->mmap.text);
-    uint32_t err = ENOMEM;
-    if (stack_vaddr == 0) {
-    fail:
-      paging_set_cr3(cr3);
-      interrupt_restore(eflags);
-      kunlock(&process_tree_lock);
-      return err;
-    }
+    CHECK_RESTORE(stack_vaddr == 0, "Failed to allocate thread stack virtual page.", ENOMEM);
     uint32_t stack_paddr = pmm_alloc(1);
-    if (stack_paddr == 0) { err = ENOMEM; goto fail; }
+    CHECK_RESTORE(stack_paddr == 0, "Failed to allocate thread stack physical page.", ENOMEM);
 
     page_table_entry_t flags; u_memset(&flags, 0, sizeof(flags));
     flags.rw = 1; flags.user = 1;
     paging_result_t res = paging_map(stack_vaddr, stack_paddr, flags);
-    if (res != PAGING_OK) { err = res; goto fail; }
+    CHECK_RESTORE(res != PAGING_OK, "Failed to map thread stack page.", res);
 
     child->mmap.stack_top = stack_vaddr + PAGE_SIZE - 1;
     child->mmap.stack_bottom = stack_vaddr;
-    child->uregs.ebp = child->mmap.stack_top;
-    child->uregs.esp = child->uregs.ebp;
 
     paging_set_cr3(cr3);
     interrupt_restore(eflags);
+  } else {
+    uint32_t err = paging_clone_process_directory(&(child->cr3), process->cr3);
+    CHECK(err, "Failed to clone page directory.", err);
   }
 
-  list_t *fds = kmalloc(sizeof(list_t));
-  CHECK_UNLOCK(fds == NULL, "No memory.", ENOMEM);
-  u_memset(fds, 0, sizeof(list_t));
-  list_foreach(lchild, process->fds) {
-    process_fd_t *fd = lchild->value;
-    if (fd) ++(fd->refcount);
-    list_push_back(fds, fd);
-  }
-  child->fds = fds;
+  for (uint32_t i = 0; i < MAX_PROCESS_FDS; ++i)
+    if (child->fds[i]) child->fds[i]->refcount++;
 
   uint32_t eflags = interrupt_save_disable();
   uint32_t kstack_vaddr = paging_prev_vaddr(1, FIRST_PT_VADDR);
-  CHECK_UNLOCK(kstack_vaddr == 0, "No memory.", ENOMEM);
+  CHECK(kstack_vaddr == 0, "No memory.", ENOMEM);
   uint32_t kstack_paddr = pmm_alloc(1);
-  CHECK_UNLOCK(kstack_paddr == 0, "No memory.", ENOMEM);
+  CHECK(kstack_paddr == 0, "No memory.", ENOMEM);
   page_table_entry_t flags; u_memset(&flags, 0, sizeof(flags));
   flags.rw = 1;
   paging_result_t res = paging_map(kstack_vaddr, kstack_paddr, flags);
-  CHECK_UNLOCK(res != PAGING_OK, "Failed to map kernel stack.", res);
+  CHECK(res != PAGING_OK, "Failed to map kernel stack.", res);
   child->mmap.kernel_stack_bottom = kstack_vaddr;
   child->mmap.kernel_stack_top = kstack_vaddr + PAGE_SIZE - 1;
   interrupt_restore(eflags);
 
-  kunlock(&process_tree_lock);
   return 0;
 }
-
-#define CHECK_RESTORE(err, msg, code) if ((err)) {              \
-    log_error("process", msg "\n"); interrupt_restore(eflags);  \
-    paging_set_cr3(cr3); return (code);                         \
-  }
 
 // Overwrite a process image.
 uint32_t process_load(process_t *process, process_image_t img)
@@ -565,53 +538,6 @@ uint32_t process_load(process_t *process, process_image_t img)
   process->uregs.eip = img.entry;
   process->uregs.esp = process->mmap.stack_top;
 
-  interrupt_restore(eflags);
-  return 0;
-}
-
-// Set a process's argv and envp.
-uint32_t process_set_env(process_t *p, char *argv[], char *envp[])
-{
-  uint32_t eflags = interrupt_save_disable();
-  uint32_t cr3 = paging_get_cr3();
-  paging_set_cr3(p->cr3);
-
-  uint32_t argc = 0;
-  for (; argv[argc]; ++argc);
-  uint32_t argv_vaddr = ENV_VADDR + ((argc + 1) * sizeof(char *));
-  uint32_t argv_idx = 0;
-  uint32_t *ptr_ptr = (uint32_t *)ENV_VADDR;
-  uint32_t ptr = argv_vaddr;
-  for (; argv_idx < argc && ptr < ENV_VADDR + (PAGE_SIZE / 2); ++argv_idx) {
-    ptr_ptr = (uint32_t *)(ENV_VADDR + (argv_idx * (sizeof(char *))));
-    *ptr_ptr = ptr;
-    u_memcpy((char *)ptr, argv[argv_idx], u_strlen(argv[argv_idx]) + 1);
-    ptr += u_strlen(argv[argv_idx]) + 1;
-  }
-  ptr_ptr = (uint32_t *)(ENV_VADDR + (argc * (sizeof(char *))));
-  *ptr_ptr = 0;
-
-  uint32_t envc = 0;
-  for (; envp[envc]; ++envc);
-  uint32_t envp_vaddr = ENV_VADDR + (PAGE_SIZE / 2)
-    + ((envc + 1) * sizeof(char *));
-  uint32_t envp_idx = 0;
-  ptr_ptr = (uint32_t *)(ENV_VADDR + (PAGE_SIZE / 2));
-  ptr = envp_vaddr;
-  for (; envp_idx < envc && ptr < KERNEL_START_VADDR; ++envp_idx) {
-    ptr_ptr = (uint32_t *)(
-      ENV_VADDR + (PAGE_SIZE / 2) + (envp_idx * (sizeof(char *)))
-      );
-    *ptr_ptr = ptr;
-    u_memcpy((char *)ptr, envp[envp_idx], u_strlen(envp[envp_idx]) + 1);
-    ptr += u_strlen(envp[envp_idx]) + 1;
-  }
-  ptr_ptr = (uint32_t *)(
-    ENV_VADDR + (PAGE_SIZE / 2) + (envc * (sizeof(char *)))
-    );
-  *ptr_ptr = 0;
-
-  paging_set_cr3(cr3);
   interrupt_restore(eflags);
   return 0;
 }
@@ -706,19 +632,16 @@ static uint32_t process_destroy(process_t *process)
     }
   }
 
-  while (process->fds->size) {
-    list_node_t *head = process->fds->head;
-    process_fd_t *fd = head->value;
-    list_remove(process->fds, head, 0);
-    kfree(head);
+  for (uint32_t i = 0; i < MAX_PROCESS_FDS; ++i) {
+    process_fd_t *fd = process->fds[i];
     if (fd == NULL) continue;
-    --(fd->refcount);
-    if (fd->refcount) continue;
-    fs_close(&(fd->node));
-    kfree(fd);
+    fd->refcount--;
+    if (fd->refcount == 0) {
+      fs_close(&(fd->node));
+      kfree(fd);
+    }
   }
 
-  kfree(process->fds);
   list_destroy(process->ui_event_queue);
   kfree(process->wd);
   kfree(tree_node);
