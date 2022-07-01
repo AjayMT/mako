@@ -19,13 +19,13 @@
 #define CHECK(err, msg, code) if ((err)) {      \
     log_error("ui", msg "\n"); return (code);   \
   }
-#define CHECK_UNLOCK_R(err, msg, code) if ((err)) {         \
-    log_error("ui", msg "\n"); kunlock(&responders_lock);   \
-    return (code);                                          \
+#define CHECK_UNLOCK_R(err, msg, code) if ((err)) {             \
+    log_error("ui", msg "\n"); kunlock(&responders_lock);       \
+    return (code);                                              \
   }
-#define CHECK_UNLOCK_F(err, msg, code) if ((err)) {         \
-    log_error("ui", msg "\n"); kunlock(&free_windows_lock); \
-    return (code);                                          \
+#define CHECK_UNLOCK_F(err, msg, code) if ((err)) {             \
+    log_error("ui", msg "\n"); kunlock(&free_windows_lock);     \
+    return (code);                                              \
   }
 
 static uint32_t buf_vaddr = 0;
@@ -70,7 +70,7 @@ static uint32_t ui_dispatch_resize_event(ui_responder_t *r)
   klock(&(r->lock));
   list_push_back(r->process->ui_event_queue, ev);
   kunlock(&(r->lock));
-  r->process->is_running = 1;
+  process_schedule(r->process);
   return 0;
 }
 
@@ -87,7 +87,7 @@ uint32_t ui_dispatch_keyboard_event(uint8_t code)
   klock(&(key_responder->lock));
   list_push_back(key_responder->process->ui_event_queue, ev);
   kunlock(&(key_responder->lock));
-  key_responder->process->is_running = 1;
+  process_schedule(key_responder->process);
 
   return 0;
 }
@@ -189,15 +189,15 @@ uint32_t ui_make_responder(process_t *p)
   klock(&(r->lock));
   list_push_back(r->process->ui_event_queue, ev);
   kunlock(&(r->lock));
-  r->process->is_running = 1;
+  process_schedule(r->process);
 
   kunlock(&responders_lock);
   return 0;
 }
 
-#define CHECK_UNLOCK(err, msg, code) if ((err)) {           \
-    log_error("ui", msg "\n"); kunlock(&free_windows_lock); \
-    kunlock(&responders_lock); return (code);               \
+#define CHECK_UNLOCK(err, msg, code) if ((err)) {               \
+    log_error("ui", msg "\n"); kunlock(&free_windows_lock);     \
+    kunlock(&responders_lock); return (code);                   \
   }
 
 uint32_t ui_kill(process_t *p)
@@ -346,7 +346,7 @@ success:
     klock(&(key_responder->lock));
     list_push_back(key_responder->process->ui_event_queue, ev);
     kunlock(&(key_responder->lock));
-    key_responder->process->is_running = 1;
+    process_schedule(key_responder->process);
   }
   list_remove(responders, r->list_node, 1);
   kunlock(&free_windows_lock);
@@ -404,6 +404,6 @@ uint32_t ui_yield(process_t *p)
   klock(&(key_responder->lock));
   list_push_back(key_responder->process->ui_event_queue, ev);
   kunlock(&(key_responder->lock));
-  key_responder->process->is_running = 1;
+  process_schedule(key_responder->process);
   return 0;
 }

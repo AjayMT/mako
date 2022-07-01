@@ -14,7 +14,6 @@
 #include "ds.h"
 
 #define PROCESS_NAME_LEN 256
-#define MAX_PROCESS_COUNT 64
 #define MAX_PROCESS_FDS 16
 #define PROCESS_ENV_VADDR (KERNEL_START_VADDR - PAGE_SIZE)
 
@@ -74,9 +73,7 @@ typedef struct process_s {
   char *wd;
   process_fd_t *fds[MAX_PROCESS_FDS]; // TODO protect FDs and WD with a lock
 
-  uint8_t is_running;
   uint8_t is_thread;
-  uint8_t is_finished;
   uint8_t in_kernel;
   process_registers_t uregs;
   process_registers_t kregs;
@@ -99,6 +96,7 @@ typedef struct process_s {
   uint8_t ui_event_pending;
   process_registers_t saved_ui_regs;
 
+  volatile uint32_t tree_lock;
   tree_node_t *tree_node;
   list_node_t *list_node;
 } process_t;
@@ -133,11 +131,8 @@ void update_current_process_registers(cpu_state_t, stack_state_t);
 // Implemented in process.s.
 void enter_usermode();
 
-// Switch processes.
-void process_switch(process_t *);
-
-// Create the `init` process.
-uint32_t process_create_init(process_t *, process_image_t);
+// Create and schedule the `init` process.
+uint32_t process_create_schedule_init(process_image_t);
 
 // Overwrite process image.
 uint32_t process_load(process_t *, process_image_t);
@@ -148,7 +143,10 @@ uint32_t process_fork(process_t *, process_t *, uint8_t);
 // Add a process to the scheduler queue.
 void process_schedule(process_t *);
 
-// Mark a process as finished, deal with children.
-void process_finish(process_t *);
+// Remove a process from the scheduler queue.
+void process_unschedule(process_t *);
+
+// Kill a process.
+void process_kill(process_t *);
 
 #endif /* _PROCESS_H_ */

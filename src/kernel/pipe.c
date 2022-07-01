@@ -58,7 +58,7 @@ static void pipe_wait(pipe_t *self, uint32_t size)
   disable_interrupts();
   kunlock(&(self->readers_lock));
 
-  if (updated) current_process->is_running = 0;
+  if (updated) process_unschedule(current_process);
   pipe_suspend(&(current_process->kregs), updated);
 }
 
@@ -115,7 +115,6 @@ static uint32_t pipe_write(fs_node_t *node, uint32_t offset, uint32_t size, uint
   for (uint32_t i = 0; i < MAX_READERS; ++i) {
     if (self->readers[i].process == NULL) continue;
 
-    self->readers[i].process->is_running = 1;
     process_schedule(self->readers[i].process);
     self->readers[i].process = NULL;
     if (self->readers[i].size >= remaining_size) break;
@@ -163,7 +162,6 @@ static void pipe_close_write(fs_node_t *node)
   for (uint32_t i = 0; i < MAX_READERS; ++i) {
     if (self->readers[i].process == NULL) continue;
 
-    self->readers[i].process->is_running = 1;
     process_schedule(self->readers[i].process);
     self->readers[i].process = NULL;
   }

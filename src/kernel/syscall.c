@@ -180,12 +180,10 @@ static void syscall_msleep(uint32_t duration)
   process_t *current = process_current();
   current->uregs.eax = 0;
   uint32_t wake_time = pit_get_time() + duration;
-  current->is_running = 0;
+  process_unschedule(current);
   uint32_t res = process_sleep(current, wake_time);
   if (res) { current->uregs.eax = -res; return; }
   interrupt_restore(eflags);
-
-  while (wake_time > pit_get_time());
 }
 
 static void syscall_exit(uint32_t status)
@@ -193,7 +191,7 @@ static void syscall_exit(uint32_t status)
   process_t *current = process_current();
   current->exited = 1;
   current->exit_status = status;
-  process_finish(current);
+  process_kill(current);
   process_switch_next();
 }
 
@@ -461,7 +459,7 @@ static void syscall_wait(uint32_t pid, struct _wait_result *w)
   process_t *current = process_current();
   process_t *target = process_from_pid(pid);
   if (target == NULL) { current->uregs.eax = -ESRCH; return; }
-  while (target->is_finished == 0);
+  while (target->list_node);
   w->exited = target->exited;
   w->status = target->exit_status;
   w->signal = target->signal_pending;
@@ -606,7 +604,7 @@ static void syscall_ui_wait()
 {
   disable_interrupts();
   process_t *current = process_current();
-  current->is_running = 0;
+  process_unschedule(current);
   current->in_kernel = 0;
   process_switch_next();
 }

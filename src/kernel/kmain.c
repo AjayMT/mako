@@ -84,8 +84,7 @@ void kmain(
   }
 
   interrupt_init();
-  enable_interrupts();
-  uint32_t eflags = interrupt_save_disable();
+  disable_interrupts();
 
   serial_init(SERIAL_COM1_BASE);
   fpu_init();
@@ -152,13 +151,11 @@ void kmain(
   res = elf_load(&p, init_text);
   CHECK(res, "init ELF");
 
-  process_t *init = kmalloc(sizeof(process_t));
-  process_create_init(init, p);
-  process_schedule(init);
+  process_create_schedule_init(p);
 
   kfree(init_text);
   kfree(p.text);
   kfree(p.data);
 
-  interrupt_restore(eflags);
+  enable_interrupts();
 }
