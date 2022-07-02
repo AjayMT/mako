@@ -168,7 +168,6 @@ static void gp_fault_handler(
     ss.eip, info.error_code, ss.cs
     );
   process_kill(current_process);
-  current_process->exited = 0;
   current_process->signal_pending = SIGILL;
   process_switch_next();
 }
@@ -210,7 +209,6 @@ static void page_fault_handler(
   // Yikes, kernel page fault.
 die:
   process_kill(current_process);
-  current_process->exited = 0;
   current_process->signal_pending = SIGSEGV;
   process_switch_next();
 }
@@ -574,6 +572,11 @@ void process_kill(process_t *process)
 
   kfree(tree_node); process->tree_node = NULL;
 
+  // TODO wake all waiters
+
+  klock(&destroy_queue_lock);
+  uint32_t eflags = interrupt_save_disable();
+
   for (uint32_t i = 0; i < MAX_PROCESS_FDS; ++i) {
     process_fd_t *fd = process->fds[i];
     if (fd == NULL) continue;
@@ -584,16 +587,11 @@ void process_kill(process_t *process)
     }
   }
 
-  // TODO wake all waiters
-
-  klock(&destroy_queue_lock);
-  uint32_t eflags = interrupt_save_disable();
   process_unschedule(process);
   list_push_back(destroy_queue, process);
+  process_schedule(destroyer_process);
   interrupt_restore(eflags);
   kunlock(&destroy_queue_lock);
-
-  process_schedule(destroyer_process);
 }
 
 // Destroys dead processes.

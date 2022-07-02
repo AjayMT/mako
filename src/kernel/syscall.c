@@ -175,14 +175,12 @@ static void syscall_execve(char *path, char *argv[], char *envp[])
 
 static void syscall_msleep(uint32_t duration)
 {
-  uint32_t eflags = interrupt_save_disable();
   process_t *current = process_current();
   current->uregs.eax = 0;
   uint32_t wake_time = pit_get_time() + duration;
-  process_unschedule(current);
   uint32_t res = process_sleep(current, wake_time);
   if (res) { current->uregs.eax = -res; return; }
-  interrupt_restore(eflags);
+  process_unschedule(current);
 }
 
 static void syscall_exit(uint32_t status)
@@ -289,19 +287,26 @@ static void syscall_open(char *path, uint32_t flags, uint32_t mode)
   fd->refcount = 1;
 
   current->uregs.eax = -EMFILE;
+  klock(&current->fd_lock);
   for (uint32_t i = 0; i < MAX_PROCESS_FDS; ++i) {
     if (current->fds[i] != NULL) continue;
     current->fds[i] = fd;
     current->uregs.eax = i;
     break;
   }
+  kunlock(&current->fd_lock);
   if ((int32_t)current->uregs.eax == -EMFILE) kfree(fd);
 }
+
+#define CHECK_FDNUM                                                     \
+  if (fdnum >= MAX_PROCESS_FDS || current->fds[fdnum] == NULL) {        \
+    kunlock(&current->fd_lock); current->uregs.eax = -EBADF; return;    \
+  }
 
 static void syscall_close(int32_t fdnum)
 {
   process_t *current = process_current();
-  if (fdnum >= MAX_PROCESS_FDS || current->fds[fdnum] == NULL) { current->uregs.eax = -EBADF; return; }
+  klock(&current->fd_lock); CHECK_FDNUM;
   process_fd_t *fd = current->fds[fdnum];
   --(fd->refcount);
   if (fd->refcount == 0) {
@@ -309,37 +314,41 @@ static void syscall_close(int32_t fdnum)
     kfree(fd);
   }
   current->fds[fdnum] = NULL;
+  kunlock(&current->fd_lock);
   current->uregs.eax = 0;
 }
 
 static void syscall_read(uint32_t fdnum, uint8_t *buf, uint32_t size)
 {
   process_t *current = process_current();
-  if (fdnum >= MAX_PROCESS_FDS || current->fds[fdnum] == NULL) { current->uregs.eax = -EBADF; return; }
+  klock(&current->fd_lock); CHECK_FDNUM;
   process_fd_t *fd = current->fds[fdnum];
   int32_t res = fs_read(&(fd->node), fd->offset, size, buf);
   if (res < 0) { current->uregs.eax = res; return; }
   fd->offset += res;
+  kunlock(&current->fd_lock);
   current->uregs.eax = res;
 }
 
 static void syscall_write(uint32_t fdnum, uint8_t *buf, uint32_t size)
 {
   process_t *current = process_current();
-  if (fdnum >= MAX_PROCESS_FDS || current->fds[fdnum] == NULL) { current->uregs.eax = -EBADF; return; }
+  klock(&current->fd_lock); CHECK_FDNUM;
   process_fd_t *fd = current->fds[fdnum];
   int32_t res = fs_write(&(fd->node), fd->offset, size, buf);
   if (res < 0) { current->uregs.eax = res; return; }
   fd->offset += res;
+  kunlock(&current->fd_lock);
   current->uregs.eax = res;
 }
 
 static void syscall_readdir(int32_t fdnum, struct dirent *ent, uint32_t index)
 {
   process_t *current = process_current();
-  if (fdnum >= MAX_PROCESS_FDS || current->fds[fdnum] == NULL) { current->uregs.eax = -EBADF; return; }
+  klock(&current->fd_lock); CHECK_FDNUM;
   process_fd_t *fd = current->fds[fdnum];
   struct dirent *res = fs_readdir(&(fd->node), index);
+  kunlock(&current->fd_lock);
   if (res == NULL) { current->uregs.eax = -ENOENT; return; }
   u_memcpy(ent, res, sizeof(struct dirent));
   kfree(res);
@@ -391,20 +400,21 @@ static void syscall_pipe(uint32_t *read_fdnum, uint32_t *write_fdnum)
   if (res) { current->uregs.eax = -res; return; }
 
   current->uregs.eax = -EMFILE;
-  uint32_t i = 0;
-  for (; i < MAX_PROCESS_FDS; ++i) {
+  klock(&current->fd_lock);
+  int32_t rfd = -1, wfd = -1;
+  for (uint32_t i = 0; i < MAX_PROCESS_FDS; ++i) {
     if (current->fds[i] != NULL) continue;
-    current->fds[i] = read_fd;
-    *read_fdnum = i;
-    break;
+    if (rfd == -1) rfd = i;
+    else if (wfd == -1) { wfd = i; break; }
   }
-  for (; i < MAX_PROCESS_FDS; ++i) {
-    if (current->fds[i] != NULL) continue;
-    current->fds[i] = write_fd;
-    *write_fdnum = i;
+  if (rfd != -1 && wfd != -1) {
+    current->fds[rfd] = read_fd;
+    *read_fdnum = rfd;
+    current->fds[wfd] = write_fd;
+    *write_fdnum = wfd;
     current->uregs.eax = 0;
-    break;
   }
+  kunlock(&current->fd_lock);
 
   if (current->uregs.eax != 0) {
     fs_close(&(read_fd->node)); fs_close(&(write_fd->node));
@@ -416,12 +426,19 @@ static void syscall_movefd(uint32_t fdn1, uint32_t fdn2)
 {
   process_t *current = process_current();
 
+  klock(&current->fd_lock);
   if (fdn1 >= MAX_PROCESS_FDS || current->fds[fdn1] == NULL || fdn2 >= MAX_PROCESS_FDS) {
-    current->uregs.eax = -EBADF; return;
+    kunlock(&current->fd_lock); current->uregs.eax = -EBADF; return;
   }
-  syscall_close(fdn2);
+  process_fd_t *fd2 = current->fds[fdn2];
+  --(fd2->refcount);
+  if (fd2->refcount == 0) {
+    fs_close(&(fd2->node));
+    kfree(fd2);
+  }
   current->fds[fdn2] = current->fds[fdn1];
   current->fds[fdn1] = NULL;
+  kunlock(&current->fd_lock);
   current->uregs.eax = 0;
 }
 
@@ -468,8 +485,7 @@ static void syscall_wait(uint32_t pid, struct _wait_result *w)
 static void syscall_fstat(uint32_t fdnum, struct stat *st)
 {
   process_t *current = process_current();
-  if (fdnum >= MAX_PROCESS_FDS || current->fds[fdnum] == NULL) { current->uregs.eax = -EBADF; return; }
-
+  klock(&current->fd_lock); CHECK_FDNUM;
   process_fd_t *fd = current->fds[fdnum];
   u_memset(st, 0, sizeof(struct stat));
   st->st_dev = fd->node.flags;
@@ -482,6 +498,7 @@ static void syscall_fstat(uint32_t fdnum, struct stat *st)
   st->st_atime = fd->node.atime;
   st->st_mtime = fd->node.mtime;
   st->st_ctime = fd->node.ctime;
+  kunlock(&current->fd_lock);
   st->st_blksize = 1024;
   current->uregs.eax = 0;
 }
@@ -507,14 +524,15 @@ static void syscall_lstat(char *path, struct stat *st)
   current->uregs.eax = 0;
 }
 
-static void syscall_lseek(uint32_t fd, int32_t offset, uint32_t whence)
+static void syscall_lseek(uint32_t fdnum, int32_t offset, uint32_t whence)
 {
   process_t *current = process_current();
-  if (fd >= MAX_PROCESS_FDS || current->fds[fd] == NULL) { current->uregs.eax = -EBADF; return; }
-  process_fd_t *pfd = current->fds[fd];
+  klock(&current->fd_lock); CHECK_FDNUM;
+  process_fd_t *pfd = current->fds[fdnum];
   if (whence == 1) pfd->offset += offset;
   else if (whence == 2) pfd->offset = pfd->node.length + offset;
   else pfd->offset = offset;
+  kunlock(&current->fd_lock);
   current->uregs.eax = pfd->offset;
 }
 
@@ -540,7 +558,7 @@ static void syscall_thread(uint32_t eip, uint32_t data)
 static void syscall_dup(uint32_t fdnum)
 {
   process_t *current = process_current();
-  if (fdnum >= MAX_PROCESS_FDS || current->fds[fdnum] == NULL) { current->uregs.eax = -EBADF; return; }
+  klock(&current->fd_lock); CHECK_FDNUM;
   process_fd_t *fd = current->fds[fdnum];
 
   current->uregs.eax = -EMFILE;
@@ -551,6 +569,7 @@ static void syscall_dup(uint32_t fdnum)
     current->uregs.eax = i;
     break;
   }
+  kunlock(&current->fd_lock);
 }
 
 static void syscall_thread_register(uint32_t start)

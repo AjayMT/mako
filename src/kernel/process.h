@@ -69,7 +69,8 @@ typedef struct process_s {
   uint32_t gid;
 
   char *wd;
-  process_fd_t *fds[MAX_PROCESS_FDS]; // TODO protect FDs and WD with a lock
+  process_fd_t *fds[MAX_PROCESS_FDS];
+  volatile uint32_t fd_lock;
 
   uint8_t is_thread;
   uint8_t in_kernel;
