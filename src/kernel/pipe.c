@@ -1,5 +1,5 @@
 
-// pipe.h
+// pipe.c
 //
 // Pipe for IPC.
 //

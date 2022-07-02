@@ -336,7 +336,6 @@ uint32_t process_create_schedule_init(process_image_t img)
 {
   process_t *init = kmalloc(sizeof(process_t)); CHECK(init == NULL, "No memory.", ENOMEM);
   u_memset(init, 0, sizeof(process_t));
-  u_memcpy(init->name, "init", 5);
   init->wd = kmalloc(2); CHECK(init->wd == NULL, "No memory.", ENOMEM);
   u_memcpy(init->wd, "/", u_strlen("/") + 1);
   init->ui_event_queue = kmalloc(sizeof(list_t)); CHECK(init->ui_event_queue == NULL, "No memory.", ENOMEM);

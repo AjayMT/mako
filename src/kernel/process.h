@@ -13,7 +13,6 @@
 #include "fs.h"
 #include "ds.h"
 
-#define PROCESS_NAME_LEN 256
 #define MAX_PROCESS_FDS 16
 #define PROCESS_ENV_VADDR (KERNEL_START_VADDR - PAGE_SIZE)
 
@@ -68,7 +67,6 @@ typedef struct process_fd_s {
 typedef struct process_s {
   uint32_t pid;
   uint32_t gid;
-  char name[PROCESS_NAME_LEN];
 
   char *wd;
   process_fd_t *fds[MAX_PROCESS_FDS]; // TODO protect FDs and WD with a lock

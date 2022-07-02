@@ -132,7 +132,6 @@ static void syscall_execve(char *path, char *argv[], char *envp[])
     kfree(p.text);
     kfree(p.data);
     kfree(buf);
-    u_memcpy(current->name, node.name, PROCESS_NAME_LEN);
     return;
   }
 
