@@ -654,6 +654,18 @@ static void syscall_resolve(char *outpath, char *inpath, size_t len)
 static void syscall_systime()
 { process_current()->uregs.eax = pit_get_time(); }
 
+static void syscall_priority(int32_t prio)
+{
+  process_t *current = process_current();
+  if (prio < 0) { current->uregs.eax = current->priority; return; }
+  if (prio > MAX_PROCESS_PRIORITY) prio = MAX_PROCESS_PRIORITY;
+  uint32_t eflags = interrupt_save_disable();
+  process_unschedule(current);
+  current->priority = prio;
+  process_schedule(current);
+  interrupt_restore(eflags);
+}
+
 static syscall_t syscall_table[] = {
   syscall_exit,
   syscall_fork,
@@ -696,7 +708,8 @@ static syscall_t syscall_table[] = {
   syscall_ui_yield,
   syscall_rename,
   syscall_resolve,
-  syscall_systime
+  syscall_systime,
+  syscall_priority
 };
 
 process_registers_t *syscall_handler(cpu_state_t cs, stack_state_t ss)

@@ -82,3 +82,6 @@ void thread_unlock(thread_lock_t l)
 
 uint32_t systime()
 { return _syscall0(SYSCALL_SYSTIME); }
+
+uint32_t priority(int32_t p)
+{ return _syscall1(SYSCALL_PRIORITY, p); }

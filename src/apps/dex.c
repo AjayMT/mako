@@ -872,6 +872,8 @@ static void update_footer_text()
 
 int main(int argc, char *argv[])
 {
+  priority(1);
+
   if (argc > 1) {
     char buf[1024];
     resolve(buf, argv[1], 1024);

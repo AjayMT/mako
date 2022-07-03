@@ -26,6 +26,7 @@ void yield();
 void thread_lock(thread_lock_t);
 void thread_unlock(thread_lock_t);
 uint32_t systime();
+uint32_t priority(int32_t);
 
 void _init_thread();
 

@@ -44,10 +44,11 @@ static uint32_t next_pid = 0;
 static process_t *init_process = NULL;
 static process_t *destroyer_process = NULL;
 static process_t *current_process = NULL;
-static list_t *running_list = NULL;
 static list_t *sleep_queue = NULL;
 static list_t *destroy_queue = NULL;
 static volatile uint32_t destroy_queue_lock = 0;
+
+static list_t *running_lists[MAX_PROCESS_PRIORITY + 1];
 
 // Implemented in process.s.
 void resume_kernel(process_registers_t *);
@@ -100,6 +101,11 @@ static void process_resume(process_t *process)
 uint32_t process_switch_next()
 {
   uint32_t eflags = interrupt_save_disable();
+  list_t *running_list;
+  for (int32_t i = MAX_PROCESS_PRIORITY; i >= 0; --i) {
+    running_list = running_lists[i];
+    if (running_list->size) break;
+  }
   if (running_list->size == 0) {
     interrupt_restore(eflags);
     log_error("process", "Empty running list.");
@@ -220,9 +226,9 @@ static void scheduler_interrupt_handler(
 {
   uint32_t eflags = interrupt_save_disable();
 
-  if (running_list->size == 0) {
-    interrupt_restore(eflags); return;
-  }
+  uint32_t running_count = 0;
+  for (uint32_t i = 0; i <= MAX_PROCESS_PRIORITY; ++i) running_count += running_lists[i]->size;
+  if (running_count == 0) { interrupt_restore(eflags); return; }
 
   if (current_process) update_current_process_registers(cstate, sstate);
 
@@ -246,9 +252,12 @@ static uint32_t process_create_destroyer();
 // Initialize the scheduler and other things.
 uint32_t process_init()
 {
-  running_list = kmalloc(sizeof(list_t));
-  CHECK(running_list == NULL, "No memory.", ENOMEM);
-  u_memset(running_list, 0, sizeof(list_t));
+  for (uint32_t i = 0; i <= MAX_PROCESS_PRIORITY; ++i) {
+    running_lists[i] = kmalloc(sizeof(list_t));
+    CHECK(running_lists[i] == NULL, "No memory.", ENOMEM);
+    u_memset(running_lists[i], 0, sizeof(list_t));
+  }
+
   sleep_queue = kmalloc(sizeof(list_t));
   CHECK(sleep_queue == NULL, "No memory.", ENOMEM);
   u_memset(sleep_queue, 0, sizeof(list_t));
@@ -515,8 +524,8 @@ void process_schedule(process_t *process)
 {
   uint32_t eflags = interrupt_save_disable();
   if (process->list_node) { interrupt_restore(eflags); return; }
-  list_push_back(running_list, process);
-  process->list_node = running_list->tail;
+  list_push_front(running_lists[process->priority], process);
+  process->list_node = running_lists[process->priority]->head;
   interrupt_restore(eflags);
 }
 
@@ -525,7 +534,7 @@ void process_unschedule(process_t *process)
 {
   uint32_t eflags = interrupt_save_disable();
   if (process->list_node == NULL) { interrupt_restore(eflags); return; }
-  list_remove(running_list, process->list_node, 0);
+  list_remove(running_lists[process->priority], process->list_node, 0);
   kfree(process->list_node);
   process->list_node = NULL;
   interrupt_restore(eflags);

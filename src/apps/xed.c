@@ -1085,6 +1085,8 @@ static void ui_handler(ui_event_t ev)
 
 int main(int argc, char *argv[])
 {
+  priority(1);
+
   if (argc > 1) {
     char buf[1024];
     int32_t res = resolve(buf, argv[1], 1024);
@@ -1092,7 +1094,6 @@ int main(int argc, char *argv[])
   }
 
   memset(footer_text, 0, sizeof(footer_text));
-  // memset(line_lengths, 0, sizeof(line_lengths));
   memset(footer_field, 0, sizeof(footer_field));
   load_file(); buffer_dirty = 0;
   cs = CS_NORMAL;

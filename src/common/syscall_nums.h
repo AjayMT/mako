@@ -50,5 +50,6 @@
 #define SYSCALL_RENAME            39
 #define SYSCALL_RESOLVE           40
 #define SYSCALL_SYSTIME           41
+#define SYSCALL_PRIORITY          42
 
 #endif /* _SYSCALL_NUMS_H_ */

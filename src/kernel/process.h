@@ -13,6 +13,7 @@
 #include "fs.h"
 #include "ds.h"
 
+#define MAX_PROCESS_PRIORITY 2
 #define MAX_PROCESS_FDS 16
 #define PROCESS_ENV_VADDR (KERNEL_START_VADDR - PAGE_SIZE)
 
