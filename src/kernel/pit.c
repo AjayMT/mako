@@ -5,6 +5,7 @@
 //
 // Author: Ajay Tatachar <ajaymt2@illinois.edu>
 
+#include <stddef.h>
 #include "../common/stdint.h"
 #include "interrupt.h"
 #include "io.h"
@@ -16,24 +17,13 @@ static const uint16_t PIT_CHANNEL_2_DATA = 0x42;
 static const uint16_t PIT_COMMAND        = 0x43;
 static const uint32_t PIT_FREQUENCY      = 0x1234de;
 
-// Time since boot in ms.
-static uint32_t time = 0;
-
-// Interrupt handler.
-static void pit_interrupt_handler()
-{ ++time; }
-
-uint32_t pit_get_time()
-{ return time; }
-
 // Initialize the PIT.
 void pit_init()
 {
   uint32_t eflags = interrupt_save_disable();
   uint8_t data = (1 << 5) | (1 << 4) | (1 << 2) | (1 << 1);
   outb(PIT_COMMAND, data);
-  pit_set_interval(1);
-  register_interrupt_handler(32, pit_interrupt_handler);
+  pit_set_interval(20);
   interrupt_restore(eflags);
 }
 

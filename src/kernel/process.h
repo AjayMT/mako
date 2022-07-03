@@ -59,6 +59,7 @@ typedef struct process_image_s {
 
 // File descriptor.
 typedef struct process_fd_s {
+  // TODO protect offset and refcount with a lock
   fs_node_t node;
   uint32_t offset;
   uint32_t refcount;
@@ -96,6 +97,7 @@ typedef struct process_s {
   uint32_t exit_status;
   process_registers_t saved_signal_regs;
 
+  // TODO protect UI state with a lock
   process_ui_state_t ui_state;
   uint32_t ui_eip;
   uint32_t ui_event_buffer;

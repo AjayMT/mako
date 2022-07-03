@@ -106,11 +106,7 @@ uint32_t process_switch_next()
     running_list = running_lists[i];
     if (running_list->size) break;
   }
-  if (running_list->size == 0) {
-    interrupt_restore(eflags);
-    log_error("process", "Empty running list.");
-    return 1;
-  }
+  if (running_list->size == 0) { interrupt_restore(eflags); return 1; }
 
   process_t *next = running_list->head->value;
   uint32_t res = paging_copy_kernel_space(next->cr3);
@@ -226,17 +222,12 @@ static void scheduler_interrupt_handler(
 {
   uint32_t eflags = interrupt_save_disable();
 
-  uint32_t running_count = 0;
-  for (uint32_t i = 0; i <= MAX_PROCESS_PRIORITY; ++i) running_count += running_lists[i]->size;
-  if (running_count == 0) { interrupt_restore(eflags); return; }
-
   if (current_process) update_current_process_registers(cstate, sstate);
 
   while (sleep_queue->size) {
     process_sleep_node_t *sleeper = sleep_queue->head->value;
-    uint32_t current_time = pit_get_time();
-    // Each RTC tick is approximately 1 ms.
-    if ((int32_t)(sleeper->wake_time - current_time) <= 1) {
+    uint32_t current_time = rtc_get_time();
+    if (current_time >= sleeper->wake_time) {
       process_schedule(sleeper->process);
       list_pop_front(sleep_queue);
     } else break;
@@ -268,7 +259,7 @@ uint32_t process_init()
   uint32_t err = process_create_destroyer();
   CHECK(err, "Failed to create destroyer.", err);
 
-  rtc_set_handler(scheduler_interrupt_handler);
+  register_interrupt_handler(32, scheduler_interrupt_handler);
   register_interrupt_handler(13, gp_fault_handler);
   register_interrupt_handler(14, page_fault_handler);
 
@@ -305,13 +296,13 @@ process_t *process_from_pid(uint32_t pid)
 // Add a process to the sleep queue.
 uint32_t process_sleep(process_t *p, uint32_t wake_time)
 {
-
   process_sleep_node_t *sleeper = kmalloc(sizeof(process_sleep_node_t));
   CHECK(sleeper == NULL, "Failed to allocate sleep node.", ENOMEM);
   sleeper->process = p;
   sleeper->wake_time = wake_time;
 
-  // This should really be a min heap.
+  // TODO make this a min heap and protect with a lock
+  uint32_t eflags = interrupt_save_disable();
   list_node_t *position = sleep_queue->head;
   list_foreach(lchild, sleep_queue) {
     process_sleep_node_t *node = lchild->value;
@@ -321,6 +312,7 @@ uint32_t process_sleep(process_t *p, uint32_t wake_time)
   }
   if (position == NULL) list_push_back(sleep_queue, sleeper);
   else list_insert_before(sleep_queue, position, sleeper);
+  interrupt_restore(eflags);
 
   return 0;
 }

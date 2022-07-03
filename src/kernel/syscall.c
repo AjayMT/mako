@@ -7,7 +7,7 @@
 
 #include "process.h"
 #include "interrupt.h"
-#include "pit.h"
+#include "rtc.h"
 #include "fs.h"
 #include "pipe.h"
 #include "elf.h"
@@ -177,7 +177,7 @@ static void syscall_msleep(uint32_t duration)
 {
   process_t *current = process_current();
   current->uregs.eax = 0;
-  uint32_t wake_time = pit_get_time() + duration;
+  uint32_t wake_time = rtc_get_time() + duration;
   uint32_t res = process_sleep(current, wake_time);
   if (res) { current->uregs.eax = -res; return; }
   process_unschedule(current);
@@ -247,12 +247,14 @@ static void syscall_signal_register(uint32_t eip)
 static void syscall_signal_resume()
 {
   process_t *current = process_current();
+  uint32_t eflags = interrupt_save_disable();
   u_memcpy(
     &(current->uregs),
     &(current->saved_signal_regs),
     sizeof(process_registers_t)
     );
   current->current_signal = 0;
+  interrupt_restore(eflags);
 }
 
 static void syscall_signal_send(uint32_t pid, uint32_t signum)
@@ -606,11 +608,13 @@ static void syscall_ui_split(ui_split_type_t type)
 static void syscall_ui_resume()
 {
   process_t *current = process_current();
+  uint32_t eflags = interrupt_save_disable();
   u_memcpy(
     &(current->uregs), &(current->saved_ui_regs), sizeof(process_registers_t)
     );
   current->ui_state = PR_UI_NONE;
   list_pop_front(current->ui_event_queue);
+  interrupt_restore(eflags);
 }
 
 static void syscall_ui_swap_buffers(uint32_t buf)
@@ -652,7 +656,7 @@ static void syscall_resolve(char *outpath, char *inpath, size_t len)
 }
 
 static void syscall_systime()
-{ process_current()->uregs.eax = pit_get_time(); }
+{ process_current()->uregs.eax = rtc_get_time(); }
 
 static void syscall_priority(int32_t prio)
 {
@@ -662,6 +666,7 @@ static void syscall_priority(int32_t prio)
   uint32_t eflags = interrupt_save_disable();
   process_unschedule(current);
   current->priority = prio;
+  current->uregs.eax = prio;
   process_schedule(current);
   interrupt_restore(eflags);
 }
