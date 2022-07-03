@@ -63,16 +63,22 @@ typedef struct process_fd_s {
   uint32_t refcount;
 } process_fd_t;
 
+// Process UI state.
+typedef enum {
+  PR_UI_NONE, PR_UI_EVENT, PR_UI_WAIT
+} process_ui_state_t;
+
 // Process structure.
 typedef struct process_s {
   uint32_t pid;
   uint32_t gid;
+  uint8_t is_thread;
 
   char *wd;
   process_fd_t *fds[MAX_PROCESS_FDS];
   volatile uint32_t fd_lock;
 
-  uint8_t is_thread;
+  uint8_t priority;
   uint8_t in_kernel;
   process_registers_t uregs;
   process_registers_t kregs;
@@ -82,17 +88,17 @@ typedef struct process_s {
   uint32_t cr3;
   process_mmap_t mmap;
 
-  uint32_t signal_pending;
   uint32_t next_signal;
+  uint32_t current_signal;
   uint32_t signal_eip;
   uint8_t exited;
   uint32_t exit_status;
   process_registers_t saved_signal_regs;
 
+  process_ui_state_t ui_state;
   uint32_t ui_eip;
   uint32_t ui_event_buffer;
   list_t *ui_event_queue;
-  uint8_t ui_event_pending;
   process_registers_t saved_ui_regs;
 
   volatile uint32_t tree_lock;

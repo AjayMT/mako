@@ -70,7 +70,7 @@ static uint32_t ui_dispatch_resize_event(ui_responder_t *r)
   klock(&(r->lock));
   list_push_back(r->process->ui_event_queue, ev);
   kunlock(&(r->lock));
-  process_schedule(r->process);
+  if (r->process->ui_state == PR_UI_WAIT) process_schedule(r->process);
   return 0;
 }
 
@@ -87,7 +87,8 @@ uint32_t ui_dispatch_keyboard_event(uint8_t code)
   klock(&(key_responder->lock));
   list_push_back(key_responder->process->ui_event_queue, ev);
   kunlock(&(key_responder->lock));
-  process_schedule(key_responder->process);
+  if (key_responder->process->ui_state == PR_UI_WAIT)
+    process_schedule(key_responder->process);
 
   return 0;
 }
@@ -189,7 +190,8 @@ uint32_t ui_make_responder(process_t *p)
   klock(&(r->lock));
   list_push_back(r->process->ui_event_queue, ev);
   kunlock(&(r->lock));
-  process_schedule(r->process);
+  if (r->process->ui_state == PR_UI_WAIT)
+    process_schedule(r->process);
 
   kunlock(&responders_lock);
   return 0;
@@ -346,7 +348,8 @@ success:
     klock(&(key_responder->lock));
     list_push_back(key_responder->process->ui_event_queue, ev);
     kunlock(&(key_responder->lock));
-    process_schedule(key_responder->process);
+    if (key_responder->process->ui_state == PR_UI_WAIT)
+      process_schedule(key_responder->process);
   }
   list_remove(responders, r->list_node, 1);
   kunlock(&free_windows_lock);
@@ -404,6 +407,7 @@ uint32_t ui_yield(process_t *p)
   klock(&(key_responder->lock));
   list_push_back(key_responder->process->ui_event_queue, ev);
   kunlock(&(key_responder->lock));
-  process_schedule(key_responder->process);
+  if (key_responder->process->ui_state == PR_UI_WAIT)
+    process_schedule(key_responder->process);
   return 0;
 }

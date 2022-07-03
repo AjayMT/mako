@@ -129,15 +129,15 @@ uint32_t process_switch_next()
   }
 
   // Jump to signal handler or UI event handler if necessary
-  if (next->next_signal && next->signal_pending == 0) {
+  if (next->next_signal && next->current_signal == 0) {
     u_memcpy(&(next->saved_signal_regs), &(next->uregs), sizeof(process_registers_t));
-    next->signal_pending = next->next_signal;
+    next->current_signal = next->next_signal;
     next->next_signal = 0;
     next->uregs.eip = next->signal_eip;
-    next->uregs.edi = next->signal_pending;
+    next->uregs.edi = next->current_signal;
   } else if (
     next->ui_event_queue->size
-    && next->ui_event_pending == 0
+    && next->ui_state != PR_UI_EVENT
     && next->ui_eip
     && next->ui_event_buffer
     ) {
@@ -150,7 +150,7 @@ uint32_t process_switch_next()
       &(next->saved_ui_regs), &(next->uregs), sizeof(process_registers_t)
       );
     next->uregs.eip = next->ui_eip;
-    next->ui_event_pending = 1;
+    next->ui_state = PR_UI_EVENT;
   }
 
   process_resume(next);
@@ -168,7 +168,7 @@ static void gp_fault_handler(
     ss.eip, info.error_code, ss.cs
     );
   process_kill(current_process);
-  current_process->signal_pending = SIGILL;
+  current_process->current_signal = SIGILL;
   process_switch_next();
 }
 
@@ -209,7 +209,7 @@ static void page_fault_handler(
   // Yikes, kernel page fault.
 die:
   process_kill(current_process);
-  current_process->signal_pending = SIGSEGV;
+  current_process->current_signal = SIGSEGV;
   process_switch_next();
 }
 
@@ -393,7 +393,7 @@ uint32_t process_fork(
   child->list_node = NULL;
   child->ui_event_queue = kmalloc(sizeof(list_t)); CHECK(child->ui_event_queue == NULL, "No memory.", ENOMEM);
   u_memset(child->ui_event_queue, 0, sizeof(list_t));
-  child->ui_eip = 0; child->ui_event_buffer = 0; child->ui_event_pending = 0;
+  child->ui_eip = 0; child->ui_event_buffer = 0; child->ui_state = PR_UI_NONE;
 
   if (is_thread) {
     child->gid = process->gid;

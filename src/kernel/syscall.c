@@ -252,7 +252,7 @@ static void syscall_signal_resume()
     &(current->saved_signal_regs),
     sizeof(process_registers_t)
     );
-  current->signal_pending = 0;
+  current->current_signal = 0;
 }
 
 static void syscall_signal_send(uint32_t pid, uint32_t signum)
@@ -479,7 +479,7 @@ static void syscall_wait(uint32_t pid, struct _wait_result *w)
   while (target->list_node);
   w->exited = target->exited;
   w->status = target->exit_status;
-  w->signal = target->signal_pending;
+  w->signal = target->current_signal;
   current->uregs.eax = pid;
 }
 
@@ -609,7 +609,7 @@ static void syscall_ui_resume()
   u_memcpy(
     &(current->uregs), &(current->saved_ui_regs), sizeof(process_registers_t)
     );
-  current->ui_event_pending = 0;
+  current->ui_state = PR_UI_NONE;
   list_pop_front(current->ui_event_queue);
 }
 
@@ -625,6 +625,7 @@ static void syscall_ui_wait()
   process_t *current = process_current();
   process_unschedule(current);
   current->in_kernel = 0;
+  current->ui_state = PR_UI_WAIT;
   process_switch_next();
 }
 
@@ -716,21 +717,18 @@ process_registers_t *syscall_handler(cpu_state_t cs, stack_state_t ss)
   disable_interrupts();
   current->in_kernel = 0;
 
-  if (current->next_signal && current->signal_pending == 0) {
-    u_memcpy(
-      &(current->saved_signal_regs), &(current->uregs), sizeof(process_registers_t)
-      );
-    current->signal_pending = current->next_signal;
+  if (current->next_signal && current->current_signal == 0) {
+    u_memcpy(&(current->saved_signal_regs), &(current->uregs), sizeof(process_registers_t));
+    current->current_signal = current->next_signal;
     current->next_signal = 0;
     current->uregs.eip = current->signal_eip;
-    current->uregs.edi = current->signal_pending;
+    current->uregs.edi = current->current_signal;
   } else if (
     current->ui_event_queue->size
-    && current->ui_event_pending == 0
+    && current->ui_state != PR_UI_EVENT
     && current->ui_eip
     && current->ui_event_buffer
-    )
-  {
+    ) {
     ui_event_t *next_event = current->ui_event_queue->head->value;
     uint32_t cr3 = paging_get_cr3();
     paging_set_cr3(current->cr3);
@@ -742,7 +740,7 @@ process_registers_t *syscall_handler(cpu_state_t cs, stack_state_t ss)
       &(current->saved_ui_regs), &(current->uregs), sizeof(process_registers_t)
       );
     current->uregs.eip = current->ui_eip;
-    current->ui_event_pending = 1;
+    current->ui_state = PR_UI_EVENT;
   }
 
   return &(current->uregs);
