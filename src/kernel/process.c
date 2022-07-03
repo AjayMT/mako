@@ -379,6 +379,8 @@ uint32_t process_fork(
   )
 {
   u_memcpy(child, process, sizeof(process_t));
+  kunlock(&child->fd_lock);
+  kunlock(&child->tree_lock);
   child->in_kernel = 0;
   child->is_thread = is_thread;
   child->wd = kmalloc(u_strlen(process->wd) + 1); CHECK(child->wd == NULL, "No memory.", ENOMEM);

@@ -324,7 +324,7 @@ static void syscall_read(uint32_t fdnum, uint8_t *buf, uint32_t size)
   klock(&current->fd_lock); CHECK_FDNUM;
   process_fd_t *fd = current->fds[fdnum];
   int32_t res = fs_read(&(fd->node), fd->offset, size, buf);
-  if (res < 0) { current->uregs.eax = res; return; }
+  if (res < 0) { kunlock(&current->fd_lock); current->uregs.eax = res; return; }
   fd->offset += res;
   kunlock(&current->fd_lock);
   current->uregs.eax = res;
@@ -333,10 +333,11 @@ static void syscall_read(uint32_t fdnum, uint8_t *buf, uint32_t size)
 static void syscall_write(uint32_t fdnum, uint8_t *buf, uint32_t size)
 {
   process_t *current = process_current();
-  klock(&current->fd_lock); CHECK_FDNUM;
+  klock(&current->fd_lock);
+  CHECK_FDNUM;
   process_fd_t *fd = current->fds[fdnum];
   int32_t res = fs_write(&(fd->node), fd->offset, size, buf);
-  if (res < 0) { current->uregs.eax = res; return; }
+  if (res < 0) { kunlock(&current->fd_lock); current->uregs.eax = res; return; }
   fd->offset += res;
   kunlock(&current->fd_lock);
   current->uregs.eax = res;
