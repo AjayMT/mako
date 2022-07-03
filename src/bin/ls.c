@@ -7,6 +7,7 @@
 
 #include <dirent.h>
 #include <stdio.h>
+#include <string.h>
 
 int main(int argc, char *argv[])
 {
@@ -17,8 +18,11 @@ int main(int argc, char *argv[])
   if (d == NULL) return 1;
 
   struct dirent *ent = readdir(d);
-  for (; ent != NULL; ent = readdir(d))
-    printf("%s\n", ent->d_name);
+  for (; ent != NULL; ent = readdir(d)) {
+    size_t len = strlen(ent->d_name);
+    fwrite(ent->d_name, 1, len, stdout);
+    putc('\n', stdout);
+  }
 
   return 0;
 }
