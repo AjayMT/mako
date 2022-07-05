@@ -20,7 +20,7 @@
   }
 
 #define MAX_READERS 4
-static const uint32_t DEFAULT_SIZE = 512;
+static const uint32_t DEFAULT_SIZE = 1024;
 
 typedef struct {
   process_t *process;
@@ -67,8 +67,6 @@ static uint32_t pipe_read(fs_node_t *node, uint32_t offset, uint32_t size, uint8
   (void)offset;
   pipe_t *self = node->device;
 
-  if (self->write_closed) return 0;
-
   klock(&(self->lock));
 
   while (self->count == 0 && !self->write_closed) {
@@ -84,8 +82,8 @@ static uint32_t pipe_read(fs_node_t *node, uint32_t offset, uint32_t size, uint8
   }
   self->count -= size;
   node->length = self->count;
-
   kunlock(&(self->lock));
+
   return size;
 }
 
@@ -129,34 +127,36 @@ static void pipe_close_read(fs_node_t *node)
 {
   pipe_t *self = node->device;
 
-  if (self->write_closed) {
-    kfree(self);
-    node->device = NULL;
-    node->length = 0;
-    return;
-  }
-
   klock(&(self->lock));
   kfree(self->buf);
   self->buf = NULL;
   self->size = 0;
   self->count = 0;
   self->head = 0;
-  kunlock(&(self->lock));
+  uint32_t wc = self->write_closed;
+  kunlock(&self->lock);
+
+  if (wc) {
+    kfree(self);
+    node->device = NULL;
+    node->length = 0;
+  }
 }
 
 static void pipe_close_write(fs_node_t *node)
 {
   pipe_t *self = node->device;
 
+  klock(&self->lock);
   if (self->buf == NULL) {
+    kunlock(&self->lock);
     kfree(self);
     node->device = NULL;
     node->length = 0;
     return;
   }
-
   self->write_closed = 1;
+  kunlock(&self->lock);
 
   klock(&(self->readers_lock));
   for (uint32_t i = 0; i < MAX_READERS; ++i) {
