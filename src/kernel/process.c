@@ -8,7 +8,6 @@
 #include <stddef.h>
 #include "../common/stdint.h"
 #include "interrupt.h"
-#include "rtc.h"
 #include "pit.h"
 #include "tss.h"
 #include "ds.h"
@@ -40,6 +39,7 @@ static const uint32_t USER_MODE_CS = 0x18;
 static const uint32_t USER_MODE_DS = 0x20;
 static const uint32_t ENV_VADDR    = KERNEL_START_VADDR - PAGE_SIZE;
 
+// Process tree and sleeping process state.
 static uint32_t next_pid = 0;
 static process_t *init_process = NULL;
 static process_t *destroyer_process = NULL;
@@ -48,6 +48,7 @@ static list_t *sleep_queue = NULL;
 static list_t *destroy_queue = NULL;
 static volatile uint32_t destroy_queue_lock = 0;
 
+// Scheduler queues.
 static list_t *running_lists[MAX_PROCESS_PRIORITY + 1];
 
 // Implemented in process.s.
@@ -175,9 +176,7 @@ static void gp_fault_handler(
 }
 
 // Page fault handler.
-static void page_fault_handler(
-  cpu_state_t cs, idt_info_t info, stack_state_t ss
-  )
+static void page_fault_handler(cpu_state_t cs, idt_info_t info, stack_state_t ss)
 {
   uint32_t vaddr;
   asm("movl %%cr2, %0" : "=r"(vaddr));
@@ -185,7 +184,7 @@ static void page_fault_handler(
     "process", "eip %x: page fault %x vaddr %x esp %x pid %u\n",
     ss.eip, info.error_code, vaddr, ss.user_esp, current_process ? current_process->pid : 0
     );
-  while (current_process == NULL);
+
   if (ss.cs == (USER_MODE_CS | 3)) {
     uint32_t stb = current_process->mmap.stack_bottom;
     if (vaddr < stb && stb - vaddr < PAGE_SIZE) {
@@ -216,17 +215,15 @@ die:
 }
 
 // Interrupt handler that switches processes.
-static void scheduler_interrupt_handler(
-  cpu_state_t cstate, idt_info_t info, stack_state_t sstate
-  )
+static void scheduler_interrupt_handler(cpu_state_t cstate, idt_info_t info, stack_state_t sstate)
 {
   uint32_t eflags = interrupt_save_disable();
 
   if (current_process) update_current_process_registers(cstate, sstate);
 
+  uint64_t current_time = pit_get_time();
   while (sleep_queue->size) {
     process_sleep_node_t *sleeper = sleep_queue->head->value;
-    uint32_t current_time = rtc_get_time();
     if (current_time >= sleeper->wake_time) {
       process_schedule(sleeper->process);
       list_pop_front(sleep_queue);
@@ -259,7 +256,7 @@ uint32_t process_init()
   uint32_t err = process_create_destroyer();
   CHECK(err, "Failed to create destroyer.", err);
 
-  register_interrupt_handler(32, scheduler_interrupt_handler);
+  pit_set_handler(scheduler_interrupt_handler);
   register_interrupt_handler(13, gp_fault_handler);
   register_interrupt_handler(14, page_fault_handler);
 
@@ -294,7 +291,7 @@ process_t *process_from_pid(uint32_t pid)
 }
 
 // Add a process to the sleep queue.
-uint32_t process_sleep(process_t *p, uint32_t wake_time)
+uint32_t process_sleep(process_t *p, uint64_t wake_time)
 {
   process_sleep_node_t *sleeper = kmalloc(sizeof(process_sleep_node_t));
   CHECK(sleeper == NULL, "Failed to allocate sleep node.", ENOMEM);

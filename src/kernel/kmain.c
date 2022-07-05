@@ -12,7 +12,6 @@
 #include "idt.h"
 #include "pic.h"
 #include "pit.h"
-#include "rtc.h"
 #include "interrupt.h"
 #include "paging.h"
 #include "pmm.h"
@@ -94,7 +93,6 @@ void kmain(
   idt_init();
   pic_init();
   pit_init();
-  rtc_init();
 
   register_interrupt_handler(14, page_fault_handler);
 

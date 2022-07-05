@@ -111,7 +111,7 @@ typedef struct process_s {
 
 // A node in the sleep queue.
 typedef struct process_sleep_node_s {
-  uint32_t wake_time;
+  uint64_t wake_time;
   process_t *process;
 } process_sleep_node_t;
 
@@ -122,7 +122,7 @@ uint32_t process_init();
 process_t *process_from_pid(uint32_t);
 
 // Add a process to the sleep queue.
-uint32_t process_sleep(process_t *, uint32_t);
+uint32_t process_sleep(process_t *, uint64_t);
 
 // Send a signal to a process.
 void process_signal(process_t *, uint32_t);

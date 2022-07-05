@@ -7,7 +7,7 @@
 
 #include "process.h"
 #include "interrupt.h"
-#include "rtc.h"
+#include "pit.h"
 #include "fs.h"
 #include "pipe.h"
 #include "elf.h"
@@ -177,10 +177,13 @@ static void syscall_msleep(uint32_t duration)
 {
   process_t *current = process_current();
   current->uregs.eax = 0;
-  uint32_t wake_time = rtc_get_time() + duration;
+  uint64_t wake_time = pit_get_time() + duration;
   uint32_t res = process_sleep(current, wake_time);
   if (res) { current->uregs.eax = -res; return; }
+  disable_interrupts();
+  current->in_kernel = 0;
   process_unschedule(current);
+  process_switch_next();
 }
 
 static void syscall_exit(uint32_t status)
@@ -656,7 +659,7 @@ static void syscall_resolve(char *outpath, char *inpath, size_t len)
 }
 
 static void syscall_systime()
-{ process_current()->uregs.eax = rtc_get_time(); }
+{ process_current()->uregs.eax = pit_get_time(); }
 
 static void syscall_priority(int32_t prio)
 {
