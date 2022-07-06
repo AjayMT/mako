@@ -33,7 +33,6 @@
 
 static const uint32_t BG_COLOR          = 0xffffeb;
 static const uint32_t INACTIVE_BG_COLOR = 0xffffff;
-static const uint32_t TEXT_COLOR        = 0;
 static const uint32_t INACTIVE_COLOR    = 0xb0b0b0;
 static const uint32_t CURSOR_COLOR      = 0xb43a3b;
 static const uint32_t CURSOR_WIDTH      = 30;
@@ -93,9 +92,10 @@ static void render_text(const char *text, uint32_t x, uint32_t y)
 
   uint32_t *p = ui_buf + (y * window_w) + x;
   for (uint32_t j = 0; j < h && y + j < window_h; ++j) {
-    for (uint32_t i = 0; i < w && x + i < window_w; ++i)
-      if (pixels[(j * w) + i])
-        p[i] = TEXT_COLOR;
+    for (uint32_t i = 0; i < w && x + i < window_w; ++i) {
+      uint8_t color = 0xff - pixels[(j * w) + i];
+      if (color != 0xff) p[i] = (color << 16) | (color << 8) | color;
+    }
     p += window_w;
   }
   free(pixels);

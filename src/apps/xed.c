@@ -21,12 +21,10 @@
 #include "scancode.h"
 
 #define FOOTER_LEN    (SCREENWIDTH / FONTWIDTH)
-#define LINE_HEIGHT   (FONTHEIGHT + FONTVPADDING)
-#define MAX_NUM_LINES (SCREENHEIGHT / (FONTHEIGHT + FONTVPADDING))
+#define MAX_NUM_LINES (SCREENHEIGHT / (FONTHEIGHT))
 
 static const uint32_t BG_COLOR          = 0xffffeb;
 static const uint32_t INACTIVE_BG_COLOR = 0xffffff;
-static const uint32_t TEXT_COLOR        = 0;
 static const uint32_t INACTIVE_COLOR    = 0xb0b0b0;
 static const uint32_t CURSOR_COLOR      = 0x190081;
 static const uint32_t SELECTION_COLOR   = 0xb0d5ff;
@@ -112,9 +110,10 @@ static void render_text(const char *text, uint32_t x, uint32_t y)
 
   uint32_t *p = ui_buf + (y * window_w) + x;
   for (uint32_t j = 0; j < h && y + j < window_h; ++j) {
-    for (uint32_t i = 0; i < w && x + i < window_w; ++i)
-      if (pixels[(j * w) + i])
-        p[i] = TEXT_COLOR;
+    for (uint32_t i = 0; i < w && x + i < window_w; ++i) {
+      uint8_t color = 0xff - pixels[(j * w) + i];
+      if (color != 0xff) p[i] = (color << 16) | (color << 8) | color;
+    }
     p += window_w;
   }
   free(pixels);
@@ -166,16 +165,16 @@ static void render_buffer(uint32_t line_idx)
 {
   if (file_buffer == NULL) return;
   uint32_t num_lines =
-    (window_h - PATH_HEIGHT - FOOTER_HEIGHT - TOTAL_PADDING) / LINE_HEIGHT;
+    (window_h - PATH_HEIGHT - FOOTER_HEIGHT - TOTAL_PADDING) / FONTHEIGHT;
 
   // filling the buffer area with the background color {
   uint32_t *top_row =
     ui_buf
-    + (window_w * (PATH_HEIGHT + (TOTAL_PADDING / 2) + line_idx * LINE_HEIGHT));
+    + (window_w * (PATH_HEIGHT + (TOTAL_PADDING / 2) + line_idx * FONTHEIGHT));
   uint32_t fill_size =
     window_w * (
       window_h - PATH_HEIGHT - FOOTER_HEIGHT -
-      (TOTAL_PADDING / 2) - (line_idx * LINE_HEIGHT)
+      (TOTAL_PADDING / 2) - (line_idx * FONTHEIGHT)
       );
   if (line_idx == 0) {
     // exclude padding
@@ -189,7 +188,7 @@ static void render_buffer(uint32_t line_idx)
   uint32_t top = PATH_HEIGHT + (TOTAL_PADDING / 2);
   for (uint32_t i = line_idx; i < num_lines && lines[i].len >= 0; ++i) {
     if (lines[i].len == 0) continue;
-    uint32_t y = top + i * LINE_HEIGHT;
+    uint32_t y = top + i * FONTHEIGHT;
     char *line = strndup(file_buffer + lines[i].buffer_idx, lines[i].len);
     render_text(line, TOTAL_PADDING / 2, y);
     free(line);
@@ -210,7 +209,7 @@ static void render_selection()
   if (higher == lower || higher < P.top_idx) return;
 
   uint32_t num_lines =
-    (window_h - PATH_HEIGHT - FOOTER_HEIGHT - TOTAL_PADDING) / LINE_HEIGHT;
+    (window_h - PATH_HEIGHT - FOOTER_HEIGHT - TOTAL_PADDING) / FONTHEIGHT;
   uint32_t line_len = (window_w - TOTAL_PADDING) / FONTWIDTH;
 
   // lower and upper bounds on screen
@@ -237,12 +236,12 @@ static void render_selection()
     uint32_t next_x = next % line_len;
 
     // pixel x, y coordinates
-    uint32_t screen_y = (TOTAL_PADDING / 2) + PATH_HEIGHT + (y * LINE_HEIGHT);
+    uint32_t screen_y = (TOTAL_PADDING / 2) + PATH_HEIGHT + (y * FONTHEIGHT);
     uint32_t screen_x = (TOTAL_PADDING / 2) + (x * FONTWIDTH);
     uint32_t x_limit = window_w - (TOTAL_PADDING / 2);
     if (next_x) x_limit = (TOTAL_PADDING / 2) + (next_x * FONTWIDTH);
 
-    for (uint32_t draw_y = screen_y; draw_y < screen_y + LINE_HEIGHT; ++draw_y) {
+    for (uint32_t draw_y = screen_y; draw_y < screen_y + FONTHEIGHT; ++draw_y) {
       uint32_t *line = ui_buf + (draw_y * window_w);
       for (uint32_t draw_x = screen_x; draw_x < x_limit; ++draw_x)
         if (line[draw_x] == BG_COLOR)
@@ -266,7 +265,7 @@ static void update_lines(uint32_t line_idx, uint32_t buf_idx)
   if (file_buffer == NULL) return;
 
   uint32_t num_lines =
-    (window_h - PATH_HEIGHT - FOOTER_HEIGHT - TOTAL_PADDING) / LINE_HEIGHT;
+    (window_h - PATH_HEIGHT - FOOTER_HEIGHT - TOTAL_PADDING) / FONTHEIGHT;
   uint32_t line_len = (window_w - TOTAL_PADDING) / FONTWIDTH;
 
   char *p = file_buffer + buf_idx;
@@ -297,7 +296,7 @@ static void update_lines(uint32_t line_idx, uint32_t buf_idx)
 static void update_cursor(uint32_t old_idx, uint8_t erase)
 {
   uint32_t num_lines =
-    (window_h - PATH_HEIGHT - FOOTER_HEIGHT - TOTAL_PADDING) / LINE_HEIGHT;
+    (window_h - PATH_HEIGHT - FOOTER_HEIGHT - TOTAL_PADDING) / FONTHEIGHT;
   uint32_t line_len = (window_w - TOTAL_PADDING) / FONTWIDTH;
 
   if (erase && old_idx / line_len < num_lines) {
@@ -306,13 +305,17 @@ static void update_cursor(uint32_t old_idx, uint8_t erase)
     uint32_t cx = old_idx % line_len;
     uint32_t cy = old_idx / line_len;
     uint32_t x = (cx * FONTWIDTH) + (TOTAL_PADDING / 2);
-    uint32_t y = (cy * LINE_HEIGHT) + (TOTAL_PADDING / 2) + PATH_HEIGHT;
+    uint32_t y = (cy * FONTHEIGHT) + (TOTAL_PADDING / 2) + PATH_HEIGHT;
 
     uint32_t *pos = ui_buf + (y * window_w);
-    for (uint32_t i = 0; i < LINE_HEIGHT; ++i) {
-      for (uint32_t j = x; j < x + FONTWIDTH; ++j) {
-        if (pos[j] == CURSOR_COLOR) pos[j] = BG_COLOR;
-        else pos[j] = TEXT_COLOR;
+    for (uint32_t i = 0; i < FONTHEIGHT; ++i) {
+      if (i == 0 || i == FONTHEIGHT - 1) {
+        for (uint32_t j = x; j < x + FONTWIDTH; ++j) {
+          if (pos[j] == CURSOR_COLOR) pos[j] = BG_COLOR;
+        }
+      } else {
+        if (pos[x] == CURSOR_COLOR) pos[x] = BG_COLOR;
+        if (pos[x + FONTWIDTH - 1] == CURSOR_COLOR) pos[x + FONTWIDTH - 1] = BG_COLOR;
       }
       pos += window_w;
     }
@@ -321,13 +324,17 @@ static void update_cursor(uint32_t old_idx, uint8_t erase)
   uint32_t cx = P.cursor_idx % line_len;
   uint32_t cy = P.cursor_idx / line_len;
   uint32_t x = (cx * FONTWIDTH) + (TOTAL_PADDING / 2);
-  uint32_t y = (cy * LINE_HEIGHT) + (TOTAL_PADDING / 2) + PATH_HEIGHT;
+  uint32_t y = (cy * FONTHEIGHT) + (TOTAL_PADDING / 2) + PATH_HEIGHT;
 
   uint32_t *pos = ui_buf + (y * window_w);
-  for (uint32_t i = 0; i < LINE_HEIGHT; ++i) {
-    for (uint32_t j = x; j < x + FONTWIDTH; ++j) {
-      if (pos[j] == TEXT_COLOR) pos[j] = BG_COLOR;
-      else pos[j] = CURSOR_COLOR;
+  for (uint32_t i = 0; i < FONTHEIGHT; ++i) {
+    if (i == 0 || i == FONTHEIGHT - 1) {
+      for (uint32_t j = x; j < x + FONTWIDTH; ++j) {
+        if (pos[j] == BG_COLOR) pos[j] = CURSOR_COLOR;
+      }
+    } else {
+      if (pos[x] == BG_COLOR) pos[x] = CURSOR_COLOR;
+      if (pos[x + FONTWIDTH - 1] == BG_COLOR) pos[x + FONTWIDTH - 1] = CURSOR_COLOR;
     }
     pos += window_w;
   }
@@ -513,7 +520,7 @@ static void move_down()
 {
   uint32_t line_len = (window_w - TOTAL_PADDING) / FONTWIDTH;
   uint32_t num_lines =
-    (window_h - PATH_HEIGHT - FOOTER_HEIGHT - TOTAL_PADDING) / LINE_HEIGHT;
+    (window_h - PATH_HEIGHT - FOOTER_HEIGHT - TOTAL_PADDING) / FONTHEIGHT;
 
   uint32_t cy = P.cursor_idx / line_len;
   uint32_t cx = P.cursor_idx % line_len;
@@ -564,7 +571,7 @@ static void keyboard_handler(uint8_t code)
   }
 
   uint32_t num_lines =
-    (window_h - PATH_HEIGHT - FOOTER_HEIGHT - TOTAL_PADDING) / LINE_HEIGHT;
+    (window_h - PATH_HEIGHT - FOOTER_HEIGHT - TOTAL_PADDING) / FONTHEIGHT;
   uint32_t line_len = (window_w - TOTAL_PADDING) / FONTWIDTH;
   uint32_t cursor_x = P.cursor_idx % line_len;
   uint32_t cursor_y = P.cursor_idx / line_len;

@@ -7,7 +7,7 @@
 
 #include <stddef.h>
 #include "text_render.h"
-#include "font_monaco.h"
+#include "font_lucida_mono_ef.h"
 
 void text_dimensions(const char *str, size_t len, size_t *w, size_t *h)
 {
@@ -33,17 +33,17 @@ void text_dimensions(const char *str, size_t len, size_t *w, size_t *h)
   }
 
   *w = cols * FONTWIDTH;
-  *h = rows * (FONTHEIGHT + FONTVPADDING);
+  *h = rows * FONTHEIGHT;
 }
 
 void text_render(const char *str, size_t len, size_t w, size_t h, uint8_t *buf)
 {
   size_t row = 0;
   size_t col = 0;
-  char *font = font_monaco();
+  char *font = font_lucida_mono_ef();
   for (size_t i = 0; i < len; ++i) {
     if (col * FONTWIDTH >= w) break;
-    if (row * (FONTHEIGHT + FONTVPADDING) >= h) break;
+    if (row * FONTHEIGHT >= h) break;
 
     char c = 0;
     switch (str[i]) {
@@ -56,12 +56,11 @@ void text_render(const char *str, size_t len, size_t w, size_t h, uint8_t *buf)
 
     uint8_t *p = buf
       + (col * FONTWIDTH)
-      + (row * (FONTHEIGHT + FONTVPADDING) * w);
+      + (row * FONTHEIGHT * w);
     for (size_t y = 0; y < FONTHEIGHT; ++y) {
       for (size_t x = 0; x < FONTWIDTH; ++x) {
-        char byte = font[((c - 32) * FONTHEIGHT) + y];
-        char bit = (byte >> (7 - x)) & 1;
-        p[x] = bit;
+        char byte = font[(((c - 32) * FONTHEIGHT) + y) * FONTWIDTH + x];
+        p[x] = byte;
       }
       p += w;
     }

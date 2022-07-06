@@ -67,7 +67,7 @@ doomgeneric: $(shell find deps/doomgeneric -type f) libui.a libc.a $(CRT_OBJECTS
 
 # Need two rules for $(APPS) since they have different dependencies
 dex xed pie: $(wildcard src/apps/*) libc.a libui.a $(CRT_OBJECTS)
-	$(CC) $(CFLAGS) -Isrc/libc/ -Isrc/libui/ src/apps/$@.c src/apps/font_monaco.c \
+	$(CC) $(CFLAGS) -Isrc/libc/ -Isrc/libui/ src/apps/$@.c src/apps/font_lucida_mono_ef.c \
 	src/apps/text_render.c src/apps/scancode.c $(CRT_OBJECTS) libc.a libui.a -lgcc -o $@
 img: src/apps/img.c src/apps/lodepng.c src/apps/lodepng.h src/apps/scancode.h libc.a libui.a $(CRT_OBJECTS)
 	$(CC) $(CFLAGS) -Isrc/libc/ -Isrc/libui/ src/apps/img.c src/apps/lodepng.c \

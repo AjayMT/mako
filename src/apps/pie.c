@@ -20,12 +20,10 @@
 #include "scancode.h"
 
 #define FOOTER_LEN    (SCREENWIDTH / FONTWIDTH)
-#define LINE_HEIGHT   (FONTHEIGHT + FONTVPADDING)
-#define MAX_NUM_LINES (SCREENHEIGHT / (FONTHEIGHT + FONTVPADDING))
+#define MAX_NUM_LINES (SCREENHEIGHT / FONTHEIGHT)
 
 static const uint32_t BG_COLOR          = 0xffffeb;
 static const uint32_t INACTIVE_BG_COLOR = 0xffffff;
-static const uint32_t TEXT_COLOR        = 0;
 static const uint32_t INACTIVE_COLOR    = 0xb0b0b0;
 static const uint32_t PATH_HEIGHT       = 24;
 static const uint32_t FOOTER_HEIGHT     = 24;
@@ -88,9 +86,10 @@ static void render_text(const char *text, uint32_t x, uint32_t y)
 
   uint32_t *p = ui_buf + (y * window_w) + x;
   for (uint32_t j = 0; j < h && y + j < window_h; ++j) {
-    for (uint32_t i = 0; i < w && x + i < window_w; ++i)
-      if (pixels[(j * w) + i])
-        p[i] = TEXT_COLOR;
+    for (uint32_t i = 0; i < w && x + i < window_w; ++i) {
+      uint8_t color = 0xff - pixels[(j * w) + i];
+      if (color != 0xff) p[i] = (color << 16) | (color << 8) | color;
+    }
     p += window_w;
   }
   free(pixels);
@@ -131,16 +130,16 @@ static void render_buffer(uint32_t line_idx)
 {
   if (text_buffer == NULL) return;
   uint32_t num_lines =
-    (window_h - PATH_HEIGHT - FOOTER_HEIGHT - TOTAL_PADDING) / LINE_HEIGHT;
+    (window_h - PATH_HEIGHT - FOOTER_HEIGHT - TOTAL_PADDING) / FONTHEIGHT;
 
   // filling the buffer area with the background color {
   uint32_t *top_row =
     ui_buf
-    + (window_w * (PATH_HEIGHT + (TOTAL_PADDING / 2) + (line_idx * LINE_HEIGHT)));
+    + (window_w * (PATH_HEIGHT + (TOTAL_PADDING / 2) + (line_idx * FONTHEIGHT)));
   uint32_t fill_size =
     window_w * (
       window_h - PATH_HEIGHT - FOOTER_HEIGHT -
-      (TOTAL_PADDING / 2) - (line_idx * LINE_HEIGHT)
+      (TOTAL_PADDING / 2) - (line_idx * FONTHEIGHT)
       );
   if (line_idx == 0) {
     top_row = ui_buf + (window_w * (PATH_HEIGHT + 1));
@@ -153,7 +152,7 @@ static void render_buffer(uint32_t line_idx)
   uint32_t top = PATH_HEIGHT + (TOTAL_PADDING / 2);
   for (uint32_t i = line_idx; i < num_lines && lines[i].len >= 0; ++i) {
     if (lines[i].len == 0) continue;
-    uint32_t y = top + i * LINE_HEIGHT;
+    uint32_t y = top + i * FONTHEIGHT;
     char *line = strndup(text_buffer + lines[i].buffer_idx, lines[i].len);
     render_text(line, TOTAL_PADDING / 2, y);
     free(line);
@@ -168,7 +167,7 @@ static void update_lines(uint32_t line_idx, uint32_t buf_idx)
   if (text_buffer == NULL) return;
 
   uint32_t num_lines =
-    (window_h - PATH_HEIGHT - FOOTER_HEIGHT - TOTAL_PADDING) / LINE_HEIGHT;
+    (window_h - PATH_HEIGHT - FOOTER_HEIGHT - TOTAL_PADDING) / FONTHEIGHT;
   uint32_t line_len = (window_w - TOTAL_PADDING) / FONTWIDTH;
 
   char *p = text_buffer + buf_idx;
@@ -220,7 +219,7 @@ static void exec_thread()
     thread_lock(&ui_lock);
 
     uint32_t num_lines =
-      (window_h - PATH_HEIGHT - FOOTER_HEIGHT - TOTAL_PADDING) / LINE_HEIGHT;
+      (window_h - PATH_HEIGHT - FOOTER_HEIGHT - TOTAL_PADDING) / FONTHEIGHT;
 
     uint8_t scrolled = 0;
 
@@ -544,7 +543,7 @@ static void keyboard_handler(uint8_t code)
         write(proc_write_fd, buf, field_len + 1);
 
         uint32_t num_lines =
-          (window_h - PATH_HEIGHT - FOOTER_HEIGHT - TOTAL_PADDING) / LINE_HEIGHT;
+          (window_h - PATH_HEIGHT - FOOTER_HEIGHT - TOTAL_PADDING) / FONTHEIGHT;
 
         uint8_t scrolled = 0;
 

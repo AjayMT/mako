@@ -10,11 +10,7 @@
 
 #include <stddef.h>
 #include <stdint.h>
-#include "font_monaco.h"
-
-#define FONTWIDTH    8
-#define FONTHEIGHT   14
-#define FONTVPADDING 2
+#include "font_lucida_mono_ef.h"
 
 void text_dimensions(const char *str, size_t len, size_t *w, size_t *h);
 void text_render(const char *str, size_t len, size_t w, size_t h, uint8_t *buf);
