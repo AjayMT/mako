@@ -29,10 +29,6 @@
 #define CHECK(err, msg, code) if ((err)) {              \
     log_error("process", msg "\n"); return (code);      \
   }
-#define CHECK_UNLOCK(err, msg, code) if ((err)) {                       \
-    log_error("process", msg "\n"); kunlock(&process_tree_lock);        \
-    return (code);                                                      \
-  }
 
 // Constants.
 static const uint32_t USER_MODE_CS = 0x18;
