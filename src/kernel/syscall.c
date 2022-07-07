@@ -19,7 +19,6 @@
 #include "../common/errno.h"
 #include "log.h"
 #include "util.h"
-#include "../libc/sys/wait.h"
 #include "../libc/sys/stat.h"
 #include "ui.h"
 #include "syscall.h"
@@ -262,11 +261,10 @@ static void syscall_signal_resume()
 
 static void syscall_signal_send(uint32_t pid, uint32_t signum)
 {
-  process_t *target = process_from_pid(pid);
-  if (target == NULL) {
+  uint8_t err = process_signal_pid(pid, signum);
+  if (err) {
     process_current()->uregs.eax = -ESRCH; return;
   }
-  process_signal(target, signum);
   process_current()->uregs.eax = 0;
 }
 
@@ -476,16 +474,15 @@ static void syscall_getcwd(char *buf, uint32_t bufsize)
   u_memcpy(buf, process_current()->wd, bufsize);
 }
 
-static void syscall_wait(uint32_t pid, struct _wait_result *w)
+static void syscall_wait(uint32_t pid)
 {
   process_t *current = process_current();
-  process_t *target = process_from_pid(pid);
-  if (target == NULL) { current->uregs.eax = -ESRCH; return; }
-  while (target->list_node);
-  w->exited = target->exited;
-  w->status = target->exit_status;
-  w->signal = target->current_signal;
-  current->uregs.eax = pid;
+  uint8_t err = process_wait_pid(current, pid);
+  if (err) { current->uregs.eax = -ESRCH; return; }
+  disable_interrupts();
+  current->in_kernel = 0;
+  process_unschedule(current);
+  process_switch_next();
 }
 
 static void syscall_fstat(uint32_t fdnum, struct stat *st)

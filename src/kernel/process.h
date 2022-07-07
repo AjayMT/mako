@@ -13,6 +13,7 @@
 #include "fs.h"
 #include "ds.h"
 
+#define MAX_PROCESS_COUNT 64
 #define MAX_PROCESS_PRIORITY 2
 #define MAX_PROCESS_FDS 16
 #define PROCESS_ENV_VADDR (KERNEL_START_VADDR - PAGE_SIZE)
@@ -104,28 +105,36 @@ typedef struct process_s {
   list_t *ui_event_queue;
   process_registers_t saved_ui_regs;
 
-  volatile uint32_t tree_lock;
-  tree_node_t *tree_node;
   list_node_t *list_node;
 } process_t;
 
 // A node in the sleep queue.
-typedef struct process_sleep_node_s {
+typedef struct {
   uint64_t wake_time;
-  process_t *process;
+  // use pid instead of ptr to process so we don't attempt to wake a process
+  // after it has been killed
+  uint32_t pid;
 } process_sleep_node_t;
+
+// Process status structs used by waitpid
+typedef struct {
+  uint32_t parent_pid;
+  list_t waiters; // list of pids
+  process_t *process;
+  volatile uint32_t lock;
+} process_status_t;
 
 // Initialize the scheduler and other things.
 uint32_t process_init();
 
-// Find a process with a specific PID.
-process_t *process_from_pid(uint32_t);
-
 // Add a process to the sleep queue.
 uint32_t process_sleep(process_t *, uint64_t);
 
+// Wait for a process to exit.
+uint8_t process_wait_pid(process_t *p, uint32_t pid);
+
 // Send a signal to a process.
-void process_signal(process_t *, uint32_t);
+uint8_t process_signal_pid(uint32_t pid, uint32_t signum);
 
 // Get current process.
 process_t *process_current();

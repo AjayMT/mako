@@ -93,7 +93,7 @@ static uint32_t pipe_write(fs_node_t *node, uint32_t offset, uint32_t size, uint
   pipe_t *self = node->device;
 
   if (self->buf == NULL) {
-    process_signal(process_current(), SIGPIPE);
+    process_signal_pid(process_current()->pid, SIGPIPE);
     return 0;
   }
 

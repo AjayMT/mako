@@ -35,14 +35,14 @@ static const uint32_t USER_MODE_CS = 0x18;
 static const uint32_t USER_MODE_DS = 0x20;
 static const uint32_t ENV_VADDR    = KERNEL_START_VADDR - PAGE_SIZE;
 
-// Process tree and sleeping process state.
-static uint32_t next_pid = 0;
+// Process tree and process status state.
 static process_t *init_process = NULL;
 static process_t *destroyer_process = NULL;
 static process_t *current_process = NULL;
 static list_t *sleep_queue = NULL;
 static list_t *destroy_queue = NULL;
 static volatile uint32_t destroy_queue_lock = 0;
+static process_status_t pids[MAX_PROCESS_COUNT];
 
 // Scheduler queues.
 static list_t *running_lists[MAX_PROCESS_PRIORITY + 1];
@@ -158,16 +158,11 @@ uint32_t process_switch_next()
 }
 
 // General protection fault handler.
-static void gp_fault_handler(
-  cpu_state_t cs, idt_info_t info, stack_state_t ss
-  )
+static void gp_fault_handler(cpu_state_t cs, idt_info_t info, stack_state_t ss)
 {
-  log_error(
-    "process", "eip %x: gpf %x cs %x\n",
-    ss.eip, info.error_code, ss.cs
-    );
+  log_error("process", "eip %x: gpf %x cs %x\n", ss.eip, info.error_code, ss.cs);
+  current_process->next_signal = SIGILL;
   process_kill(current_process);
-  current_process->current_signal = SIGILL;
   process_switch_next();
 }
 
@@ -178,7 +173,7 @@ static void page_fault_handler(cpu_state_t cs, idt_info_t info, stack_state_t ss
   asm("movl %%cr2, %0" : "=r"(vaddr));
   log_error(
     "process", "eip %x: page fault %x vaddr %x esp %x pid %u\n",
-    ss.eip, info.error_code, vaddr, ss.user_esp, current_process ? current_process->pid : 0
+    ss.eip, info.error_code, vaddr, ss.user_esp, current_process->pid
     );
 
   if (ss.cs == (USER_MODE_CS | 3)) {
@@ -192,21 +187,19 @@ static void page_fault_handler(cpu_state_t cs, idt_info_t info, stack_state_t ss
       paging_result_t res = paging_map(vaddr, paddr, flags);
       if (res != PAGING_OK) goto die;
       current_process->mmap.stack_bottom = vaddr;
-      log_info(
-        "process", "grew the stack to %x for process %u\n",
-        vaddr, current_process->pid
-        );
+      log_info("process", "grew the stack to %x for process %u\n", vaddr, current_process->pid);
       return;
     }
 
-    process_signal(current_process, SIGSEGV);
+    current_process->next_signal = SIGSEGV;
+    process_switch_next();
     return;
   }
 
   // Yikes, kernel page fault.
 die:
+  current_process->next_signal = SIGSEGV;
   process_kill(current_process);
-  current_process->current_signal = SIGSEGV;
   process_switch_next();
 }
 
@@ -221,7 +214,7 @@ static void scheduler_interrupt_handler(cpu_state_t cstate, idt_info_t info, sta
   while (sleep_queue->size) {
     process_sleep_node_t *sleeper = sleep_queue->head->value;
     if (current_time >= sleeper->wake_time) {
-      process_schedule(sleeper->process);
+      if (pids[sleeper->pid].process) process_schedule(pids[sleeper->pid].process);
       list_pop_front(sleep_queue);
     } else break;
   }
@@ -248,6 +241,7 @@ uint32_t process_init()
   destroy_queue = kmalloc(sizeof(list_t));
   CHECK(destroy_queue == NULL, "No memory.", ENOMEM);
   u_memset(destroy_queue, 0, sizeof(list_t));
+  u_memset(pids, 0, sizeof(pids));
 
   uint32_t err = process_create_destroyer();
   CHECK(err, "Failed to create destroyer.", err);
@@ -259,39 +253,12 @@ uint32_t process_init()
   return 0;
 }
 
-static process_t *findpid(tree_node_t *node, uint32_t pid)
-{
-  if (node == NULL) return NULL;
-
-  process_t *p = node->value;
-  if (p->pid == pid) return p;
-  list_foreach(lchild, node->children) {
-    tree_node_t *tchild = lchild->value;
-    klock(&(p->tree_lock));
-    process_t *res = findpid(tchild, pid);
-    kunlock(&(p->tree_lock));
-    if (res) return res;
-  }
-
-  return NULL;
-}
-
-// Find a process with a specific PID.
-process_t *process_from_pid(uint32_t pid)
-{
-  if (init_process == NULL) return NULL;
-  klock(&(init_process->tree_lock));
-  process_t *p = findpid(init_process->tree_node, pid);
-  kunlock(&(init_process->tree_lock));
-  return p;
-}
-
 // Add a process to the sleep queue.
 uint32_t process_sleep(process_t *p, uint64_t wake_time)
 {
   process_sleep_node_t *sleeper = kmalloc(sizeof(process_sleep_node_t));
   CHECK(sleeper == NULL, "Failed to allocate sleep node.", ENOMEM);
-  sleeper->process = p;
+  sleeper->pid = p->pid;
   sleeper->wake_time = wake_time;
 
   // TODO make this a min heap and protect with a lock
@@ -310,13 +277,35 @@ uint32_t process_sleep(process_t *p, uint64_t wake_time)
   return 0;
 }
 
-// Send a signal to a process.
-void process_signal(process_t *p, uint32_t signum)
+// Wait for a process to exit.
+uint8_t process_wait_pid(process_t *p, uint32_t pid)
 {
-  if (signum == 0) return;
-  p->next_signal = signum;
-  if (p->signal_eip == 0) process_kill(p);
-  if (p == current_process) process_switch_next();
+  if (pid >= MAX_PROCESS_COUNT) return 1;
+  klock(&pids[pid].lock);
+  if (pids[pid].process == NULL) {
+    kunlock(&pids[pid].lock); return 1;
+  }
+  list_push_back(&pids[pid].waiters, (void *)p->pid);
+  kunlock(&pids[pid].lock);
+  return 0;
+}
+
+// Send a signal to a process.
+uint8_t process_signal_pid(uint32_t pid, uint32_t signum)
+{
+  if (signum == 0) return 1;
+  if (pid >= MAX_PROCESS_COUNT) return 1;
+  klock(&pids[pid].lock);
+  if (pids[pid].process == NULL) {
+    kunlock(&pids[pid].lock); return 1;
+  }
+  pids[pid].process->next_signal = signum;
+  if (pids[pid].process->signal_eip == 0 || signum == SIGKILL) {
+    kunlock(&pids[pid].lock);
+    process_kill(pids[pid].process);
+  }
+  kunlock(&pids[pid].lock);
+  return 0;
 }
 
 // Get current process.
@@ -327,6 +316,7 @@ process_t *process_current()
 uint32_t process_create_schedule_init(process_image_t img)
 {
   process_t *init = kmalloc(sizeof(process_t)); CHECK(init == NULL, "No memory.", ENOMEM);
+  pids[0].process = init;
   u_memset(init, 0, sizeof(process_t));
   init->wd = kmalloc(2); CHECK(init->wd == NULL, "No memory.", ENOMEM);
   u_memcpy(init->wd, "/", u_strlen("/") + 1);
@@ -351,13 +341,27 @@ uint32_t process_create_schedule_init(process_image_t img)
 
   err = process_load(init, img);
   CHECK(err, "Failed to load process image.", err);
-  init->tree_node = tree_init(init);
   init->uregs.cs = USER_MODE_CS | 3;
   init->uregs.ss = USER_MODE_DS | 3;
   init->uregs.eflags = 0x202;
 
   init_process = init;
   process_schedule(init);
+
+  return 0;
+}
+
+// Allocate a PID and acquire its lock.
+static uint32_t alloc_pid()
+{
+  for (uint32_t i = 0; i < MAX_PROCESS_COUNT; ++i) {
+    klock(&pids[i].lock);
+    if (pids[i].process || pids[i].waiters.size) {
+      kunlock(&pids[i].lock);
+      continue;
+    }
+    return i;
+  }
 
   return 0;
 }
@@ -374,16 +378,15 @@ uint32_t process_fork(
 {
   u_memcpy(child, process, sizeof(process_t));
   kunlock(&child->fd_lock);
-  kunlock(&child->tree_lock);
   child->in_kernel = 0;
   child->is_thread = is_thread;
   child->wd = kmalloc(u_strlen(process->wd) + 1); CHECK(child->wd == NULL, "No memory.", ENOMEM);
   u_memcpy(child->wd, process->wd, u_strlen(process->wd) + 1);
-  child->pid = ++next_pid;
+  child->pid = alloc_pid();
+  CHECK(child->pid == 0, "Too many processes.", ENOMEM);
+  pids[child->pid].process = child;
+  kunlock(&pids[child->pid].lock);
   child->gid = child->pid;
-  tree_node_t *node = tree_init(child);
-  child->tree_node = node;
-  klock(&process->tree_lock); tree_insert(process->tree_node, node); kunlock(&process->tree_lock);
   child->list_node = NULL;
   child->ui_event_queue = kmalloc(sizeof(list_t)); CHECK(child->ui_event_queue == NULL, "No memory.", ENOMEM);
   u_memset(child->ui_event_queue, 0, sizeof(list_t));
@@ -528,47 +531,34 @@ void process_unschedule(process_t *process)
 // Kill a process.
 void process_kill(process_t *process)
 {
-  if (process == init_process) return;
+  if (process == NULL || process == init_process) return;
   if (process->ui_eip) ui_kill(process);
 
-  klock(&process->tree_lock);
-  tree_node_t *tree_node = process->tree_node;
-  list_node_t *current = tree_node->children->head;
-  list_node_t *next = current ? current->next : NULL;
-  for (; current; current = next) {
-    next = current->next;
-    tree_node_t *tchild = current->value;
-    process_t *child_process = tchild->value;
-
-    // Threads just die, child processes become children of init.
-    if (child_process->is_thread)
-      process_kill(child_process);
-    else {
-      list_remove(tree_node->children, current, 0);
-      klock(&init_process->tree_lock);
-      tree_insert(init_process->tree_node, tchild);
-      kunlock(&init_process->tree_lock);
-      kfree(current);
+  klock(&pids[process->pid].lock);
+  pids[process->pid].process = NULL;
+  while (pids[process->pid].waiters.size) {
+    list_node_t *head = pids[process->pid].waiters.head;
+    uint32_t waiter_pid = (uint32_t)head->value;
+    klock(&pids[waiter_pid].lock);
+    if (pids[waiter_pid].process) {
+      pids[waiter_pid].process->uregs.eax =
+        (process->exited & 1) | ((process->exit_status & 0x7fff) << 1) | ((process->next_signal & 0xFFFF) << 16);
+      process_schedule(pids[waiter_pid].process);
     }
+    kunlock(&pids[waiter_pid].lock);
+    list_remove(&pids[process->pid].waiters, head, 0);
+    kfree(head);
   }
-  kunlock(&process->tree_lock);
+  kunlock(&pids[process->pid].lock);
 
-  if (tree_node->parent) {
-    process_t *parent_process = tree_node->parent->value;
-    klock(&parent_process->tree_lock);
-    list_foreach(lchild, tree_node->parent->children) {
-      if (lchild->value == tree_node) {
-        list_remove(tree_node->parent->children, lchild, 0);
-        kfree(lchild);
-        break;
-      }
-    }
-    kunlock(&parent_process->tree_lock);
+  for (uint32_t i = 0; i < MAX_PROCESS_COUNT; ++i) {
+    if (pids[i].parent_pid != process->pid) continue;
+    pids[i].parent_pid = 0;
+    // don't acquire the child PID lock here to avoid deadlocking
+    // this could go wrong
+    if (pids[i].process && pids[i].process->is_thread)
+      process_kill(pids[i].process);
   }
-
-  kfree(tree_node); process->tree_node = NULL;
-
-  // TODO wake all waiters
 
   klock(&destroy_queue_lock);
   uint32_t eflags = interrupt_save_disable();

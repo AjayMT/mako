@@ -522,16 +522,8 @@ static void keyboard_handler(uint8_t code)
     // we are currently executing a program -- have to write input to screen
     // and forward it to the program
 
-    uint8_t killed = 0;
-    switch (code) {
-    case KB_SC_ESC:
-      if (proc_pid) {
-        killed = 1;
-        signal_send(proc_pid, SIGKILL);
-      }
-      break;
-    }
-    if (killed) {
+    if (code == KB_SC_ESC && proc_pid) {
+      signal_send(proc_pid, SIGKILL);
       thread_unlock(&ui_lock);
       return;
     }

@@ -13,8 +13,8 @@
 
 int32_t waitpid(pid_t pid, int32_t *stat_loc, int32_t options)
 {
-  struct _wait_result *st = (struct _wait_result *)stat_loc;
-  int32_t res = _syscall2(SYSCALL_WAIT, pid, (uint32_t)st);
-  if (res < 0) { errno = -res; res = -1; }
-  return res;
+  int32_t res = _syscall1(SYSCALL_WAIT, pid);
+  *stat_loc = res;
+  if (res < 0) { errno = -res; return -1; }
+  return pid;
 }
