@@ -26,6 +26,10 @@
     return (code);                                              \
   }
 
+#define BORDER_WIDTH 4
+#define BORDER_COLOR_KEY 0x52aaad
+#define BORDER_COLOR     0x9cefef
+
 typedef struct ui_responder_s {
   process_t *process;
   ui_window_t window;
@@ -46,16 +50,30 @@ static ui_responder_t *responders_by_gid[MAX_PROCESS_COUNT];
 // Blit a single window to the backbuf.
 static void ui_blit_window(ui_responder_t *r, uint8_t is_key)
 {
-  (void)is_key;
+  uint32_t border_color = is_key ? BORDER_COLOR_KEY : BORDER_COLOR;
   process_t *p = r->process;
   uint32_t eflags = interrupt_save_disable();
   uint32_t cr3 = paging_get_cr3();
   paging_set_cr3(p->cr3);
-  // TODO window borders
+
+  for (uint32_t y = 0; y < BORDER_WIDTH; ++y) {
+    uint32_t *backbuf_ptr =
+      backbuf + ((y + r->window.y - BORDER_WIDTH) * SCREENWIDTH) + r->window.x - BORDER_WIDTH;
+    for (uint32_t x = 0; x < r->window.w + 2 * BORDER_WIDTH; ++x)
+      backbuf_ptr[x] = border_color;
+  }
   for (uint32_t y = 0; y < r->window.h; ++y) {
     uint32_t *r_buf_ptr = r->buf + (y * r->window.w);
     uint32_t *backbuf_ptr = backbuf + ((y + r->window.y) * SCREENWIDTH) + r->window.x;
+    for (uint32_t x = 1; x <= BORDER_WIDTH; ++x) *(backbuf_ptr - x) = border_color;
     u_memcpy(backbuf_ptr, r_buf_ptr, r->window.w * 4);
+    for (uint32_t x = 0; x < BORDER_WIDTH; ++x) backbuf_ptr[r->window.w + x] = border_color;
+  }
+  for (uint32_t y = 0; y < BORDER_WIDTH; ++y) {
+    uint32_t *backbuf_ptr =
+      backbuf + ((y + r->window.y + r->window.h) * SCREENWIDTH) + r->window.x - BORDER_WIDTH;
+    for (uint32_t x = 0; x < r->window.w + 2 * BORDER_WIDTH; ++x)
+      backbuf_ptr[x] = border_color;
   }
 
   paging_set_cr3(cr3);
@@ -177,7 +195,7 @@ uint32_t ui_kill(process_t *p)
   fs_close(&r->event_pipe_write);
   uint8_t is_head = responders->head->value == r;
   list_remove(responders, r->list_node, 1);
-  if (is_head) {
+  if (is_head && responders->size) {
     uint32_t err = ui_dispatch_window_event(responders->head->value, UI_EVENT_WAKE);
     CHECK_UNLOCK_R(err, "Failed to dispatch wake event.", err);
   }
@@ -199,9 +217,9 @@ uint32_t ui_swap_buffers(process_t *p)
     ui_blit_window(r, 1);
 
     uint32_t eflags = interrupt_save_disable();
-    for (uint32_t y = 0; y < r->window.w; ++y) {
-      uint32_t offset = (y + r->window.y) * SCREENWIDTH + r->window.x;
-      u_memcpy((uint32_t *)buf_vaddr + offset, backbuf + offset, r->window.w * 4);
+    for (uint32_t y = 0; y < r->window.h + 2 * BORDER_WIDTH; ++y) {
+      uint32_t offset = (y + r->window.y - BORDER_WIDTH) * SCREENWIDTH + r->window.x - BORDER_WIDTH;
+      u_memcpy((uint32_t *)buf_vaddr + offset, backbuf + offset, (r->window.w + 2 * BORDER_WIDTH) * 4);
     }
     interrupt_restore(eflags);
 

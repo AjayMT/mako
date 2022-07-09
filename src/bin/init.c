@@ -25,6 +25,11 @@ int main(int argc, char *argv[])
     execve("/apps/xed", args, environ);
   }
 
+  if (fork() == 0) {
+    char *args[] = { NULL };
+    execve("/apps/pie", args, environ);
+  }
+
   while (1) yield();
   return 0;
 }
