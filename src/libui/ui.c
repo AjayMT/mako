@@ -5,58 +5,38 @@
 //
 // Author: Ajay Tatachar <ajaymt2@illinois.edu>
 
+#include <stddef.h>
 #include "../common/stdint.h"
 #include "../libc/stdlib.h"
-#include <stddef.h>
+#include "../libc/mako.h"
 #include "../libc/errno.h"
 #include "../libc/_syscall.h"
 #include "ui.h"
 
-static ui_event_handler_t handler = NULL;
-static ui_event_t *event_buffer = NULL;
-
-static void ui_event_handle()
-{
-  if (handler && event_buffer) handler(*event_buffer);
-  _syscall0(SYSCALL_UI_RESUME);
-}
-
-int32_t ui_init()
-{
-  event_buffer = malloc(sizeof(ui_event_t));
-  if (event_buffer == NULL) { errno = ENOMEM; return -1; }
-  _syscall2(
-    SYSCALL_UI_REGISTER, (uint32_t)ui_event_handle, (uint32_t)event_buffer
-    );
-  return 0;
-}
-
-void ui_set_handler(ui_event_handler_t h)
-{ handler = h; }
-
 int32_t ui_acquire_window()
 {
-  int32_t res = _syscall0(SYSCALL_UI_MAKE_RESPONDER);
-  if (res < 0) { errno = -res; res = -1; }
-  return res;
+  // ((SCREENWIDTH / 2) * (SCREENHEIGHT / 2) * 4) / 0x1000
+  uint32_t buf = pagealloc(((SCREENWIDTH >> 1) * (SCREENHEIGHT >> 1)) >> 10);
+  if (buf == 0) return -1;
+
+  int32_t res = _syscall1(SYSCALL_UI_MAKE_RESPONDER, buf);
+  if (res < 0) { errno = -res; return -1; }
+  return buf;
 }
 
-int32_t ui_split(ui_split_type_t type)
+int32_t ui_swap_buffers()
 {
-  int32_t res = _syscall1(SYSCALL_UI_SPLIT, type);
+  int32_t res = _syscall0(SYSCALL_UI_SWAP_BUFFERS);
   if (res < 0) { errno = -res; res = -1; }
   return res;
 }
 
-int32_t ui_swap_buffers(uint32_t buf)
+int32_t ui_next_event(ui_event_t *buf)
 {
-  int32_t res = _syscall1(SYSCALL_UI_SWAP_BUFFERS, buf);
+  int32_t res = _syscall1(SYSCALL_UI_NEXT_EVENT, (uint32_t)buf);
   if (res < 0) { errno = -res; res = -1; }
   return res;
 }
-
-void ui_wait()
-{ _syscall0(SYSCALL_UI_WAIT); }
 
 int32_t ui_yield()
 {
@@ -64,3 +44,6 @@ int32_t ui_yield()
   if (res < 0) { errno = -res; res = -1; }
   return res;
 }
+
+uint32_t ui_poll_events()
+{ return _syscall0(SYSCALL_UI_POLL_EVENTS); }

@@ -127,29 +127,13 @@ uint32_t process_switch_next()
     return 0;
   }
 
-  // Jump to signal handler or UI event handler if necessary
+  // Jump to signal handler if necessary
   if (next->next_signal && next->current_signal == 0) {
     u_memcpy(&(next->saved_signal_regs), &(next->uregs), sizeof(process_registers_t));
     next->current_signal = next->next_signal;
     next->next_signal = 0;
     next->uregs.eip = next->signal_eip;
     next->uregs.edi = next->current_signal;
-  } else if (
-    next->ui_event_queue->size
-    && next->ui_state != PR_UI_EVENT
-    && next->ui_eip
-    && next->ui_event_buffer
-    ) {
-    ui_event_t *next_event = next->ui_event_queue->head->value;
-    uint32_t cr3 = paging_get_cr3();
-    paging_set_cr3(next->cr3);
-    u_memcpy((ui_event_t *)next->ui_event_buffer, next_event, sizeof(ui_event_t));
-    paging_set_cr3(cr3);
-    u_memcpy(
-      &(next->saved_ui_regs), &(next->uregs), sizeof(process_registers_t)
-      );
-    next->uregs.eip = next->ui_eip;
-    next->ui_state = PR_UI_EVENT;
   }
 
   process_resume(next);
@@ -320,8 +304,6 @@ uint32_t process_create_schedule_init(process_image_t img)
   u_memset(init, 0, sizeof(process_t));
   init->wd = kmalloc(2); CHECK(init->wd == NULL, "No memory.", ENOMEM);
   u_memcpy(init->wd, "/", u_strlen("/") + 1);
-  init->ui_event_queue = kmalloc(sizeof(list_t)); CHECK(init->ui_event_queue == NULL, "No memory.", ENOMEM);
-  u_memset(init->ui_event_queue, 0, sizeof(list_t));
 
   page_directory_t kernel_pd; uint32_t kernel_cr3;
   paging_get_kernel_pd(&kernel_pd, &kernel_cr3);
@@ -388,9 +370,7 @@ uint32_t process_fork(
   kunlock(&pids[child->pid].lock);
   child->gid = child->pid;
   child->list_node = NULL;
-  child->ui_event_queue = kmalloc(sizeof(list_t)); CHECK(child->ui_event_queue == NULL, "No memory.", ENOMEM);
-  u_memset(child->ui_event_queue, 0, sizeof(list_t));
-  child->ui_eip = 0; child->ui_event_buffer = 0; child->ui_state = PR_UI_NONE;
+  child->has_ui = 0;
 
   if (is_thread) {
     child->gid = process->gid;
@@ -532,7 +512,7 @@ void process_unschedule(process_t *process)
 void process_kill(process_t *process)
 {
   if (process == NULL || process == init_process) return;
-  if (process->ui_eip) ui_kill(process);
+  if (process->has_ui) ui_kill(process);
 
   klock(&pids[process->pid].lock);
   pids[process->pid].process = NULL;
@@ -639,7 +619,6 @@ static void process_destroyer()
 
     interrupt_restore(eflags);
 
-    list_destroy(process->ui_event_queue);
     kfree(process->wd);
     kfree(process);
 
@@ -662,8 +641,6 @@ static uint32_t process_create_destroyer()
 {
   process_t *d = kmalloc(sizeof(process_t)); CHECK(d == NULL, "No memory.", ENOMEM);
   u_memset(d, 0, sizeof(process_t));
-  d->ui_event_queue = kmalloc(sizeof(list_t)); CHECK(d->ui_event_queue == NULL, "No memory.", ENOMEM);
-  u_memset(d->ui_event_queue, 0, sizeof(list_t));
 
   page_directory_t kernel_pd; uint32_t kernel_cr3;
   paging_get_kernel_pd(&kernel_pd, &kernel_cr3);

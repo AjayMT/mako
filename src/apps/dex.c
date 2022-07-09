@@ -55,7 +55,6 @@ typedef enum {
   CS_CREATE_TYPE,
   CS_CREATE_NAME,
   CS_EDIT_NAME,
-  CS_SPLIT,
   CS_EXEC_STDIN,
   CS_EXEC_PENDING
 } command_state_t;
@@ -316,7 +315,7 @@ static void duplication_thread(void *data)
   load_dirents();
   render_dirents();
   update_cursor(cursor_idx);
-  ui_swap_buffers((uint32_t)ui_buf);
+  ui_swap_buffers();
   thread_unlock(&ui_lock);
   free(start_dir);
   free(entname);
@@ -429,10 +428,10 @@ static void exec_thread(void *data)
   thread_lock(&ui_lock);
   free(file_path);
   file_path = data;
-  cs = CS_SPLIT;
+  cs = CS_DEFAULT;
   update_footer_text();
   render_footer();
-  ui_swap_buffers((uint32_t)ui_buf);
+  ui_swap_buffers();
   thread_unlock(&ui_lock);
 }
 
@@ -503,7 +502,7 @@ static void keyboard_handler(uint8_t code)
     if (meta) {
       meta = 0; lshift = 0; rshift = 0; capslock = 0;
       render_inactive();
-      ui_swap_buffers((uint32_t)ui_buf);
+      ui_swap_buffers();
       ui_yield();
     }
     return;
@@ -544,10 +543,6 @@ static void keyboard_handler(uint8_t code)
         update_cursor(0);
         break;
       }
-      cs = CS_SPLIT;
-      update_footer_text();
-      render_footer();
-      break;
     case KB_SC_N:
       cs = CS_CREATE_TYPE;
       update_footer_text();
@@ -582,32 +577,7 @@ static void keyboard_handler(uint8_t code)
     default:
       swap = 0;
     }
-    if (swap) ui_swap_buffers((uint32_t)ui_buf);
-    thread_unlock(&ui_lock);
-    return;
-  }
-
-  if (cs == CS_SPLIT) {
-    uint8_t update = 1;
-    uint8_t cancel = 0;
-    switch (code) {
-    case KB_SC_LEFT: ui_split(UI_SPLIT_LEFT); break;
-    case KB_SC_RIGHT: ui_split(UI_SPLIT_RIGHT); break;
-    case KB_SC_DOWN: ui_split(UI_SPLIT_DOWN); break;
-    case KB_SC_UP: ui_split(UI_SPLIT_UP); break;
-    case KB_SC_ESC: cancel = 1; break;
-    default: update = 0;
-    }
-    if (update) {
-      cs = CS_DEFAULT;
-      update_footer_text();
-      if (cancel) {
-        free(file_path); file_path = NULL;
-        free(exec_path); exec_path = NULL;
-        render_footer();
-        ui_swap_buffers((uint32_t)ui_buf);
-      }
-    }
+    if (swap) ui_swap_buffers();
     thread_unlock(&ui_lock);
     return;
   }
@@ -625,12 +595,12 @@ static void keyboard_handler(uint8_t code)
       cs = CS_DEFAULT;
       update_footer_text();
       render_footer();
-      ui_swap_buffers((uint32_t)ui_buf);
+      ui_swap_buffers();
     } else if (update) {
       cs = CS_CREATE_NAME;
       update_footer_text();
       render_footer();
-      ui_swap_buffers((uint32_t)ui_buf);
+      ui_swap_buffers();
     }
     thread_unlock(&ui_lock);
     return;
@@ -677,7 +647,7 @@ static void keyboard_handler(uint8_t code)
         render_dirents(); update_cursor(cursor_idx);
       }
       render_footer();
-      ui_swap_buffers((uint32_t)ui_buf);
+      ui_swap_buffers();
     }
     thread_unlock(&ui_lock);
     return;
@@ -724,7 +694,7 @@ static void keyboard_handler(uint8_t code)
         render_dirents(); update_cursor(cursor_idx);
       }
       render_footer();
-      ui_swap_buffers((uint32_t)ui_buf);
+      ui_swap_buffers();
     }
     thread_unlock(&ui_lock);
     return;
@@ -771,11 +741,11 @@ static void keyboard_handler(uint8_t code)
         cs = CS_EXEC_PENDING;
         update_footer_text();
       } else if (execed == 2) {
-        cs = CS_SPLIT;
+        cs = CS_DEFAULT;
         update_footer_text();
       }
       render_footer();
-      ui_swap_buffers((uint32_t)ui_buf);
+      ui_swap_buffers();
     }
     thread_unlock(&ui_lock);
     return;
@@ -793,52 +763,44 @@ static void keyboard_handler(uint8_t code)
 
 static void ui_handler(ui_event_t ev)
 {
-  if (ev.type == UI_EVENT_RESIZE || ev.type == UI_EVENT_WAKE) {
-    thread_lock(&ui_lock);
-    if (window_w != ev.width || window_h != ev.height) {
-      if (ui_buf) {
-        uint32_t oldsize = window_w * window_h * 4;
-        pagefree((uint32_t)ui_buf, (oldsize / 0x1000) + 1);
-      }
-      uint32_t size = ev.width * ev.height * 4;
-      ui_buf = (uint32_t *)pagealloc((size / 0x1000) + 1);
-      window_w = ev.width;
-      window_h = ev.height;
-    }
-
-    fill_color(ui_buf, BG_COLOR, window_w * window_h);
-    load_dirents();
-    render_path();
-    render_footer();
-    render_dirents();
-    update_cursor(cursor_idx);
-    if (ev.is_active == 0) render_inactive();
-
-    ui_swap_buffers((uint32_t)ui_buf);
-
-    if (file_path) {
-      if (fork() == 0) {
-        char *args[] = { file_path, NULL };
-        execve("/apps/xed", args, environ);
-        exit(1);
-      }
-      free(file_path);
-      file_path = NULL;
-    } else if (exec_path) {
-      if (fork() == 0) {
-        char *args[] = { NULL };
-        execve(exec_path, args, environ);
-        exit(1);
-      }
-      free(exec_path);
-      exec_path = NULL;
-    }
-
-    thread_unlock(&ui_lock);
-    return;
+  if (ev.type == UI_EVENT_KEYBOARD) {
+    keyboard_handler(ev.code); return;
   }
 
-  keyboard_handler(ev.code);
+  thread_lock(&ui_lock);
+
+  window_w = ev.width;
+  window_h = ev.height;
+
+  fill_color(ui_buf, BG_COLOR, window_w * window_h);
+  load_dirents();
+  render_path();
+  render_footer();
+  render_dirents();
+  update_cursor(cursor_idx);
+
+  ui_swap_buffers();
+
+  if (file_path) {
+    if (fork() == 0) {
+      char *args[] = { file_path, NULL };
+      execve("/apps/xed", args, environ);
+      exit(1);
+    }
+    free(file_path);
+    file_path = NULL;
+  } else if (exec_path) {
+    if (fork() == 0) {
+      char *args[] = { NULL };
+      execve(exec_path, args, environ);
+      exit(1);
+    }
+    free(exec_path);
+    exec_path = NULL;
+  }
+
+  thread_unlock(&ui_lock);
+  return;
 }
 
 static void update_footer_text()
@@ -848,10 +810,6 @@ static void update_footer_text()
   case CS_DEFAULT:
     str = "[ENT]open | [x]exec | [n]new | [d]delete"
       " | [e]edit | [c]duplicate | [q]quit";
-    break;
-  case CS_SPLIT:
-    str = "Split direction: [LEFT] | [RIGHT] | [UP] | [DOWN]"
-      " | [ESC]cancel";
     break;
   case CS_CREATE_TYPE:
     str = "Entry type: [d]directory | [f]file | [ESC]cancel";
@@ -890,12 +848,16 @@ int main(int argc, char *argv[])
   cs = CS_DEFAULT;
   update_footer_text();
 
-  ui_init();
-  ui_set_handler(ui_handler);
   res = ui_acquire_window();
-  if (res) return 1;
+  if (res < 0) return 1;
+  ui_buf = (uint32_t *)res;
 
-  while (1) ui_wait();
+  while (1) {
+    ui_event_t ev;
+    res = ui_next_event(&ev);
+    if (res < 0) return 1;
+    ui_handler(ev);
+  }
 
   return 0;
 }

@@ -23,22 +23,15 @@ typedef struct ui_window_s {
 typedef enum {
   UI_EVENT_KEYBOARD,
   UI_EVENT_RESIZE,
-  UI_EVENT_WAKE
+  UI_EVENT_WAKE,
+  UI_EVENT_SLEEP
 } ui_event_type_t;
 
 typedef struct ui_event_s {
   ui_event_type_t type;
   uint8_t code;
-  uint8_t is_active;
   uint32_t width;
   uint32_t height;
 } ui_event_t;
-
-typedef enum {
-  UI_SPLIT_LEFT,
-  UI_SPLIT_RIGHT,
-  UI_SPLIT_UP,
-  UI_SPLIT_DOWN,
-} ui_split_type_t;
 
 #endif /* _UI_COMMON_H_ */

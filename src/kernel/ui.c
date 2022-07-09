@@ -15,6 +15,8 @@
 #include "interrupt.h"
 #include "log.h"
 #include "ui.h"
+#include "pipe.h"
+#include "fs.h"
 
 #define CHECK(err, msg, code) if ((err)) {      \
     log_error("ui", msg "\n"); return (code);   \
@@ -23,391 +25,258 @@
     log_error("ui", msg "\n"); kunlock(&responders_lock);       \
     return (code);                                              \
   }
-#define CHECK_UNLOCK_F(err, msg, code) if ((err)) {             \
-    log_error("ui", msg "\n"); kunlock(&free_windows_lock);     \
-    return (code);                                              \
-  }
+
+typedef struct ui_responder_s {
+  process_t *process;
+  ui_window_t window;
+  uint32_t *buf;
+  fs_node_t event_pipe_read;
+  fs_node_t event_pipe_write;
+  list_node_t *list_node;
+} ui_responder_t;
 
 static uint32_t buf_vaddr = 0;
-static ui_responder_t *key_responder = NULL;
+static uint32_t *backbuf = NULL;
+static volatile uint32_t backbuf_lock;
 static list_t *responders = NULL;
-static list_t *free_windows = NULL;
 static volatile uint32_t responders_lock = 0;
-static volatile uint32_t free_windows_lock = 0;
+
+static ui_responder_t *responders_by_gid[MAX_PROCESS_COUNT];
+
+// Blit a single window to the backbuf.
+static void ui_blit_window(ui_responder_t *r, uint8_t is_key)
+{
+  (void)is_key;
+  process_t *p = r->process;
+  uint32_t eflags = interrupt_save_disable();
+  uint32_t cr3 = paging_get_cr3();
+  paging_set_cr3(p->cr3);
+  // TODO window borders
+  for (uint32_t y = 0; y < r->window.h; ++y) {
+    uint32_t *r_buf_ptr = r->buf + (y * r->window.w);
+    uint32_t *backbuf_ptr = backbuf + ((y + r->window.y) * SCREENWIDTH) + r->window.x;
+    u_memcpy(backbuf_ptr, r_buf_ptr, r->window.w * 4);
+  }
+
+  paging_set_cr3(cr3);
+  interrupt_restore(eflags);
+}
+
+// Redraw the entire screen.
+static void ui_redraw_all()
+{
+  klock(&backbuf_lock);
+
+  for (uint32_t i = 0; i < SCREENWIDTH * SCREENHEIGHT; ++i)
+    backbuf[i] = 0x777777;
+
+  klock(&responders_lock);
+  for (list_node_t *current = responders->tail; current; current = current->prev) {
+    ui_responder_t *responder = current->value;
+    ui_blit_window(responder, current == responders->head);
+  }
+  kunlock(&responders_lock);
+
+  uint32_t eflags = interrupt_save_disable();
+  u_memcpy((uint32_t *)buf_vaddr, backbuf, SCREENWIDTH * SCREENHEIGHT * 4);
+  interrupt_restore(eflags);
+
+  kunlock(&backbuf_lock);
+}
 
 uint32_t ui_init(uint32_t vaddr)
 {
+  u_memset(responders_by_gid, 0, sizeof(responders_by_gid));
   buf_vaddr = vaddr;
-
-  responders = kmalloc(sizeof(list_t));
-  CHECK(responders == NULL, "No memory.", ENOMEM);
+  backbuf = kmalloc(SCREENHEIGHT * SCREENWIDTH * 4); CHECK(backbuf == NULL, "No memory.", ENOMEM);
+  responders = kmalloc(sizeof(list_t)); CHECK(responders == NULL, "No memory.", ENOMEM);
   u_memset(responders, 0, sizeof(list_t));
 
-  free_windows = kmalloc(sizeof(list_t));
-  CHECK(free_windows == NULL, "No memory.", ENOMEM);
-  u_memset(free_windows, 0, sizeof(list_t));
-
-  ui_window_t *w = kmalloc(sizeof(ui_window_t));
-  CHECK(w == NULL, "No memory.", ENOMEM);
-  w->x = 0;
-  w->y = 0;
-  w->w = SCREENWIDTH;
-  w->h = SCREENHEIGHT;
-  list_push_back(free_windows, w);
+  ui_redraw_all();
 
   return 0;
 }
 
-static uint32_t ui_dispatch_resize_event(ui_responder_t *r)
+static uint32_t ui_dispatch_window_event(ui_responder_t *r, ui_event_type_t t)
 {
-  ui_event_t *ev = kmalloc(sizeof(ui_event_t));
-  CHECK(ev == NULL, "No memory.", ENOMEM);
-  ev->type = UI_EVENT_RESIZE;
-  ev->width = r->window.w;
-  ev->height = r->window.h;
-  ev->is_active = r == key_responder;
+  ui_event_t ev;
+  ev.type = t;
+  ev.width = r->window.w;
+  ev.height = r->window.h;
 
-  klock(&(r->lock));
-  list_push_back(r->process->ui_event_queue, ev);
-  kunlock(&(r->lock));
-  if (r->process->ui_state == PR_UI_WAIT) process_schedule(r->process);
+  uint32_t eflags = interrupt_save_disable();
+  uint32_t written = fs_write(&r->event_pipe_write, 0, sizeof(ui_event_t), (uint8_t *)&ev);
+  interrupt_restore(eflags);
+
+  if (written != sizeof(ui_event_t)) return -1;
   return 0;
 }
 
 uint32_t ui_dispatch_keyboard_event(uint8_t code)
 {
-  if (key_responder == NULL) return 0;
+  ui_event_t ev;
+  ev.type = UI_EVENT_KEYBOARD;
+  ev.code = code;
 
-  ui_event_t *ev = kmalloc(sizeof(ui_event_t));
-  CHECK(ev == NULL, "No memory.", ENOMEM);
-  ev->type = UI_EVENT_KEYBOARD;
-  ev->code = code;
-  ev->is_active = 1;
+  uint32_t eflags = interrupt_save_disable();
+  if (responders->size == 0) { interrupt_restore(eflags); return 0; }
 
-  klock(&(key_responder->lock));
-  list_push_back(key_responder->process->ui_event_queue, ev);
-  kunlock(&(key_responder->lock));
-  if (key_responder->process->ui_state == PR_UI_WAIT)
-    process_schedule(key_responder->process);
+  ui_responder_t *key_responder = responders->head->value;
+  uint32_t written = fs_write(&key_responder->event_pipe_write, 0, sizeof(ui_event_t), (uint8_t *)&ev);
 
+  interrupt_restore(eflags);
+  if (written != sizeof(ui_event_t)) return -1;
   return 0;
 }
 
-static ui_responder_t *responder_from_process(process_t *p)
+uint32_t ui_make_responder(process_t *p, uint32_t buf)
 {
-  ui_responder_t *r = NULL;
-  klock(&responders_lock);
-  if (key_responder && key_responder->process->gid == p->gid) {
-    kunlock(&responders_lock);
-    return key_responder;
-  }
-  list_foreach(lnode, responders) {
-    ui_responder_t *lr = lnode->value;
-    if (lr->process == p) {
-      r = lr; break;
-    }
-  }
-  kunlock(&responders_lock);
-  return r;
-}
-
-uint32_t ui_split(process_t *p, ui_split_type_t type)
-{
-  ui_responder_t *r = responder_from_process(p);
-  if (r == NULL) return EINVAL;
-
-  klock(&free_windows_lock);
-
-  ui_window_t *w = kmalloc(sizeof(ui_window_t));
-  CHECK_UNLOCK_F(w == NULL, "No memory.", ENOMEM);
-  switch (type) {
-  case UI_SPLIT_LEFT:
-    w->x = r->window.x;
-    w->y = r->window.y;
-    w->w = r->window.w / 2;
-    w->h = r->window.h;
-    r->window.w /= 2;
-    r->window.x += r->window.w;
-    break;
-  case UI_SPLIT_RIGHT:
-    w->x = r->window.x + (r->window.w / 2);
-    w->y = r->window.y;
-    w->w = r->window.w / 2;
-    w->h = r->window.h;
-    r->window.w /= 2;
-    break;
-  case UI_SPLIT_UP:
-    w->x = r->window.x;
-    w->y = r->window.y;
-    w->w = r->window.w;
-    w->h = r->window.h / 2;
-    r->window.h /= 2;
-    r->window.y += r->window.h;
-    break;
-  case UI_SPLIT_DOWN:
-    w->x = r->window.x;
-    w->y = r->window.y + (r->window.h / 2);
-    w->w = r->window.w;
-    w->h = r->window.h / 2;
-    r->window.h /= 2;
-    break;
-  }
-  ui_dispatch_resize_event(r);
-  list_push_back(free_windows, w);
-
-  kunlock(&free_windows_lock);
-  return 0;
-}
-
-uint32_t ui_make_responder(process_t *p)
-{
-  klock(&free_windows_lock);
-  if (free_windows->size == 0) return ENOSPC;
-
-  klock(&responders_lock);
-  ui_responder_t *r = kmalloc(sizeof(ui_responder_t));
-  if (r == NULL) {
-    kunlock(&responders_lock);
-    kunlock(&free_windows_lock);
-    return ENOMEM;
-  }
+  if (responders_by_gid[p->gid]) return 1;
+  ui_responder_t *r = kmalloc(sizeof(ui_responder_t)); CHECK(r == NULL, "No memory.", ENOMEM);
+  u_memset(r, 0, sizeof(ui_responder_t));
+  uint32_t err = pipe_create(&r->event_pipe_read, &r->event_pipe_write);
+  CHECK(err, "Failed to create event pipe.", err);
   r->process = p;
-  r->window = *((ui_window_t *)free_windows->head->value);
-  list_pop_front(free_windows);
-  kunlock(&free_windows_lock);
-  r->lock = 0;
-  list_push_back(responders, r);
-  r->list_node = responders->tail;
+  r->buf = (uint32_t *)buf;
+  r->window.w = SCREENWIDTH >> 1;
+  r->window.h = SCREENHEIGHT >> 1;
 
-  if (key_responder == NULL) key_responder = r;
+  klock(&responders_lock);
+  if (responders->size == 0) {
+    r->window.x = SCREENWIDTH >> 2;
+    r->window.y = SCREENHEIGHT >> 2;
+  } else {
+    ui_responder_t *key_responder = responders->head->value;
+    r->window.x = key_responder->window.x + 16;
+    r->window.y = key_responder->window.y + 16;
+    if (r->window.x >= SCREENWIDTH) r->window.x = 0;
+    if (r->window.x >= SCREENHEIGHT) r->window.x = 0;
+  }
 
-  ui_event_t *ev = kmalloc(sizeof(ui_event_t));
-  ev->type = UI_EVENT_WAKE;
-  ev->width = r->window.w;
-  ev->height = r->window.h;
-  ev->is_active = key_responder == r;
-  CHECK(ev == NULL, "No memory.", ENOMEM);
-  klock(&(r->lock));
-  list_push_back(r->process->ui_event_queue, ev);
-  kunlock(&(r->lock));
-  if (r->process->ui_state == PR_UI_WAIT)
-    process_schedule(r->process);
-
+  list_push_front(responders, r);
+  r->list_node = responders->head;
+  responders_by_gid[p->gid] = r;
+  p->has_ui = 1;
+  err = ui_dispatch_window_event(r, UI_EVENT_WAKE);
+  CHECK_UNLOCK_R(err, "Failed to dispatch wake event.", err);
+  if (responders->head->next) {
+    err = ui_dispatch_window_event(responders->head->next->value, UI_EVENT_SLEEP);
+    CHECK_UNLOCK_R(err, "Failed to dispatch sleep event.", err);
+  }
   kunlock(&responders_lock);
   return 0;
 }
-
-#define CHECK_UNLOCK(err, msg, code) if ((err)) {               \
-    log_error("ui", msg "\n"); kunlock(&free_windows_lock);     \
-    kunlock(&responders_lock); return (code);                   \
-  }
 
 uint32_t ui_kill(process_t *p)
 {
-  ui_responder_t *r = responder_from_process(p);
-  if (r == NULL) return EINVAL;
-
   klock(&responders_lock);
-  klock(&free_windows_lock);
-
-  list_t *h_expd_l = kmalloc(sizeof(list_t));
-  CHECK_UNLOCK(h_expd_l == NULL, "No memory.", ENOMEM);
-  u_memset(h_expd_l, 0, sizeof(list_t));
-
-  list_t *h_expd_r = kmalloc(sizeof(list_t));
-  CHECK_UNLOCK(h_expd_r == NULL, "No memory.", ENOMEM);
-  u_memset(h_expd_r, 0, sizeof(list_t));
-
-  uint32_t h_expd_l_span = 0;
-  uint32_t h_expd_r_span = 0;
-  list_foreach(node, responders) {
-    if (h_expd_l_span == r->window.h || h_expd_r_span == r->window.h)
-      break;
-
-    ui_responder_t *o = node->value;
-    if (o == r) continue;
-
-    uint8_t align = o->window.y >= r->window.y
-      && o->window.y + o->window.h <= r->window.y + r->window.h;
-    if (!align) continue;
-
-    uint8_t left = o->window.x + o->window.w == r->window.x;
-    uint8_t right = r->window.x + r->window.w == o->window.x;
-    if (left) {
-      h_expd_l_span += o->window.h;
-      list_push_back(h_expd_l, o);
-    } else if (right) {
-      h_expd_r_span += o->window.h;
-      list_push_back(h_expd_r, o);
-    }
-  }
-
-  list_t *h_expd = NULL;
-  if (h_expd_l_span == r->window.h) h_expd = h_expd_l;
-  if (h_expd_r_span == r->window.h) h_expd = h_expd_r;
-  if (h_expd) {
-    list_node_t *head = NULL;
-    while ((head = h_expd->head)) {
-      ui_responder_t *o = head->value;
-      list_remove(h_expd, head, 0);
-      kfree(head);
-      o->window.w += r->window.w;
-      if (h_expd == h_expd_r) o->window.x = r->window.x;
-      ui_dispatch_resize_event(o);
-    }
-    while ((head = h_expd_r->head)) {
-      list_remove(h_expd_r, head, 0); kfree(head);
-    }
-    list_destroy(h_expd_r);
-    while ((head = h_expd_l->head)) {
-      list_remove(h_expd_l, head, 0); kfree(head);
-    }
-    list_destroy(h_expd_l);
-    goto success;
-  }
-
-  list_t *v_expd_u = kmalloc(sizeof(list_t));
-  CHECK_UNLOCK(v_expd_u == NULL, "No memory.", ENOMEM);
-  u_memset(v_expd_u, 0, sizeof(list_t));
-
-  list_t *v_expd_d = kmalloc(sizeof(list_t));
-  CHECK_UNLOCK(v_expd_d == NULL, "No memory.", ENOMEM);
-  u_memset(v_expd_d, 0, sizeof(list_t));
-
-  uint32_t v_expd_u_span = 0;
-  uint32_t v_expd_d_span = 0;
-  list_foreach(node, responders) {
-    if (v_expd_u_span == r->window.w || v_expd_d_span == r->window.w)
-      break;
-
-    ui_responder_t *o = node->value;
-    if (o == r) continue;
-
-    uint8_t align = o->window.x >= r->window.x
-      && o->window.x + o->window.w <= r->window.x + r->window.w;
-    if (!align) continue;
-
-    uint8_t up = o->window.y + o->window.h == r->window.y;
-    uint8_t down = r->window.y + r->window.h == o->window.y;
-    if (up) {
-      v_expd_u_span += o->window.w;
-      list_push_back(v_expd_u, o);
-    } else if (down) {
-      v_expd_d_span += o->window.w;
-      list_push_back(v_expd_d, o);
-    }
-  }
-
-  list_t *v_expd = NULL;
-  if (v_expd_u_span == r->window.w) v_expd = v_expd_u;
-  if (v_expd_d_span == r->window.w) v_expd = v_expd_d;
-  if (v_expd) {
-    list_node_t *head = NULL;
-    while ((head = v_expd->head)) {
-      ui_responder_t *o = head->value;
-      list_remove(v_expd, head, 0);
-      kfree(head);
-      o->window.h += r->window.h;
-      if (v_expd == v_expd_d) o->window.y = r->window.y;
-      ui_dispatch_resize_event(o);
-    }
-    while ((head = v_expd_d->head)) {
-      list_remove(v_expd_d, head, 0); kfree(head);
-    }
-    list_destroy(v_expd_d);
-    while ((head = v_expd_u->head)) {
-      list_remove(v_expd_u, head, 0); kfree(head);
-    }
-    list_destroy(v_expd_u);
-    goto success;
-  }
-
-  // TODO clear the window?
-  if (r == key_responder) key_responder = NULL;
-  ui_window_t *w = kmalloc(sizeof(ui_window_t));
-  CHECK_UNLOCK(w == NULL, "No memory.", ENOMEM);
-  u_memcpy(w, &(r->window), sizeof(ui_window_t));
-  list_push_back(free_windows, w);
+  ui_responder_t *r = responders_by_gid[p->gid];
+  if (r == NULL) { kunlock(&responders_lock); return 0; }
+  responders_by_gid[p->gid] = NULL;
+  fs_close(&r->event_pipe_read);
+  fs_close(&r->event_pipe_write);
+  uint8_t is_head = responders->head->value == r;
   list_remove(responders, r->list_node, 1);
-  kunlock(&free_windows_lock);
-  kunlock(&responders_lock);
-  return 0;
-
-success:
-  if (r == key_responder) {
-    list_node_t *next = r->list_node->next;
-    if (next == NULL) next = responders->head;
-    key_responder = next->value;
-
-    ui_event_t *ev = kmalloc(sizeof(ui_event_t));
-    ev->type = UI_EVENT_WAKE;
-    ev->width = key_responder->window.w;
-    ev->height = key_responder->window.h;
-    ev->is_active = 1;
-    CHECK_UNLOCK(ev == NULL, "No memory.", ENOMEM);
-    klock(&(key_responder->lock));
-    list_push_back(key_responder->process->ui_event_queue, ev);
-    kunlock(&(key_responder->lock));
-    if (key_responder->process->ui_state == PR_UI_WAIT)
-      process_schedule(key_responder->process);
+  if (is_head) {
+    uint32_t err = ui_dispatch_window_event(responders->head->value, UI_EVENT_WAKE);
+    CHECK_UNLOCK_R(err, "Failed to dispatch wake event.", err);
   }
-  list_remove(responders, r->list_node, 1);
-  kunlock(&free_windows_lock);
   kunlock(&responders_lock);
-
+  ui_redraw_all();
   return 0;
 }
 
-uint32_t ui_swap_buffers(process_t *p, uint32_t backbuf_vaddr)
+uint32_t ui_swap_buffers(process_t *p)
 {
-  ui_responder_t *r = responder_from_process(p);
-  if (r == NULL) return EINVAL;
-  uint32_t eflags = interrupt_save_disable();
-  uint32_t cr3 = paging_get_cr3();
-  paging_set_cr3(p->cr3);
+  // acquire backbuf lock first to avoid deadlock with ui_redraw_all
+  klock(&backbuf_lock);
+  klock(&responders_lock);
 
-  uint32_t *backbuf = (uint32_t *)backbuf_vaddr;
-  uint32_t *b_row = backbuf;
-  uint32_t *buf = (uint32_t *)buf_vaddr;
-  uint32_t *row = buf + (SCREENWIDTH * r->window.y);
+  ui_responder_t *r = responders_by_gid[p->gid];
+  if (r == NULL) { kunlock(&responders_lock); klock(&backbuf_lock); return 1; }
 
-  if (r->window.w == SCREENWIDTH && r->window.h == SCREENHEIGHT) {
-    u_memcpy(buf, backbuf, SCREENWIDTH * SCREENHEIGHT * 4);
-    paging_set_cr3(cr3);
+  if (r == responders->head->value) {
+    ui_blit_window(r, 1);
+
+    uint32_t eflags = interrupt_save_disable();
+    for (uint32_t y = 0; y < r->window.w; ++y) {
+      uint32_t offset = (y + r->window.y) * SCREENWIDTH + r->window.x;
+      u_memcpy((uint32_t *)buf_vaddr + offset, backbuf + offset, r->window.w * 4);
+    }
     interrupt_restore(eflags);
+
+    kunlock(&responders_lock);
+    kunlock(&backbuf_lock);
     return 0;
   }
 
-  for (uint32_t i = r->window.y; i < r->window.y + r->window.h; ++i) {
-    u_memcpy(row + r->window.x, b_row, r->window.w * 4);
-    row += SCREENWIDTH;
-    b_row += r->window.w;
-  }
+  kunlock(&responders_lock);
+  kunlock(&backbuf_lock);
 
-  paging_set_cr3(cr3);
-  interrupt_restore(eflags);
+  ui_redraw_all();
+
   return 0;
 }
 
 uint32_t ui_yield(process_t *p)
 {
-  if (p->gid != key_responder->process->gid) return EINVAL;
   klock(&responders_lock);
-  list_node_t *next = key_responder->list_node->next;
-  if (next == NULL) next = responders->head;
-  key_responder = next->value;
+  ui_responder_t *r = responders_by_gid[p->gid];
+  if (r == NULL) { kunlock(&responders_lock); return 1; }
+
+  if (responders->head->value != r) { kunlock(&responders_lock); return 0; }
+
+  // Rotate responders list
+  list_remove(responders, responders->head, 0);
+  r->list_node->prev = responders->tail;
+  r->list_node->next = NULL;
+  if (responders->tail) responders->tail->next = r->list_node;
+  responders->tail = r->list_node;
+  if (responders->head == NULL) responders->head = r->list_node;
+  responders->size++;
+
+  if (responders->size > 1) {
+    uint32_t err = ui_dispatch_window_event(r, UI_EVENT_SLEEP);
+    CHECK_UNLOCK_R(err, "Failed to dispatch sleep event.", err);
+    err = ui_dispatch_window_event(responders->head->value, UI_EVENT_WAKE);
+    CHECK_UNLOCK_R(err, "Failed to dispatch wake event.", err);
+  }
+
   kunlock(&responders_lock);
 
-  ui_event_t *ev = kmalloc(sizeof(ui_event_t));
-  ev->type = UI_EVENT_WAKE;
-  ev->width = key_responder->window.w;
-  ev->height = key_responder->window.h;
-  ev->is_active = 1;
-  CHECK(ev == NULL, "No memory.", ENOMEM);
-  klock(&(key_responder->lock));
-  list_push_back(key_responder->process->ui_event_queue, ev);
-  kunlock(&(key_responder->lock));
-  if (key_responder->process->ui_state == PR_UI_WAIT)
-    process_schedule(key_responder->process);
+  ui_redraw_all();
   return 0;
+}
+
+uint32_t ui_next_event(process_t *p, uint32_t buf)
+{
+  uint32_t eflags = interrupt_save_disable();
+  ui_responder_t *r = responders_by_gid[p->gid];
+  if (r == NULL) { interrupt_restore(eflags); return 1; }
+
+  uint8_t ev_buf[sizeof(ui_event_t)];
+  uint32_t read_size = fs_read(&r->event_pipe_read, 0, sizeof(ui_event_t), ev_buf);
+  if (read_size < sizeof(ui_event_t)) {
+    interrupt_restore(eflags);
+    return 1;
+  }
+
+  uint32_t cr3 = paging_get_cr3();
+  paging_set_cr3(p->cr3);
+  u_memcpy((uint8_t *)buf, ev_buf, sizeof(ui_event_t));
+  paging_set_cr3(cr3);
+
+  interrupt_restore(eflags);
+
+  return 0;
+}
+
+uint32_t ui_poll_events(process_t *p)
+{
+  uint32_t eflags = interrupt_save_disable();
+  ui_responder_t *r = responders_by_gid[p->gid];
+  if (r == NULL) return 0;
+  uint32_t count = r->event_pipe_read.length / sizeof(ui_event_t);
+  interrupt_restore(eflags);
+  return count;
 }

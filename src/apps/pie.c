@@ -22,9 +22,8 @@
 #define FOOTER_LEN    (SCREENWIDTH / FONTWIDTH)
 #define MAX_NUM_LINES (SCREENHEIGHT / FONTHEIGHT)
 
-static const uint32_t BG_COLOR          = 0xffffeb;
-static const uint32_t INACTIVE_BG_COLOR = 0xffffff;
-static const uint32_t INACTIVE_COLOR    = 0xb0b0b0;
+static const uint32_t BG_COLOR          = 0xffffff;
+static const uint32_t DIVIDER_COLOR     = 0xb0b0b0;
 static const uint32_t PATH_HEIGHT       = 24;
 static const uint32_t FOOTER_HEIGHT     = 24;
 static const uint32_t TOTAL_PADDING     = 16;
@@ -95,17 +94,6 @@ static void render_text(const char *text, uint32_t x, uint32_t y)
   free(pixels);
 }
 
-// gray out all UI elements when the window is inactive
-__attribute__((always_inline))
-static inline void render_inactive()
-{
-  for (uint32_t i = 0; i < window_w; ++i)
-    for (uint32_t j = 0; j < window_h; ++j)
-      ui_buf[(j * window_w) + i] =
-        ui_buf[(j * window_w) + i] == BG_COLOR
-        ? INACTIVE_BG_COLOR : INACTIVE_COLOR;
-}
-
 // render the path bar at the top of the window
 static void render_path()
 {
@@ -113,7 +101,7 @@ static void render_path()
   fill_color(ui_buf, BG_COLOR, window_w * PATH_HEIGHT);
   render_text(str, 4, 4);
   uint32_t *line_row = ui_buf + (PATH_HEIGHT * window_w);
-  fill_color(line_row, INACTIVE_COLOR, window_w);
+  fill_color(line_row, DIVIDER_COLOR, window_w);
 }
 
 // render the footer at the bottom of the window
@@ -122,7 +110,7 @@ static void render_footer()
   uint32_t *line_row = ui_buf + ((window_h - FOOTER_HEIGHT) * window_w);
   fill_color(line_row, BG_COLOR, window_w * FOOTER_HEIGHT);
   render_text(footer_text, 4, window_h - FOOTER_HEIGHT + 4);
-  fill_color(line_row, INACTIVE_COLOR, window_w);
+  fill_color(line_row, DIVIDER_COLOR, window_w);
 }
 
 // Render all the text in the buffer starting at line `line_idx`
@@ -252,7 +240,7 @@ static void exec_thread()
       render_buffer(old_screen_line_idx);
     }
 
-    ui_swap_buffers((uint32_t)ui_buf);
+    ui_swap_buffers();
 
     thread_unlock(&ui_lock);
   }
@@ -264,7 +252,7 @@ static void exec_thread()
   update_footer_text();
   render_footer();
   render_path();
-  ui_swap_buffers((uint32_t)ui_buf);
+  ui_swap_buffers();
 
   close(proc_read_fd);
   proc_read_fd = 0;
@@ -379,8 +367,6 @@ static void keyboard_handler(uint8_t code)
     if (meta) {
       thread_lock(&ui_lock);
       meta = 0; lshift = 0; rshift = 0; capslock = 0;
-      render_inactive();
-      ui_swap_buffers((uint32_t)ui_buf);
       ui_yield();
       thread_unlock(&ui_lock);
       return;
@@ -423,10 +409,7 @@ static void keyboard_handler(uint8_t code)
     // with provided arguments
 
     FIELD_INPUT({
-        if (
-          strcmp(footer_field, "q") == 0
-          && (window_w != SCREENWIDTH || window_h != SCREENHEIGHT)
-          ) exit(0);
+        if (strcmp(footer_field, "q") == 0) exit(0);
 
         if (field_len == 0) { update = 0; break; }
 
@@ -473,23 +456,16 @@ static void keyboard_handler(uint8_t code)
           break;
         }
 
-        char *apps_path = find_path(tmp, getenv("APPS_PATH"));
-        if (apps_path) {
-          free(app_path);
-          if (app_args) for (uint32_t i = 0; app_args[i]; ++i) free(app_args[i]);
-          free(app_args);
-
-          app_path = strdup(apps_path);
-          app_args = malloc(sizeof(char *) * (args_len + 1));
-          uint32_t i = 0;
-          for (; args[i]; ++i) app_args[i] = strdup(args[i]);
-          app_args[i] = 0;
-
-          free(apps_path); free(tmp); free(args);
+        char *app_path = find_path(tmp, getenv("APPS_PATH"));
+        if (app_path) {
+          if (fork() == 0) {
+            execve(app_path, args, environ);
+            exit(1);
+          }
+          free(tmp); free(app_path); free(args);
           memset(footer_field, 0, sizeof(footer_field));
           update_footer_text();
           render_footer();
-          ui_split(UI_SPLIT_RIGHT);
           break;
         }
 
@@ -513,7 +489,7 @@ static void keyboard_handler(uint8_t code)
         update_footer_text();
         render_footer();
       });
-    if (update) ui_swap_buffers((uint32_t)ui_buf);
+    if (update) ui_swap_buffers();
     thread_unlock(&ui_lock);
     return;
   }
@@ -573,7 +549,7 @@ static void keyboard_handler(uint8_t code)
         update_footer_text();
         render_footer();
       });
-    if (update) ui_swap_buffers((uint32_t)ui_buf);
+    if (update) ui_swap_buffers();
     thread_unlock(&ui_lock);
     return;
   }
@@ -589,16 +565,13 @@ static void ui_handler(ui_event_t ev)
 
   thread_lock(&ui_lock);
 
-  if (window_w != ev.width || window_h != ev.height) {
-    if (ui_buf) {
-      uint32_t oldsize = window_w * window_h * 4;
-      pagefree((uint32_t)ui_buf, (oldsize / 0x1000) + 1);
-    }
-    uint32_t size = ev.width * ev.height * 4;
-    ui_buf = (uint32_t *)pagealloc((size / 0x1000) + 1);
-    window_w = ev.width;
-    window_h = ev.height;
+  if (ev.width == window_w && ev.height == window_h) {
+    thread_unlock(&ui_lock);
+    return;
   }
+
+  window_w = ev.width;
+  window_h = ev.height;
 
   fill_color(ui_buf, BG_COLOR, window_w * window_h);
 
@@ -612,19 +585,8 @@ static void ui_handler(ui_event_t ev)
   render_buffer(0);
   render_path();
   render_footer();
-  if (ev.is_active == 0) render_inactive();
 
-  if (app_path) {
-    if (fork() == 0) {
-      execve(app_path, app_args, environ);
-      exit(1);
-    }
-    free(app_path); app_path = NULL;
-    if (app_args) for (uint32_t i = 0; app_args[i]; ++i) free(app_args[i]);
-    free(app_args); app_args = NULL;
-  }
-
-  ui_swap_buffers((uint32_t)ui_buf);
+  ui_swap_buffers();
   thread_unlock(&ui_lock);
 }
 
@@ -653,12 +615,16 @@ int main(int argc, char *argv[])
 
   update_footer_text();
 
-  ui_init();
-  ui_set_handler(ui_handler);
   int32_t res = ui_acquire_window();
-  if (res) return 1;
+  if (res < 0) return 1;
+  ui_buf = (uint32_t *)res;
 
-  while (1) ui_wait();
+  while (1) {
+    ui_event_t ev;
+    res = ui_next_event(&ev);
+    if (res < 0) return 1;
+    ui_handler(ev);
+  }
 
   return 0;
 }

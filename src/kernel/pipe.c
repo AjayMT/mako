@@ -28,6 +28,8 @@ typedef struct {
 } pipe_reader_t;
 
 typedef struct {
+  fs_node_t *read_node;
+  fs_node_t *write_node;
   uint8_t *buf;
   uint32_t head;
   uint32_t count;
@@ -81,7 +83,8 @@ static uint32_t pipe_read(fs_node_t *node, uint32_t offset, uint32_t size, uint8
     self->head = (self->head + 1) % self->size;
   }
   self->count -= size;
-  node->length = self->count;
+  self->read_node->length = self->count;
+  self->write_node->length = self->count;
   kunlock(&(self->lock));
 
   return size;
@@ -105,7 +108,8 @@ static uint32_t pipe_write(fs_node_t *node, uint32_t offset, uint32_t size, uint
     self->buf[buf_idx] = buf[i];
   }
   self->count += size;
-  node->length = self->count;
+  self->read_node->length = self->count;
+  self->write_node->length = self->count;
   kunlock(&(self->lock));
 
   klock(&(self->readers_lock));
@@ -177,6 +181,8 @@ uint32_t pipe_create(fs_node_t *read_node, fs_node_t *write_node)
   CHECK(pipe->buf == NULL, "No memory.", ENOMEM);
   u_memset(pipe->buf, 0, DEFAULT_SIZE);
   pipe->size = DEFAULT_SIZE;
+  pipe->read_node = read_node;
+  pipe->write_node = write_node;
 
   read_node->device = pipe;
   read_node->read = pipe_read;

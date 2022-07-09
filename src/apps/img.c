@@ -70,7 +70,7 @@ void render_image()
     }
   }
 
-  ui_swap_buffers((uint32_t)ui_buf);
+  ui_swap_buffers();
 }
 
 // Keyboard input handler
@@ -87,8 +87,15 @@ void keyboard_handler(uint8_t code)
   switch (code) {
   case KB_SC_META: meta = 1; return;
   case KB_SC_Q:    exit(0);
-  case KB_SC_O:    ui_split(UI_SPLIT_RIGHT); opening = 1; return;
   case KB_SC_TAB:  if (meta) { ui_yield(); return; }
+  case KB_SC_O: {
+    if (fork() == 0) {
+      char *args[2] = { dirname(path), NULL };
+      execve("/apps/dex", args, environ);
+      exit(1);
+    }
+    return;
+  }
   }
 }
 
@@ -100,39 +107,26 @@ void ui_handler(ui_event_t ev)
     return;
   }
 
-  if (window_w != ev.width || window_h != ev.height) {
-    if (ui_buf) {
-      uint32_t oldsize = window_w * window_h * 4;
-      pagefree((uint32_t)ui_buf, (oldsize / 0x1000) + 1);
-    }
-    uint32_t size = ev.width * ev.height * 4;
-    ui_buf = (uint32_t *)pagealloc((size / 0x1000) + 1);
-    window_w = ev.width;
-    window_h = ev.height;
-  }
+  window_w = ev.width;
+  window_h = ev.height;
 
   render_image();
-
-  if (opening) {
-    opening = 0;
-    if (fork() == 0) {
-      char *args[2] = { dirname(path), NULL };
-      execve("/apps/dex", args, environ);
-      exit(1);
-    }
-  }
 }
 
 int main(int argc, char *argv[])
 {
   if (argc > 1) path = strdup(argv[1]);
 
-  ui_init();
-  ui_set_handler(ui_handler);
   int32_t res = ui_acquire_window();
-  if (res) return 1;
+  if (res < 0) return 1;
+  ui_buf = (uint32_t *)res;
 
-  while (1) ui_wait();
+  while (1) {
+    ui_event_t ev;
+    res = ui_next_event(&ev);
+    if (res < 0) return 1;
+    ui_handler(ev);
+  }
 
   return 0;
 }

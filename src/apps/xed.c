@@ -23,9 +23,8 @@
 #define FOOTER_LEN    (SCREENWIDTH / FONTWIDTH)
 #define MAX_NUM_LINES (SCREENHEIGHT / (FONTHEIGHT))
 
-static const uint32_t BG_COLOR          = 0xffffeb;
-static const uint32_t INACTIVE_BG_COLOR = 0xffffff;
-static const uint32_t INACTIVE_COLOR    = 0xb0b0b0;
+static const uint32_t BG_COLOR          = 0xffffff;
+static const uint32_t DIVIDER_COLOR     = 0xb0b0b0;
 static const uint32_t CURSOR_COLOR      = 0x190081;
 static const uint32_t SELECTION_COLOR   = 0xb0d5ff;
 static const uint32_t PATH_HEIGHT       = 24;
@@ -61,9 +60,6 @@ typedef struct position_s {
   uint32_t buffer_idx;
 } position_t;
 static position_t P = { 0, 0, 0 };
-
-// Directory path to open in dex
-static char *dir_path = NULL;
 
 // Buffer modification state
 static uint8_t buffer_dirty = 0;
@@ -119,17 +115,6 @@ static void render_text(const char *text, uint32_t x, uint32_t y)
   free(pixels);
 }
 
-// gray out all UI elements when the window is inactive
-__attribute__((always_inline))
-static inline void render_inactive()
-{
-  for (uint32_t i = 0; i < window_w; ++i)
-    for (uint32_t j = 0; j < window_h; ++j)
-      ui_buf[(j * window_w) + i] =
-        ui_buf[(j * window_w) + i] == BG_COLOR
-        ? INACTIVE_BG_COLOR : INACTIVE_COLOR;
-}
-
 // render the path bar at the top of the window
 static void render_path()
 {
@@ -148,7 +133,7 @@ static void render_path()
   fill_color(ui_buf, BG_COLOR, window_w * PATH_HEIGHT);
   render_text(path, 4, 4);
   uint32_t *line_row = ui_buf + (PATH_HEIGHT * window_w);
-  fill_color(line_row, INACTIVE_COLOR, window_w);
+  fill_color(line_row, DIVIDER_COLOR, window_w);
 }
 
 // render the footer at the bottom of the window
@@ -157,7 +142,7 @@ static void render_footer()
   uint32_t *line_row = ui_buf + ((window_h - FOOTER_HEIGHT) * window_w);
   fill_color(line_row, BG_COLOR, window_w * FOOTER_HEIGHT);
   render_text(footer_text, 4, window_h - FOOTER_HEIGHT + 4);
-  fill_color(line_row, INACTIVE_COLOR, window_w);
+  fill_color(line_row, DIVIDER_COLOR, window_w);
 }
 
 // Render all the text in the buffer, starting at line `line_idx`
@@ -563,8 +548,6 @@ static void keyboard_handler(uint8_t code)
   case KB_SC_TAB:
     if (meta) {
       meta = 0; lshift = 0; rshift = 0; capslock = 0;
-      render_inactive();
-      ui_swap_buffers((uint32_t)ui_buf);
       ui_yield();
       return;
     }
@@ -630,7 +613,7 @@ static void keyboard_handler(uint8_t code)
   if (cs == CS_NORMAL) {
     MOVEMENT;
     if (moved) {
-      if (update) ui_swap_buffers((uint32_t)ui_buf);
+      if (update) ui_swap_buffers();
       return;
     }
     switch (code) {
@@ -699,14 +682,14 @@ static void keyboard_handler(uint8_t code)
         exit(0);
     default: update = 0;
     }
-    if (update) ui_swap_buffers((uint32_t)ui_buf);
+    if (update) ui_swap_buffers();
     return;
   }
 
   if (cs == CS_EDIT) {
     MOVEMENT;
     if (moved) {
-      if (update) ui_swap_buffers((uint32_t)ui_buf);
+      if (update) ui_swap_buffers();
       return;
     }
     char deleted = 0;
@@ -829,7 +812,7 @@ static void keyboard_handler(uint8_t code)
       update_cursor(old_cursor_idx, 0);
       break;
     }
-    if (update) ui_swap_buffers((uint32_t)ui_buf);
+    if (update) ui_swap_buffers();
     return;
   }
 
@@ -840,7 +823,7 @@ static void keyboard_handler(uint8_t code)
 
       clear_selection();
       render_selection();
-      ui_swap_buffers((uint32_t)ui_buf);
+      ui_swap_buffers();
 
       return;
     }
@@ -869,7 +852,7 @@ static void keyboard_handler(uint8_t code)
     paste_buffer_len = selection_len;                           \
     paste_buffer = malloc(selection_len + 1);                   \
     memcpy(paste_buffer, file_buffer + lower, selection_len);   \
-    paste_buffer[selection_len] = '\0';                         \
+    paste_buffer[selection_len] = '\0';
 
     switch (code) {
     case KB_SC_C:
@@ -907,7 +890,7 @@ static void keyboard_handler(uint8_t code)
     default: update = 0;
     }
 
-    if (update) ui_swap_buffers((uint32_t)ui_buf);
+    if (update) ui_swap_buffers();
     return;
   }
 
@@ -948,7 +931,7 @@ static void keyboard_handler(uint8_t code)
       break;
     default: update = 0;
     }
-    if (update) ui_swap_buffers((uint32_t)ui_buf);
+    if (update) ui_swap_buffers();
     return;
   }
 
@@ -985,7 +968,7 @@ static void keyboard_handler(uint8_t code)
       render_footer();                                                  \
       break;                                                            \
     }                                                                   \
-  }                                                                     \
+  }
 
   if (cs == CS_OPEN_PATH) {
     FIELD_INPUT({
@@ -1004,9 +987,12 @@ static void keyboard_handler(uint8_t code)
           resolve(buf, footer_field, 1024);
           file_path = strdup(buf);
         } else {
-          free(dir_path);
-          dir_path = strdup(footer_field);
-          ui_split(UI_SPLIT_RIGHT);
+          if (fork() == 0) {
+            char *args[2]; args[0] = footer_field; args[1] = NULL;
+            execve("/apps/dex", args, environ);
+            exit(1);
+          }
+          update = 0; break;
         }
         cs = CS_NORMAL;
         update_footer_text();
@@ -1019,7 +1005,7 @@ static void keyboard_handler(uint8_t code)
         P.cursor_idx = 0;
         update_cursor(0, 0);
       });
-    if (update) ui_swap_buffers((uint32_t)ui_buf);
+    if (update) ui_swap_buffers();
     return;
   }
 
@@ -1038,7 +1024,7 @@ static void keyboard_handler(uint8_t code)
           render_footer();
         }
       });
-    if (update) ui_swap_buffers((uint32_t)ui_buf);
+    if (update) ui_swap_buffers();
     return;
   }
 }
@@ -1050,16 +1036,10 @@ static void ui_handler(ui_event_t ev)
     return;
   }
 
-  if (window_w != ev.width || window_h != ev.height) {
-    if (ui_buf) {
-      uint32_t oldsize = window_w * window_h * 4;
-      pagefree((uint32_t)ui_buf, (oldsize / 0x1000) + 1);
-    }
-    uint32_t size = ev.width * ev.height * 4;
-    ui_buf = (uint32_t *)pagealloc((size / 0x1000) + 1);
-    window_w = ev.width;
-    window_h = ev.height;
-  }
+  if (ev.width == window_w && ev.height == window_h) return;
+
+  window_w = ev.width;
+  window_h = ev.height;
 
   memset(lines, 0, sizeof(lines));
 
@@ -1075,19 +1055,8 @@ static void ui_handler(ui_event_t ev)
   P.cursor_idx = 0;
   update_cursor(0, 0);
   P.buffer_idx = P.top_idx;
-  if (ev.is_active == 0) render_inactive();
 
-  if (dir_path) {
-    if (fork() == 0) {
-      char *args[2] = { dir_path, NULL };
-      execve("/apps/dex", args, environ);
-      exit(1);
-    }
-    free(dir_path);
-    dir_path = NULL;
-  }
-
-  ui_swap_buffers((uint32_t)ui_buf);
+  ui_swap_buffers();
 }
 
 int main(int argc, char *argv[])
@@ -1106,12 +1075,16 @@ int main(int argc, char *argv[])
   cs = CS_NORMAL;
   update_footer_text();
 
-  ui_init();
-  ui_set_handler(ui_handler);
   int32_t res = ui_acquire_window();
-  if (res) return 1;
+  if (res < 0) return 1;
+  ui_buf = (uint32_t *)res;
 
-  while (1) ui_wait();
+  while (1) {
+    ui_event_t ev;
+    res = ui_next_event(&ev);
+    if (res < 0) return 1;
+    ui_handler(ev);
+  }
 
   return 0;
 }

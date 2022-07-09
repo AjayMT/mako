@@ -66,11 +66,6 @@ typedef struct process_fd_s {
   uint32_t refcount;
 } process_fd_t;
 
-// Process UI state.
-typedef enum {
-  PR_UI_NONE, PR_UI_EVENT, PR_UI_WAIT
-} process_ui_state_t;
-
 // Process structure.
 typedef struct process_s {
   uint32_t pid;
@@ -98,12 +93,7 @@ typedef struct process_s {
   uint32_t exit_status;
   process_registers_t saved_signal_regs;
 
-  // TODO protect UI state with a lock
-  process_ui_state_t ui_state;
-  uint32_t ui_eip;
-  uint32_t ui_event_buffer;
-  list_t *ui_event_queue;
-  process_registers_t saved_ui_regs;
+  uint8_t has_ui;
 
   list_node_t *list_node;
 } process_t;

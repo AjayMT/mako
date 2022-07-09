@@ -18,9 +18,9 @@ int main(int argc, char *argv[])
 
   setenv("APPS_PATH", "/apps", 0);
   setenv("PATH", "/bin", 0);
+  chdir("/home");
 
   if (fork() == 0) {
-    chdir("/home");
     char *args[] = { "/home/hello.txt", NULL };
     execve("/apps/xed", args, environ);
   }

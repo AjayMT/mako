@@ -40,16 +40,14 @@
 #define SYSCALL_DUP               29
 #define SYSCALL_THREAD_REGISTER   30
 #define SYSCALL_YIELD             31
-#define SYSCALL_UI_REGISTER       32
-#define SYSCALL_UI_MAKE_RESPONDER 33
-#define SYSCALL_UI_SPLIT          34
-#define SYSCALL_UI_RESUME         35
-#define SYSCALL_UI_SWAP_BUFFERS   36
-#define SYSCALL_UI_WAIT           37
-#define SYSCALL_UI_YIELD          38
-#define SYSCALL_RENAME            39
-#define SYSCALL_RESOLVE           40
-#define SYSCALL_SYSTIME           41
-#define SYSCALL_PRIORITY          42
+#define SYSCALL_UI_MAKE_RESPONDER 32
+#define SYSCALL_UI_SWAP_BUFFERS   33
+#define SYSCALL_UI_NEXT_EVENT     34
+#define SYSCALL_UI_POLL_EVENTS    35
+#define SYSCALL_UI_YIELD          36
+#define SYSCALL_RENAME            37
+#define SYSCALL_RESOLVE           38
+#define SYSCALL_SYSTIME           39
+#define SYSCALL_PRIORITY          40
 
 #endif /* _SYSCALL_NUMS_H_ */

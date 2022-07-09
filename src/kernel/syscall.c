@@ -585,52 +585,28 @@ static void syscall_yield()
   process_switch_next();
 }
 
-static void syscall_ui_register(uint32_t eip, uint32_t buffer)
+static void syscall_ui_make_responder(uint32_t buf)
 {
   process_t *current = process_current();
-  current->ui_eip = eip;
-  current->ui_event_buffer = buffer;
-  current->uregs.eax = 0;
+  current->uregs.eax = -ui_make_responder(current, buf);
 }
 
-static void syscall_ui_make_responder()
+static void syscall_ui_swap_buffers()
 {
   process_t *current = process_current();
-  current->uregs.eax = -ui_make_responder(current);
+  current->uregs.eax = -ui_swap_buffers(current);
 }
 
-static void syscall_ui_split(ui_split_type_t type)
+static void syscall_ui_next_event(uint32_t buf)
 {
   process_t *current = process_current();
-  current->uregs.eax = -ui_split(current, type);
+  current->uregs.eax = -ui_next_event(current, buf);
 }
 
-static void syscall_ui_resume()
+static void syscall_ui_poll_events()
 {
   process_t *current = process_current();
-  uint32_t eflags = interrupt_save_disable();
-  u_memcpy(
-    &(current->uregs), &(current->saved_ui_regs), sizeof(process_registers_t)
-    );
-  current->ui_state = PR_UI_NONE;
-  list_pop_front(current->ui_event_queue);
-  interrupt_restore(eflags);
-}
-
-static void syscall_ui_swap_buffers(uint32_t buf)
-{
-  process_t *current = process_current();
-  current->uregs.eax = -ui_swap_buffers(current, buf);
-}
-
-static void syscall_ui_wait()
-{
-  disable_interrupts();
-  process_t *current = process_current();
-  process_unschedule(current);
-  current->in_kernel = 0;
-  current->ui_state = PR_UI_WAIT;
-  process_switch_next();
+  current->uregs.eax = ui_poll_events(current);
 }
 
 static void syscall_ui_yield()
@@ -704,12 +680,10 @@ static syscall_t syscall_table[] = {
   syscall_dup,
   syscall_thread_register,
   syscall_yield,
-  syscall_ui_register,
   syscall_ui_make_responder,
-  syscall_ui_split,
-  syscall_ui_resume,
   syscall_ui_swap_buffers,
-  syscall_ui_wait,
+  syscall_ui_next_event,
+  syscall_ui_poll_events,
   syscall_ui_yield,
   syscall_rename,
   syscall_resolve,
@@ -741,24 +715,6 @@ process_registers_t *syscall_handler(cpu_state_t cs, stack_state_t ss)
     current->next_signal = 0;
     current->uregs.eip = current->signal_eip;
     current->uregs.edi = current->current_signal;
-  } else if (
-    current->ui_event_queue->size
-    && current->ui_state != PR_UI_EVENT
-    && current->ui_eip
-    && current->ui_event_buffer
-    ) {
-    ui_event_t *next_event = current->ui_event_queue->head->value;
-    uint32_t cr3 = paging_get_cr3();
-    paging_set_cr3(current->cr3);
-    u_memcpy(
-      (ui_event_t *)current->ui_event_buffer, next_event, sizeof(ui_event_t)
-      );
-    paging_set_cr3(cr3);
-    u_memcpy(
-      &(current->saved_ui_regs), &(current->uregs), sizeof(process_registers_t)
-      );
-    current->uregs.eip = current->ui_eip;
-    current->ui_state = PR_UI_EVENT;
   }
 
   return &(current->uregs);
