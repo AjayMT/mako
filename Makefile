@@ -100,8 +100,8 @@ setjmp.o: src/libc/setjmp.s
 
 .PHONY: qemu
 qemu: mako.iso hda.img
-	qemu-system-i386 -serial file:com1.out -cdrom mako.iso -m 256M \
-	                 -drive format=raw,file=hda.img -d cpu_reset
+	qemu-system-i386 -serial file:com1.out -cdrom mako.iso -m 256M -monitor stdio \
+	                 -drive format=raw,file=hda.img
 
 .PHONY: clean
 clean:

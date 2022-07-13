@@ -517,25 +517,6 @@ static void keyboard_handler(uint8_t code)
       (window_h - PATH_HEIGHT - FOOTER_HEIGHT) / DIRENT_HEIGHT;
     if (num_dirents > MAX_DIRENTS) num_dirents = MAX_DIRENTS;
     switch (code) {
-    case KB_SC_UP:
-      if (cursor_idx == 0) {
-        if (scroll_up()) {
-          render_dirents();
-          update_cursor(cursor_idx);
-        }
-        break;
-      }
-      update_cursor(cursor_idx - 1); break;
-    case KB_SC_DOWN:
-      if (cursor_idx == num_dirents - 1) {
-        if (scroll_down()) {
-          render_dirents();
-          update_cursor(cursor_idx);
-        }
-        break;
-      }
-      if (dirents[cursor_idx + 1].d_name[0] == 0) break;
-      update_cursor(cursor_idx + 1); break;
     case KB_SC_ENTER:
       if (!open_dirent(cursor_idx)) {
         render_path();
@@ -571,9 +552,26 @@ static void keyboard_handler(uint8_t code)
       update_footer_text();
       render_footer();
       break;
-    case KB_SC_Q:
-      if (window_w != SCREENWIDTH || window_h != SCREENHEIGHT)
-        exit(0);
+    case KB_SC_Q: exit(0);
+    case KB_SC_UP:
+      if (cursor_idx == 0) {
+        if (scroll_up()) {
+          render_dirents();
+          update_cursor(cursor_idx);
+        }
+        break;
+      }
+      update_cursor(cursor_idx - 1); break;
+    case KB_SC_DOWN:
+      if (cursor_idx == num_dirents - 1) {
+        if (scroll_down()) {
+          render_dirents();
+          update_cursor(cursor_idx);
+        }
+        break;
+      }
+      if (dirents[cursor_idx + 1].d_name[0] == 0) break;
+      update_cursor(cursor_idx + 1); break;
     default:
       swap = 0;
     }
@@ -768,6 +766,9 @@ static void ui_handler(ui_event_t ev)
   }
 
   thread_lock(&ui_lock);
+  if (window_w == ev.width && window_h == ev.height) {
+    thread_unlock(&ui_lock); return;
+  }
 
   window_w = ev.width;
   window_h = ev.height;

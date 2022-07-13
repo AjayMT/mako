@@ -7,7 +7,7 @@
 
 global interrupt_handler_syscall
 extern syscall_handler
-extern enter_usermode
+extern resume_user
 
 section .text
 
@@ -23,5 +23,5 @@ interrupt_handler_syscall:
     mov gs, ax
     call syscall_handler
     push eax
-    call enter_usermode
+    call resume_user
     jmp $

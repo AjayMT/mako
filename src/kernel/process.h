@@ -136,7 +136,7 @@ uint32_t process_switch_next();
 void update_current_process_registers(cpu_state_t, stack_state_t);
 
 // Implemented in process.s.
-void enter_usermode();
+void resume_user();
 
 // Create and schedule the `init` process.
 uint32_t process_create_schedule_init(process_image_t);

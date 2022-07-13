@@ -21,15 +21,15 @@ int main(int argc, char *argv[])
   chdir("/home");
 
   if (fork() == 0) {
-    char *args[] = { "/home/hello.txt", NULL };
-    execve("/apps/xed", args, environ);
-  }
-
-  if (fork() == 0) {
     char *args[] = { NULL };
     execve("/apps/pie", args, environ);
   }
 
-  while (1) yield();
+  /* if (fork() == 0) { */
+  /*   char *args[] = { "/home/hello.txt", NULL }; */
+  /*   execve("/apps/xed", args, environ); */
+  /* } */
+
+  while (1) hibernate();
   return 0;
 }

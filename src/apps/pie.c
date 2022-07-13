@@ -203,7 +203,6 @@ static void exec_thread()
     char buf[1024];
     int32_t r = read(proc_read_fd, buf, 1024);
     if (r <= 0) break;
-
     thread_lock(&ui_lock);
 
     uint32_t num_lines =
@@ -290,7 +289,7 @@ static uint8_t exec_path(char **args)
   proc_write_fd = writefd2;
   close(writefd);
   close(readfd2);
-  pid_t t = thread(exec_thread, NULL);
+  thread(exec_thread, NULL);
   close(readfd);
 
   return 1;
@@ -476,13 +475,14 @@ static void keyboard_handler(uint8_t code)
 
         char buf[1024];
         int32_t res = resolve(buf, env_path, 1024);
-        if (res) { update = 0; free(tmp); free(env_path); free(args); break; }
+        free(env_path);
+        if (res) { update = 0; free(tmp); free(args); break; }
         free(path);
         path = strdup(buf);
         render_path();
 
         uint8_t valid = exec_path(args);
-        free(tmp); free(env_path); free(args);
+        free(tmp); free(args);
         if (!valid) { update = 0; break; }
         memset(footer_field, 0, sizeof(footer_field));
         cs = CS_EXEC;

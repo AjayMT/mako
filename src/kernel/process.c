@@ -91,7 +91,7 @@ static void process_resume(process_t *process)
     );
   paging_set_cr3(process->cr3);
   if (process->in_kernel) resume_kernel(&(process->kregs));
-  else enter_usermode(&(process->uregs));
+  else resume_user(&(process->uregs));
 }
 
 // Switch to next scheduled process.
@@ -230,6 +230,8 @@ uint32_t process_init()
   uint32_t err = process_create_destroyer();
   CHECK(err, "Failed to create destroyer.", err);
 
+  process_schedule(destroyer_process);
+
   pit_set_handler(scheduler_interrupt_handler);
   register_interrupt_handler(13, gp_fault_handler);
   register_interrupt_handler(14, page_fault_handler);
@@ -319,7 +321,7 @@ uint32_t process_create_schedule_init(process_image_t img)
   paging_result_t res = paging_map(kstack_vaddr, kstack_paddr, flags);
   CHECK(res != PAGING_OK, "Failed to map kernel stack.", res);
   init->mmap.kernel_stack_bottom = kstack_vaddr;
-  init->mmap.kernel_stack_top = kstack_vaddr + PAGE_SIZE - 1;
+  init->mmap.kernel_stack_top = kstack_vaddr + PAGE_SIZE - 8;
 
   err = process_load(init, img);
   CHECK(err, "Failed to load process image.", err);
@@ -367,6 +369,8 @@ uint32_t process_fork(
   child->pid = alloc_pid();
   CHECK(child->pid == 0, "Too many processes.", ENOMEM);
   pids[child->pid].process = child;
+  pids[child->pid].parent_pid = process->pid;
+  u_memset(&pids[child->pid].waiters, 0, sizeof(list_t));
   kunlock(&pids[child->pid].lock);
   child->gid = child->pid;
   child->list_node = NULL;
@@ -388,7 +392,7 @@ uint32_t process_fork(
     paging_result_t res = paging_map(stack_vaddr, stack_paddr, flags);
     CHECK_RESTORE(res != PAGING_OK, "Failed to map thread stack page.", res);
 
-    child->mmap.stack_top = stack_vaddr + PAGE_SIZE - 1;
+    child->mmap.stack_top = stack_vaddr + PAGE_SIZE - 4;
     child->mmap.stack_bottom = stack_vaddr;
 
     paging_set_cr3(cr3);
@@ -411,7 +415,7 @@ uint32_t process_fork(
   paging_result_t res = paging_map(kstack_vaddr, kstack_paddr, flags);
   CHECK(res != PAGING_OK, "Failed to map kernel stack.", res);
   child->mmap.kernel_stack_bottom = kstack_vaddr;
-  child->mmap.kernel_stack_top = kstack_vaddr + PAGE_SIZE - 1;
+  child->mmap.kernel_stack_top = kstack_vaddr + PAGE_SIZE - 8;
   interrupt_restore(eflags);
 
   return 0;
@@ -475,7 +479,7 @@ uint32_t process_load(process_t *process, process_image_t img)
 
   process->mmap.text = img.text_vaddr;
   process->mmap.stack_bottom = stack_vaddr;
-  process->mmap.stack_top = stack_vaddr + PAGE_SIZE - 1;
+  process->mmap.stack_top = stack_vaddr + PAGE_SIZE - 4;
   process->mmap.data = img.data_vaddr;
   process->mmap.heap = img.data_vaddr + u_page_align_up(img.data_len);
   if (process->mmap.heap == 0)
@@ -540,9 +544,7 @@ void process_kill(process_t *process)
       process_kill(pids[i].process);
   }
 
-  klock(&destroy_queue_lock);
-  uint32_t eflags = interrupt_save_disable();
-
+  klock(&process->fd_lock);
   for (uint32_t i = 0; i < MAX_PROCESS_FDS; ++i) {
     process_fd_t *fd = process->fds[i];
     if (fd == NULL) continue;
@@ -552,87 +554,78 @@ void process_kill(process_t *process)
       kfree(fd);
     }
   }
+  kunlock(&process->fd_lock);
 
+  uint32_t eflags = interrupt_save_disable();
+  uint32_t cr3 = paging_get_cr3();
+  paging_set_cr3(process->cr3);
+
+  if (process->is_thread == 0) {
+    uint8_t res = paging_clear_user_space();
+    if (res) {
+      log_error("process", "Failed to clear user address space.\n");
+      paging_set_cr3(cr3);
+      interrupt_restore(eflags);
+      return;
+    }
+  } else {
+    for (uint32_t va = process->mmap.stack_bottom; va < process->mmap.stack_top; va += PAGE_SIZE) {
+      uint32_t pa = paging_get_paddr(va);
+      if (pa) pmm_free(pa, 1);
+      paging_unmap(va);
+    }
+  }
+
+  paging_set_cr3(cr3);
+  interrupt_restore(eflags);
+
+  klock(&destroy_queue_lock);
+  eflags = interrupt_save_disable();
   process_unschedule(process);
   list_push_back(destroy_queue, process);
-  process_schedule(destroyer_process);
-  interrupt_restore(eflags);
   kunlock(&destroy_queue_lock);
+  interrupt_restore(eflags);
 }
 
 // Destroys dead processes.
 static void process_destroyer()
 {
   klock(&destroy_queue_lock);
-  while (destroy_queue->size) {
-    list_node_t *head = destroy_queue->head;
-    list_remove(destroy_queue, head, 0);
-    kunlock(&destroy_queue_lock);
 
-    process_t *process = head->value;
-    kfree(head);
-
-    uint32_t eflags = interrupt_save_disable();
-
-    if (process->is_thread == 0) {
-      uint32_t cr3 = paging_get_cr3();
-      uint32_t eflags = interrupt_save_disable();
-      paging_set_cr3(process->cr3);
-      uint8_t res = paging_clear_user_space();
-      if (res) {
-        log_error("process", "Failed to clear user address space.\n");
-        paging_set_cr3(cr3);
-        interrupt_restore(eflags);
-        break;
-      }
-      paging_set_cr3(cr3);
-      pmm_free(process->cr3, 1);
-    } else {
-      uint32_t cr3 = paging_get_cr3();
-      paging_set_cr3(process->cr3);
-      for (
-        uint32_t vaddr = process->mmap.stack_bottom;
-        vaddr < process->mmap.stack_top;
-        vaddr += PAGE_SIZE
-        )
-      {
-        uint32_t paddr = paging_get_paddr(vaddr);
-        if (paddr) pmm_free(paddr, 1);
-        paging_unmap(vaddr);
-      }
-      paging_set_cr3(cr3);
-    }
-
-    for (
-      uint32_t vaddr = process->mmap.kernel_stack_bottom;
-      vaddr < process->mmap.kernel_stack_top;
-      vaddr += PAGE_SIZE
-      )
-    {
-      pmm_free(paging_get_paddr(vaddr), 1);
-      paging_result_t res = paging_unmap(vaddr);
-      if (res != PAGING_OK) {
-        log_error("process", "paging_unmap failed.");
-        continue;
-      }
-    }
-
-    interrupt_restore(eflags);
-
-    kfree(process->wd);
-    kfree(process);
-
-    klock(&destroy_queue_lock);
+  if (destroy_queue->size == 0) {
+    kunlock(&destroy_queue_lock); goto yield;
   }
 
+  list_node_t *head = destroy_queue->head;
+  list_remove(destroy_queue, head, 0);
   kunlock(&destroy_queue_lock);
 
+  process_t *process = head->value;
+  kfree(head);
+
+  uint32_t eflags = interrupt_save_disable();
+  uint32_t cr3 = paging_get_cr3();
+  paging_set_cr3(process->cr3);
+
+  // every process gets a single page of kernel stack space
+  pmm_free(paging_get_paddr(process->mmap.kernel_stack_bottom), 1);
+  paging_result_t res = paging_unmap(process->mmap.kernel_stack_bottom);
+  if (res != PAGING_OK) log_error("process", "paging_unmap failed.");
+
+  paging_set_cr3(cr3);
+  if (process->cr3 != cr3 && !process->is_thread) pmm_free(process->cr3, 1);
+  interrupt_restore(eflags);
+
+  kfree(process->wd);
+  kfree(process);
+
+yield:
   disable_interrupts();
   current_process->kregs.eip = (uint32_t)process_destroyer;
   current_process->kregs.esp = current_process->mmap.kernel_stack_top;
   current_process->kregs.cs = SEGMENT_SELECTOR_KERNEL_CS;
   current_process->kregs.ss = SEGMENT_SELECTOR_KERNEL_DS;
-  process_unschedule(current_process);
+  current_process->kregs.eflags = 0x202;
   process_switch_next();
 }
 
@@ -641,6 +634,9 @@ static uint32_t process_create_destroyer()
 {
   process_t *d = kmalloc(sizeof(process_t)); CHECK(d == NULL, "No memory.", ENOMEM);
   u_memset(d, 0, sizeof(process_t));
+
+  d->pid = MAX_PROCESS_COUNT - 1;
+  pids[MAX_PROCESS_COUNT - 1].process = d;
 
   page_directory_t kernel_pd; uint32_t kernel_cr3;
   paging_get_kernel_pd(&kernel_pd, &kernel_cr3);
@@ -653,13 +649,14 @@ static uint32_t process_create_destroyer()
   paging_result_t res = paging_map(kstack_vaddr, kstack_paddr, flags);
   CHECK(res != PAGING_OK, "Failed to map kernel stack.", res);
   d->mmap.kernel_stack_bottom = kstack_vaddr;
-  d->mmap.kernel_stack_top = kstack_vaddr + PAGE_SIZE - 1;
+  d->mmap.kernel_stack_top = kstack_vaddr + PAGE_SIZE - 8;
 
   d->in_kernel = 1;
-  d->kregs.esp = d->mmap.kernel_stack_top;
   d->kregs.eip = (uint32_t)process_destroyer;
+  d->kregs.esp = d->mmap.kernel_stack_top;
   d->kregs.cs = SEGMENT_SELECTOR_KERNEL_CS;
   d->kregs.ss = SEGMENT_SELECTOR_KERNEL_DS;
+  d->kregs.eflags = 0x202;
 
   destroyer_process = d;
 

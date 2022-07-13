@@ -34,19 +34,17 @@ typedef struct {
   uint32_t head;
   uint32_t count;
   uint32_t size;
-  uint8_t write_closed;
-  volatile uint32_t lock;
+  volatile uint32_t lock; // only acquired by readers
   pipe_reader_t readers[MAX_READERS];
-  volatile uint32_t readers_lock;
 } pipe_t;
 
 uint32_t pipe_suspend(process_registers_t *regs, uint32_t updated);
 
 static void pipe_wait(pipe_t *self, uint32_t size)
 {
+  disable_interrupts();
   process_t *current_process = process_current();
 
-  klock(&(self->readers_lock));
   uint8_t updated = 0;
   for (uint32_t i = 0; i < MAX_READERS; ++i) {
     if (self->readers[i].process == NULL) {
@@ -57,9 +55,6 @@ static void pipe_wait(pipe_t *self, uint32_t size)
     }
   }
 
-  disable_interrupts();
-  kunlock(&(self->readers_lock));
-
   if (updated) process_unschedule(current_process);
   pipe_suspend(&(current_process->kregs), updated);
 }
@@ -69,14 +64,15 @@ static uint32_t pipe_read(fs_node_t *node, uint32_t offset, uint32_t size, uint8
   (void)offset;
   pipe_t *self = node->device;
 
-  klock(&(self->lock));
-
-  while (self->count == 0 && !self->write_closed) {
-    kunlock(&(self->lock));
+  klock(&self->lock);
+  while (self->count == 0 && self->write_node) {
+    kunlock(&self->lock);
     pipe_wait(self, size);
-    klock(&(self->lock));
+    klock(&self->lock);
   }
 
+  uint32_t eflags = interrupt_save_disable();
+  kunlock(&self->lock);
   if (size > self->count) size = self->count;
   for (uint32_t i = 0; i < size; ++i) {
     buf[i] = self->buf[self->head];
@@ -84,8 +80,8 @@ static uint32_t pipe_read(fs_node_t *node, uint32_t offset, uint32_t size, uint8
   }
   self->count -= size;
   self->read_node->length = self->count;
-  self->write_node->length = self->count;
-  kunlock(&(self->lock));
+  if (self->write_node) self->write_node->length = self->count;
+  interrupt_restore(eflags);
 
   return size;
 }
@@ -100,19 +96,18 @@ static uint32_t pipe_write(fs_node_t *node, uint32_t offset, uint32_t size, uint
     return 0;
   }
 
-  klock(&(self->lock));
+  uint32_t eflags = interrupt_save_disable();
   uint32_t space = self->size - self->count;
+  uint32_t end = self->head + self->count;
   if (size > space) size = space;
   for (uint32_t i = 0; i < size; ++i) {
-    uint32_t buf_idx = (self->head + self->count + i) % self->size;
+    uint32_t buf_idx = (end + i) % self->size;
     self->buf[buf_idx] = buf[i];
   }
   self->count += size;
   self->read_node->length = self->count;
   self->write_node->length = self->count;
-  kunlock(&(self->lock));
 
-  klock(&(self->readers_lock));
   uint32_t remaining_size = size;
   for (uint32_t i = 0; i < MAX_READERS; ++i) {
     if (self->readers[i].process == NULL) continue;
@@ -122,7 +117,7 @@ static uint32_t pipe_write(fs_node_t *node, uint32_t offset, uint32_t size, uint
     if (self->readers[i].size >= remaining_size) break;
     else remaining_size -= self->readers[i].size;
   }
-  kunlock(&(self->readers_lock));
+  interrupt_restore(eflags);
 
   return size;
 }
@@ -130,46 +125,43 @@ static uint32_t pipe_write(fs_node_t *node, uint32_t offset, uint32_t size, uint
 static void pipe_close_read(fs_node_t *node)
 {
   pipe_t *self = node->device;
-
-  klock(&(self->lock));
+  uint32_t eflags = interrupt_save_disable();
   kfree(self->buf);
   self->buf = NULL;
   self->size = 0;
   self->count = 0;
   self->head = 0;
-  uint32_t wc = self->write_closed;
-  kunlock(&self->lock);
-
-  if (wc) {
-    kfree(self);
-    node->device = NULL;
-    node->length = 0;
-  }
+  self->read_node->device = NULL;
+  self->read_node->read = NULL;
+  self->read_node->close = NULL;
+  self->read_node->length = 0;
+  self->read_node = NULL;
+  if (self->write_node == NULL) kfree(self);
+  interrupt_restore(eflags);
 }
 
 static void pipe_close_write(fs_node_t *node)
 {
   pipe_t *self = node->device;
-
-  klock(&self->lock);
+  uint32_t eflags = interrupt_save_disable();
+  self->write_node->device = NULL;
+  self->write_node->write = NULL;
+  self->write_node->close = NULL;
+  self->write_node->length = 0;
+  self->write_node = NULL;
   if (self->buf == NULL) {
-    kunlock(&self->lock);
     kfree(self);
-    node->device = NULL;
-    node->length = 0;
+    interrupt_restore(eflags);
     return;
   }
-  self->write_closed = 1;
-  kunlock(&self->lock);
 
-  klock(&(self->readers_lock));
   for (uint32_t i = 0; i < MAX_READERS; ++i) {
     if (self->readers[i].process == NULL) continue;
 
     process_schedule(self->readers[i].process);
     self->readers[i].process = NULL;
   }
-  kunlock(&(self->readers_lock));
+  interrupt_restore(eflags);
 }
 
 uint32_t pipe_create(fs_node_t *read_node, fs_node_t *write_node)

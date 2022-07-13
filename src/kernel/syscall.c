@@ -647,6 +647,15 @@ static void syscall_priority(int32_t prio)
   interrupt_restore(eflags);
 }
 
+static void syscall_hibernate()
+{
+  disable_interrupts();
+  process_t *current = process_current();
+  current->in_kernel = 0;
+  process_unschedule(current);
+  process_switch_next();
+}
+
 static syscall_t syscall_table[] = {
   syscall_exit,
   syscall_fork,
@@ -688,7 +697,8 @@ static syscall_t syscall_table[] = {
   syscall_rename,
   syscall_resolve,
   syscall_systime,
-  syscall_priority
+  syscall_priority,
+  syscall_hibernate
 };
 
 process_registers_t *syscall_handler(cpu_state_t cs, stack_state_t ss)

@@ -49,5 +49,6 @@
 #define SYSCALL_RESOLVE           38
 #define SYSCALL_SYSTIME           39
 #define SYSCALL_PRIORITY          40
+#define SYSCALL_HIBERNATE         41
 
 #endif /* _SYSCALL_NUMS_H_ */

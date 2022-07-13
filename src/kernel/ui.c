@@ -26,7 +26,7 @@
     return (code);                                              \
   }
 
-#define BORDER_WIDTH 4
+#define BORDER_WIDTH     4
 #define BORDER_COLOR_KEY 0x52aaad
 #define BORDER_COLOR     0x9cefef
 
@@ -122,9 +122,7 @@ static uint32_t ui_dispatch_window_event(ui_responder_t *r, ui_event_type_t t)
   ev.width = r->window.w;
   ev.height = r->window.h;
 
-  uint32_t eflags = interrupt_save_disable();
   uint32_t written = fs_write(&r->event_pipe_write, 0, sizeof(ui_event_t), (uint8_t *)&ev);
-  interrupt_restore(eflags);
 
   if (written != sizeof(ui_event_t)) return -1;
   return 0;
@@ -136,13 +134,10 @@ uint32_t ui_dispatch_keyboard_event(uint8_t code)
   ev.type = UI_EVENT_KEYBOARD;
   ev.code = code;
 
-  uint32_t eflags = interrupt_save_disable();
-  if (responders->size == 0) { interrupt_restore(eflags); return 0; }
-
+  if (responders->size == 0) return 0;
   ui_responder_t *key_responder = responders->head->value;
   uint32_t written = fs_write(&key_responder->event_pipe_write, 0, sizeof(ui_event_t), (uint8_t *)&ev);
 
-  interrupt_restore(eflags);
   if (written != sizeof(ui_event_t)) return -1;
   return 0;
 }
@@ -164,11 +159,8 @@ uint32_t ui_make_responder(process_t *p, uint32_t buf)
     r->window.x = SCREENWIDTH >> 2;
     r->window.y = SCREENHEIGHT >> 2;
   } else {
-    ui_responder_t *key_responder = responders->head->value;
-    r->window.x = key_responder->window.x + 16;
-    r->window.y = key_responder->window.y + 16;
-    if (r->window.x >= SCREENWIDTH) r->window.x = 0;
-    if (r->window.x >= SCREENHEIGHT) r->window.x = 0;
+    r->window.x = BORDER_WIDTH;
+    r->window.y = BORDER_WIDTH;
   }
 
   list_push_front(responders, r);
@@ -190,15 +182,18 @@ uint32_t ui_kill(process_t *p)
   klock(&responders_lock);
   ui_responder_t *r = responders_by_gid[p->gid];
   if (r == NULL) { kunlock(&responders_lock); return 0; }
+
   responders_by_gid[p->gid] = NULL;
   fs_close(&r->event_pipe_read);
   fs_close(&r->event_pipe_write);
   uint8_t is_head = responders->head->value == r;
   list_remove(responders, r->list_node, 1);
+
   if (is_head && responders->size) {
     uint32_t err = ui_dispatch_window_event(responders->head->value, UI_EVENT_WAKE);
     CHECK_UNLOCK_R(err, "Failed to dispatch wake event.", err);
   }
+
   kunlock(&responders_lock);
   ui_redraw_all();
   return 0;
@@ -211,7 +206,7 @@ uint32_t ui_swap_buffers(process_t *p)
   klock(&responders_lock);
 
   ui_responder_t *r = responders_by_gid[p->gid];
-  if (r == NULL) { kunlock(&responders_lock); klock(&backbuf_lock); return 1; }
+  if (r == NULL) { kunlock(&responders_lock); kunlock(&backbuf_lock); return 1; }
 
   if (r == responders->head->value) {
     ui_blit_window(r, 1);
@@ -268,22 +263,20 @@ uint32_t ui_yield(process_t *p)
 
 uint32_t ui_next_event(process_t *p, uint32_t buf)
 {
-  uint32_t eflags = interrupt_save_disable();
+  klock(&responders_lock);
   ui_responder_t *r = responders_by_gid[p->gid];
-  if (r == NULL) { interrupt_restore(eflags); return 1; }
+  if (r == NULL) { kunlock(&responders_lock); return 1; }
+  kunlock(&responders_lock); // not sure if its safe to release this lock here
 
   uint8_t ev_buf[sizeof(ui_event_t)];
   uint32_t read_size = fs_read(&r->event_pipe_read, 0, sizeof(ui_event_t), ev_buf);
-  if (read_size < sizeof(ui_event_t)) {
-    interrupt_restore(eflags);
-    return 1;
-  }
+  if (read_size < sizeof(ui_event_t)) return 1;
 
+  uint32_t eflags = interrupt_save_disable();
   uint32_t cr3 = paging_get_cr3();
   paging_set_cr3(p->cr3);
   u_memcpy((uint8_t *)buf, ev_buf, sizeof(ui_event_t));
   paging_set_cr3(cr3);
-
   interrupt_restore(eflags);
 
   return 0;
@@ -291,10 +284,8 @@ uint32_t ui_next_event(process_t *p, uint32_t buf)
 
 uint32_t ui_poll_events(process_t *p)
 {
-  uint32_t eflags = interrupt_save_disable();
   ui_responder_t *r = responders_by_gid[p->gid];
   if (r == NULL) return 0;
   uint32_t count = r->event_pipe_read.length / sizeof(ui_event_t);
-  interrupt_restore(eflags);
   return count;
 }
