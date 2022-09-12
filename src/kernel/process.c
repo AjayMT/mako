@@ -39,13 +39,13 @@ static const uint32_t ENV_VADDR    = KERNEL_START_VADDR - PAGE_SIZE;
 static process_t *init_process = NULL;
 static process_t *destroyer_process = NULL;
 static process_t *current_process = NULL;
-static list_t *sleep_queue = NULL;
-static list_t *destroy_queue = NULL;
+static heap_t sleep_queue;
+static list_t destroy_queue;
 static volatile uint32_t destroy_queue_lock = 0;
 static process_status_t pids[MAX_PROCESS_COUNT];
 
 // Scheduler queues.
-static list_t *running_lists[MAX_PROCESS_PRIORITY + 1];
+static list_t running_lists[MAX_PROCESS_PRIORITY + 1];
 
 // Implemented in process.s.
 void resume_kernel(process_registers_t *);
@@ -100,7 +100,7 @@ uint32_t process_switch_next()
   uint32_t eflags = interrupt_save_disable();
   list_t *running_list;
   for (int32_t i = MAX_PROCESS_PRIORITY; i >= 0; --i) {
-    running_list = running_lists[i];
+    running_list = &running_lists[i];
     if (running_list->size) break;
   }
   if (running_list->size == 0) { interrupt_restore(eflags); return 1; }
@@ -195,12 +195,9 @@ static void scheduler_interrupt_handler(cpu_state_t cstate, idt_info_t info, sta
   if (current_process) update_current_process_registers(cstate, sstate);
 
   uint64_t current_time = pit_get_time();
-  while (sleep_queue->size) {
-    process_sleep_node_t *sleeper = sleep_queue->head->value;
-    if (current_time >= sleeper->wake_time) {
-      if (pids[sleeper->pid].process) process_schedule(pids[sleeper->pid].process);
-      list_pop_front(sleep_queue);
-    } else break;
+  while (sleep_queue.size && current_time >= heap_peek(&sleep_queue)->key) {
+    uint32_t pid = (uint32_t)heap_pop(&sleep_queue).value;
+    if (pids[pid].process) process_schedule(pids[pid].process);
   }
 
   process_switch_next();
@@ -213,18 +210,11 @@ static uint32_t process_create_destroyer();
 // Initialize the scheduler and other things.
 uint32_t process_init()
 {
-  for (uint32_t i = 0; i <= MAX_PROCESS_PRIORITY; ++i) {
-    running_lists[i] = kmalloc(sizeof(list_t));
-    CHECK(running_lists[i] == NULL, "No memory.", ENOMEM);
-    u_memset(running_lists[i], 0, sizeof(list_t));
-  }
+  for (uint32_t i = 0; i <= MAX_PROCESS_PRIORITY; ++i)
+    u_memset(&running_lists[i], 0, sizeof(list_t));
 
-  sleep_queue = kmalloc(sizeof(list_t));
-  CHECK(sleep_queue == NULL, "No memory.", ENOMEM);
-  u_memset(sleep_queue, 0, sizeof(list_t));
-  destroy_queue = kmalloc(sizeof(list_t));
-  CHECK(destroy_queue == NULL, "No memory.", ENOMEM);
-  u_memset(destroy_queue, 0, sizeof(list_t));
+  u_memset(&sleep_queue, 0, sizeof(heap_t));
+  u_memset(&destroy_queue, 0, sizeof(list_t));
   u_memset(pids, 0, sizeof(pids));
 
   uint32_t err = process_create_destroyer();
@@ -242,24 +232,9 @@ uint32_t process_init()
 // Add a process to the sleep queue.
 uint32_t process_sleep(process_t *p, uint64_t wake_time)
 {
-  process_sleep_node_t *sleeper = kmalloc(sizeof(process_sleep_node_t));
-  CHECK(sleeper == NULL, "Failed to allocate sleep node.", ENOMEM);
-  sleeper->pid = p->pid;
-  sleeper->wake_time = wake_time;
-
-  // TODO make this a min heap and protect with a lock
   uint32_t eflags = interrupt_save_disable();
-  list_node_t *position = sleep_queue->head;
-  list_foreach(lchild, sleep_queue) {
-    process_sleep_node_t *node = lchild->value;
-    if (node->wake_time < sleeper->wake_time)
-      position = lchild;
-    else break;
-  }
-  if (position == NULL) list_push_back(sleep_queue, sleeper);
-  else list_insert_before(sleep_queue, position, sleeper);
+  heap_push(&sleep_queue, wake_time, (void *)p->pid);
   interrupt_restore(eflags);
-
   return 0;
 }
 
@@ -496,8 +471,8 @@ void process_schedule(process_t *process)
 {
   uint32_t eflags = interrupt_save_disable();
   if (process->list_node) { interrupt_restore(eflags); return; }
-  list_push_front(running_lists[process->priority], process);
-  process->list_node = running_lists[process->priority]->head;
+  list_push_front(&running_lists[process->priority], process);
+  process->list_node = running_lists[process->priority].head;
   interrupt_restore(eflags);
 }
 
@@ -506,7 +481,7 @@ void process_unschedule(process_t *process)
 {
   uint32_t eflags = interrupt_save_disable();
   if (process->list_node == NULL) { interrupt_restore(eflags); return; }
-  list_remove(running_lists[process->priority], process->list_node, 0);
+  list_remove(&running_lists[process->priority], process->list_node, 0);
   kfree(process->list_node);
   process->list_node = NULL;
   interrupt_restore(eflags);
@@ -582,7 +557,7 @@ void process_kill(process_t *process)
   klock(&destroy_queue_lock);
   eflags = interrupt_save_disable();
   process_unschedule(process);
-  list_push_back(destroy_queue, process);
+  list_push_back(&destroy_queue, process);
   kunlock(&destroy_queue_lock);
   interrupt_restore(eflags);
 }
@@ -592,12 +567,12 @@ static void process_destroyer()
 {
   klock(&destroy_queue_lock);
 
-  if (destroy_queue->size == 0) {
+  if (destroy_queue.size == 0) {
     kunlock(&destroy_queue_lock); goto yield;
   }
 
-  list_node_t *head = destroy_queue->head;
-  list_remove(destroy_queue, head, 0);
+  list_node_t *head = destroy_queue.head;
+  list_remove(&destroy_queue, head, 0);
   kunlock(&destroy_queue_lock);
 
   process_t *process = head->value;

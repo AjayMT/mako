@@ -29,6 +29,17 @@ typedef struct tree_node_s {
   struct tree_node_s *parent;
 } tree_node_t;
 
+typedef struct heap_node_s {
+  uint64_t key;
+  void *value;
+} heap_node_t;
+
+typedef struct heap_s {
+  heap_node_t *nodes;
+  size_t capacity;
+  size_t size;
+} heap_t;
+
 void list_destroy(list_t *);
 void list_push_back(list_t *, void *);
 void list_pop_back(list_t *);
@@ -41,6 +52,11 @@ void list_remove(list_t *, list_node_t *, uint8_t);
 tree_node_t *tree_init(void *);
 void tree_insert(tree_node_t *, tree_node_t *);
 void tree_destroy(tree_node_t *);
+
+heap_node_t *heap_peek(heap_t *);
+heap_node_t heap_pop(heap_t *);
+void heap_push(heap_t *, uint64_t, void *);
+void heap_destroy(heap_t *);
 
 #define list_foreach(i, l)                                  \
   for (list_node_t *i = (l)->head; i != NULL; i = i->next)

@@ -141,3 +141,75 @@ void tree_destroy(tree_node_t *root)
   kfree(root->value);
   if (root->parent == NULL) kfree(root);
 }
+
+static void heap_grow(heap_t *hp)
+{
+  size_t new_cap = hp->capacity ? hp->capacity * 2 : 1;
+  heap_node_t *new_nodes = kmalloc(new_cap * sizeof(heap_node_t));
+  u_memcpy(new_nodes, hp->nodes, hp->size * sizeof(heap_node_t));
+  kfree(hp->nodes);
+  hp->nodes = new_nodes;
+  hp->capacity = new_cap;
+}
+
+static void heap_swap_nodes(heap_t *hp, size_t a, size_t b)
+{
+  heap_node_t n = hp->nodes[a];
+  hp->nodes[a] = hp->nodes[b];
+  hp->nodes[b] = n;
+}
+
+static void heap_heapify_up(heap_t *hp, size_t idx)
+{
+  if (idx == 0) return;
+  size_t parent = (idx - 1) >> 1;
+  if (hp->nodes[idx].key < hp->nodes[parent].key) {
+    heap_swap_nodes(hp, parent, idx);
+    heap_heapify_up(hp, parent);
+  }
+}
+
+static void heap_heapify_down(heap_t *hp, size_t idx)
+{
+  if (idx == hp->size - 1) return;
+  size_t left = (idx << 1) + 1;
+  size_t right = left + 1;
+  size_t min_child = right;
+  if (right >= hp->size || hp->nodes[right].key > hp->nodes[left].key)
+    min_child = left;
+
+  if (hp->nodes[min_child].key < hp->nodes[idx].key) {
+    heap_swap_nodes(hp, min_child, idx);
+    heap_heapify_down(hp, min_child);
+  }
+}
+
+void heap_push(heap_t *hp, uint64_t key, void *value)
+{
+  heap_node_t node = { .key = key, .value = value };
+  if (hp->nodes == NULL || hp->size == hp->capacity)
+    heap_grow(hp);
+
+  hp->nodes[hp->size] = node;
+  hp->size++;
+  heap_heapify_up(hp, hp->size - 1);
+}
+
+heap_node_t heap_pop(heap_t *hp)
+{
+  if (hp->size == 0)
+    return (heap_node_t){ .key = 0xDEADDEAD, .value = NULL };
+
+  heap_node_t popped = hp->nodes[0];
+  hp->nodes[0] = hp->nodes[hp->size - 1];
+  hp->size--;
+  heap_heapify_down(hp, 0);
+
+  return popped;
+}
+
+heap_node_t *heap_peek(heap_t *hp)
+{ return hp->nodes; }
+
+void heap_destroy(heap_t *hp)
+{ kfree(hp->nodes); }

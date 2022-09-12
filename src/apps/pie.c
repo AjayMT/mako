@@ -281,6 +281,7 @@ static uint8_t exec_path(char **args)
     movefd(writefd, 1);
     movefd(errfd, 2);
 
+    priority(0);
     execve(path, args, environ);
     exit(1);
   }

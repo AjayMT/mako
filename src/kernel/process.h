@@ -98,14 +98,6 @@ typedef struct process_s {
   list_node_t *list_node;
 } process_t;
 
-// A node in the sleep queue.
-typedef struct {
-  uint64_t wake_time;
-  // use pid instead of ptr to process so we don't attempt to wake a process
-  // after it has been killed
-  uint32_t pid;
-} process_sleep_node_t;
-
 // Process status structs used by waitpid
 typedef struct {
   uint32_t parent_pid;
