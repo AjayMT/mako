@@ -90,13 +90,14 @@ static uint32_t pipe_write(fs_node_t *node, uint32_t offset, uint32_t size, uint
 {
   (void)offset;
   pipe_t *self = node->device;
+  uint32_t eflags = interrupt_save_disable();
 
   if (self->buf == NULL) {
+    interrupt_restore(eflags);
     process_signal_pid(process_current()->pid, SIGPIPE);
     return 0;
   }
 
-  uint32_t eflags = interrupt_save_disable();
   uint32_t space = self->size - self->count;
   uint32_t end = self->head + self->count;
   if (size > space) size = space;
