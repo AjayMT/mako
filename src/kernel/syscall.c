@@ -17,7 +17,6 @@
 #include "kheap.h"
 #include "constants.h"
 #include "../common/errno.h"
-#include "log.h"
 #include "util.h"
 #include "../libc/sys/stat.h"
 #include "ui.h"

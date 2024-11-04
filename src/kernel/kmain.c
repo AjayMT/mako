@@ -6,7 +6,7 @@
 // Author: Ajay Tatachar <ajaymt2@illinois.edu>
 
 #include "serial.h"
-#include "keyboard.h"
+#include "ps2.h"
 #include "tss.h"
 #include "gdt.h"
 #include "idt.h"
@@ -110,8 +110,8 @@ void kmain(
   CHECK(res, "ata");
   res = ustar_init("/dev/hda");
   CHECK(res, "ustar");
-  res = keyboard_init();
-  CHECK(res, "keyboard");
+  res = ps2_init();
+  CHECK(res, "ps2");
 
   uint32_t video_vaddr = paging_next_vaddr(768, KERNEL_START_VADDR);
   page_table_entry_t flags; u_memset(&flags, 0, sizeof(flags));
