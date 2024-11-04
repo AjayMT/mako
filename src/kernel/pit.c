@@ -19,7 +19,7 @@ static const uint16_t PIT_COMMAND        = 0x43;
 static const uint32_t PIT_FREQUENCY      = 0x1234de;
 
 static interrupt_handler_t handler = NULL;
-static uint32_t interval = 20;
+static uint32_t interval = 10;
 static uint64_t ticks = 0;
 
 static void tick(cpu_state_t cs, idt_info_t info, stack_state_t ss)
