@@ -34,7 +34,7 @@ typedef struct {
   uint32_t head;
   uint32_t count;
   uint32_t size;
-  volatile uint32_t lock; // only acquired by readers
+  volatile uint32_t reader_lock;
   pipe_reader_t readers[MAX_READERS];
 } pipe_t;
 
@@ -64,15 +64,14 @@ static uint32_t pipe_read(fs_node_t *node, uint32_t offset, uint32_t size, uint8
   (void)offset;
   pipe_t *self = node->device;
 
-  klock(&self->lock);
+  klock(&self->reader_lock);
   while (self->count == 0 && self->write_node) {
-    kunlock(&self->lock);
+    kunlock(&self->reader_lock);
     pipe_wait(self, size);
-    klock(&self->lock);
+    klock(&self->reader_lock);
   }
 
   uint32_t eflags = interrupt_save_disable();
-  kunlock(&self->lock);
   if (size > self->count) size = self->count;
   for (uint32_t i = 0; i < size; ++i) {
     buf[i] = self->buf[self->head];
@@ -82,6 +81,7 @@ static uint32_t pipe_read(fs_node_t *node, uint32_t offset, uint32_t size, uint8
   self->read_node->length = self->count;
   if (self->write_node) self->write_node->length = self->count;
   interrupt_restore(eflags);
+  kunlock(&self->reader_lock);
 
   return size;
 }
@@ -89,8 +89,8 @@ static uint32_t pipe_read(fs_node_t *node, uint32_t offset, uint32_t size, uint8
 static uint32_t pipe_write(fs_node_t *node, uint32_t offset, uint32_t size, uint8_t *buf)
 {
   (void)offset;
-  pipe_t *self = node->device;
   uint32_t eflags = interrupt_save_disable();
+  pipe_t *self = node->device;
 
   if (self->buf == NULL) {
     interrupt_restore(eflags);
