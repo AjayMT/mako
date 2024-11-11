@@ -189,8 +189,9 @@ static void syscall_exit(uint32_t status)
   process_t *current = process_current();
   current->exited = 1;
   current->exit_status = status;
+  // process_kill switches to the next process after killing
+  // the current process.
   process_kill(current);
-  process_switch_next();
 }
 
 static void syscall_pagealloc(uint32_t npages)

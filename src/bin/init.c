@@ -25,11 +25,6 @@ int main(int argc, char *argv[])
     execve("/apps/pie", args, environ);
   }
 
-  /* if (fork() == 0) { */
-  /*   char *args[] = { "/home/hello.txt", NULL }; */
-  /*   execve("/apps/xed", args, environ); */
-  /* } */
-
-  while (1) hibernate();
+  while (1);
   return 0;
 }

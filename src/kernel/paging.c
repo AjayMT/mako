@@ -264,7 +264,7 @@ paging_result_t paging_unmap(uint32_t virt_addr)
 {
   uint32_t pd_idx = vaddr_to_pd_idx(virt_addr);
 
-  // Cannot unmap kernel memory or page directory.
+  // Cannot unmap kernel text or page directory.
   CHECK(
     pd_idx == vaddr_to_pd_idx(KERNEL_START_VADDR)
     || pd_idx == vaddr_to_pd_idx(PD_VADDR),
