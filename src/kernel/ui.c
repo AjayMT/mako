@@ -120,7 +120,8 @@ uint32_t ui_init(uint32_t vaddr)
   wallpaper = kmalloc(backbuf_size);
   CHECK(wallpaper == NULL, "Failed to allocate wallpaper", ENOMEM);
   fs_node_t wallpaper_node;
-  uint32_t err = fs_open_node(&wallpaper_node, "/wallpapers/default.wp", 0);
+  // TODO configurable wallpaper file and safe fallback
+  uint32_t err = fs_open_node(&wallpaper_node, "/wallpapers/harvard.wp", 0);
   CHECK(err, "Failed to open wallpaper file", err);
 
   uint32_t n = fs_read(&wallpaper_node, 0, wallpaper_node.length, (uint8_t *)wallpaper);
