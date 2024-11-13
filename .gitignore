@@ -6,6 +6,7 @@
 *.a
 /hda.tar
 /ustar_image
+/wallpaper
 /dex
 /init
 /pwd

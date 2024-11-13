@@ -18,12 +18,22 @@
 #include "pipe.h"
 #include "fs.h"
 
-#define CHECK(err, msg, code) if ((err)) {      \
-    log_error("ui", msg "\n"); return (code);   \
+#define CHECK(err, msg, code)                                                  \
+  if ((err)) {                                                                 \
+    log_error("ui", msg "\n");                                                 \
+    return (code);                                                             \
   }
-#define CHECK_UNLOCK_R(err, msg, code) if ((err)) {             \
-    log_error("ui", msg "\n"); kunlock(&responders_lock);       \
-    return (code);                                              \
+#define CHECK_UNLOCK_R(err, msg, code)                                         \
+  if ((err)) {                                                                 \
+    log_error("ui", msg "\n");                                                 \
+    kunlock(&responders_lock);                                                 \
+    return (code);                                                             \
+  }
+#define CHECK_RESTORE_EFLAGS(err, msg, code)                                   \
+  if ((err)) {                                                                 \
+    log_error("ui", msg "\n");                                                 \
+    interrupt_restore(eflags);                                                 \
+    return (code);                                                             \
   }
 
 #define BORDER_WIDTH     4
@@ -39,9 +49,10 @@ typedef struct ui_responder_s {
   list_node_t *list_node;
 } ui_responder_t;
 
+static const size_t backbuf_size = SCREENWIDTH * SCREENHEIGHT * sizeof(uint32_t);
+static uint32_t *wallpaper = NULL;
 static uint32_t buf_vaddr = 0;
 static uint32_t *backbuf = NULL;
-static volatile uint32_t backbuf_lock;
 static list_t *responders = NULL;
 static volatile uint32_t responders_lock = 0;
 
@@ -83,32 +94,37 @@ static void ui_blit_window(ui_responder_t *r, uint8_t is_key)
 // Redraw the entire screen.
 static void ui_redraw_all()
 {
-  klock(&backbuf_lock);
+  uint32_t eflags = interrupt_save_disable();
 
-  for (uint32_t i = 0; i < SCREENWIDTH * SCREENHEIGHT; ++i)
-    backbuf[i] = 0x777777;
+  u_memcpy(backbuf, wallpaper, backbuf_size);
 
-  klock(&responders_lock);
   for (list_node_t *current = responders->tail; current; current = current->prev) {
     ui_responder_t *responder = current->value;
     ui_blit_window(responder, current == responders->head);
   }
-  kunlock(&responders_lock);
 
-  uint32_t eflags = interrupt_save_disable();
-  u_memcpy((uint32_t *)buf_vaddr, backbuf, SCREENWIDTH * SCREENHEIGHT * 4);
+  u_memcpy((uint32_t *)buf_vaddr, backbuf, backbuf_size);
   interrupt_restore(eflags);
-
-  kunlock(&backbuf_lock);
 }
 
 uint32_t ui_init(uint32_t vaddr)
 {
   u_memset(responders_by_gid, 0, sizeof(responders_by_gid));
   buf_vaddr = vaddr;
-  backbuf = kmalloc(SCREENHEIGHT * SCREENWIDTH * 4); CHECK(backbuf == NULL, "No memory.", ENOMEM);
-  responders = kmalloc(sizeof(list_t)); CHECK(responders == NULL, "No memory.", ENOMEM);
+  backbuf = kmalloc(backbuf_size);
+  CHECK(backbuf == NULL, "Failed to allocate backbuf", ENOMEM);
+  responders = kmalloc(sizeof(list_t));
+  CHECK(responders == NULL, "Failed to allocate responders", ENOMEM);
   u_memset(responders, 0, sizeof(list_t));
+
+  wallpaper = kmalloc(backbuf_size);
+  CHECK(wallpaper == NULL, "Failed to allocate wallpaper", ENOMEM);
+  fs_node_t wallpaper_node;
+  uint32_t err = fs_open_node(&wallpaper_node, "/wallpapers/default.wp", 0);
+  CHECK(err, "Failed to open wallpaper file", err);
+
+  uint32_t n = fs_read(&wallpaper_node, 0, wallpaper_node.length, (uint8_t *)wallpaper);
+  CHECK(n != backbuf_size, "Failed to read wallpaper file", n);
 
   ui_redraw_all();
 
@@ -130,14 +146,57 @@ static uint32_t ui_dispatch_window_event(ui_responder_t *r, ui_event_type_t t)
 
 uint32_t ui_dispatch_keyboard_event(uint8_t code)
 {
+  uint32_t eflags = interrupt_save_disable();
+
+  if (responders->size == 0) {
+    interrupt_restore(eflags);
+    return 0;
+  }
+
+  static const uint8_t scancode_meta_pressed = 0x38;
+  static const uint8_t scancode_meta_released = 0xb8;
+  static const uint8_t scancode_tab_pressed = 0x0f;
+  static uint8_t meta_pressed = 0;
+
+  if (meta_pressed && code == scancode_tab_pressed) {
+    // Rotate responders list
+    ui_responder_t *key_responder = responders->head->value;
+    list_remove(responders, responders->head, 0);
+    key_responder->list_node->prev = responders->tail;
+    key_responder->list_node->next = NULL;
+    if (responders->tail)
+      responders->tail->next = key_responder->list_node;
+    responders->tail = key_responder->list_node;
+    if (responders->head == NULL)
+      responders->head = key_responder->list_node;
+    responders->size++;
+
+    if (responders->size > 1) {
+      uint32_t err = ui_dispatch_window_event(key_responder, UI_EVENT_SLEEP);
+      CHECK_RESTORE_EFLAGS(err, "Failed to dispatch sleep event.", err);
+      err = ui_dispatch_window_event(responders->head->value, UI_EVENT_WAKE);
+      CHECK_RESTORE_EFLAGS(err, "Failed to dispatch wake event.", err);
+    }
+
+    ui_redraw_all();
+
+    interrupt_restore(eflags);
+    return 0;
+  }
+
+  if (code == scancode_meta_pressed)
+    meta_pressed = 1;
+  else if (code == scancode_meta_released)
+    meta_pressed = 0;
+
   ui_event_t ev;
   ev.type = UI_EVENT_KEYBOARD;
   ev.code = code;
 
-  if (responders->size == 0) return 0;
   ui_responder_t *key_responder = responders->head->value;
   uint32_t written = fs_write(&key_responder->event_pipe_write, 0, sizeof(ui_event_t), (uint8_t *)&ev);
 
+  interrupt_restore(eflags);
   if (written != sizeof(ui_event_t)) return -1;
   return 0;
 }
@@ -201,30 +260,20 @@ uint32_t ui_kill(process_t *p)
 
 uint32_t ui_swap_buffers(process_t *p)
 {
-  // acquire backbuf lock first to avoid deadlock with ui_redraw_all
-  klock(&backbuf_lock);
-  klock(&responders_lock);
-
+  uint32_t eflags = interrupt_save_disable();
   ui_responder_t *r = responders_by_gid[p->gid];
-  if (r == NULL) { kunlock(&responders_lock); kunlock(&backbuf_lock); return 1; }
+  CHECK_RESTORE_EFLAGS(r == NULL, "No responders available", 1);
 
   if (r == responders->head->value) {
     ui_blit_window(r, 1);
-
-    uint32_t eflags = interrupt_save_disable();
     for (uint32_t y = 0; y < r->window.h + 2 * BORDER_WIDTH; ++y) {
       uint32_t offset = (y + r->window.y - BORDER_WIDTH) * SCREENWIDTH + r->window.x - BORDER_WIDTH;
-      u_memcpy((uint32_t *)buf_vaddr + offset, backbuf + offset, (r->window.w + 2 * BORDER_WIDTH) * 4);
+      u_memcpy((uint32_t *)buf_vaddr + offset, backbuf + offset,
+               (r->window.w + 2 * BORDER_WIDTH) * sizeof(uint32_t));
     }
     interrupt_restore(eflags);
-
-    kunlock(&responders_lock);
-    kunlock(&backbuf_lock);
     return 0;
   }
-
-  kunlock(&responders_lock);
-  kunlock(&backbuf_lock);
 
   ui_redraw_all();
 
@@ -249,6 +298,7 @@ uint32_t ui_yield(process_t *p)
   responders->size++;
 
   if (responders->size > 1) {
+    ui_responder_t *new_resp = responders->head->value;
     uint32_t err = ui_dispatch_window_event(r, UI_EVENT_SLEEP);
     CHECK_UNLOCK_R(err, "Failed to dispatch sleep event.", err);
     err = ui_dispatch_window_event(responders->head->value, UI_EVENT_WAKE);
@@ -266,7 +316,8 @@ uint32_t ui_next_event(process_t *p, uint32_t buf)
   klock(&responders_lock);
   ui_responder_t *r = responders_by_gid[p->gid];
   if (r == NULL) { kunlock(&responders_lock); return 1; }
-  kunlock(&responders_lock); // not sure if its safe to release this lock here
+  // Do not hold responders lock while blocking on event_pipe_read
+  kunlock(&responders_lock);
 
   uint8_t ev_buf[sizeof(ui_event_t)];
   uint32_t read_size = fs_read(&r->event_pipe_read, 0, sizeof(ui_event_t), ev_buf);
@@ -284,8 +335,11 @@ uint32_t ui_next_event(process_t *p, uint32_t buf)
 
 uint32_t ui_poll_events(process_t *p)
 {
+  klock(&responders_lock);
   ui_responder_t *r = responders_by_gid[p->gid];
-  if (r == NULL) return 0;
-  uint32_t count = r->event_pipe_read.length / sizeof(ui_event_t);
+  uint32_t count = 0;
+  if (r != NULL)
+    count = r->event_pipe_read.length / sizeof(ui_event_t);
+  kunlock(&responders_lock);
   return count;
 }

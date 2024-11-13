@@ -47,7 +47,7 @@ $(KERNEL_ASM_OBJECTS): $(wildcard src/kernel/*.s)
 
 # ==== HDD Image ===
 
-hda.img: $(APPS) $(BIN) $(DEPS) libnanoc.a
+hda.img: $(APPS) $(BIN) $(DEPS) libnanoc.a $(shell find sysroot -type f)
 	cp libnanoc.a sysroot/lib
 	cp $(APPS) sysroot/apps
 	cp $(BIN) sysroot/bin

@@ -481,14 +481,12 @@ static void keyboard_handler(uint8_t code)
   static uint8_t lshift = 0;
   static uint8_t rshift = 0;
   static uint8_t capslock = 0;
-  static uint8_t meta = 0;
 
   if (code & 0x80) {
     code &= 0x7F;
     switch (code) {
     case KB_SC_LSHIFT: lshift = 0; break;
     case KB_SC_RSHIFT: rshift = 0; break;
-    case KB_SC_META:   meta = 0; break;
     }
     return;
   }
@@ -497,15 +495,6 @@ static void keyboard_handler(uint8_t code)
   case KB_SC_LSHIFT:   lshift = 1; return;
   case KB_SC_RSHIFT:   rshift = 1; return;
   case KB_SC_CAPSLOCK: capslock = !capslock; return;
-  case KB_SC_META:     meta = 1; return;
-  case KB_SC_TAB:
-    if (meta) {
-      meta = 0; lshift = 0; rshift = 0; capslock = 0;
-      render_inactive();
-      ui_swap_buffers();
-      ui_yield();
-    }
-    return;
   }
 
   thread_lock(&ui_lock);
@@ -759,12 +748,8 @@ static void keyboard_handler(uint8_t code)
   }
 }
 
-static void ui_handler(ui_event_t ev)
+static void resize_handler(ui_event_t ev)
 {
-  if (ev.type == UI_EVENT_KEYBOARD) {
-    keyboard_handler(ev.code); return;
-  }
-
   thread_lock(&ui_lock);
   if (window_w == ev.width && window_h == ev.height) {
     thread_unlock(&ui_lock); return;
@@ -782,6 +767,7 @@ static void ui_handler(ui_event_t ev)
 
   ui_swap_buffers();
 
+  // FIXME this needs to be removed / reworked
   if (file_path) {
     if (fork() == 0) {
       char *args[] = { file_path, NULL };
@@ -801,7 +787,6 @@ static void ui_handler(ui_event_t ev)
   }
 
   thread_unlock(&ui_lock);
-  return;
 }
 
 static void update_footer_text()
@@ -853,11 +838,26 @@ int main(int argc, char *argv[])
   if (res < 0) return 1;
   ui_buf = (uint32_t *)res;
 
+  ui_event_t ev;
+  res = ui_next_event(&ev);
+  if (res < 0 || ev.type != UI_EVENT_WAKE)
+    return 1;
+
+  // Use the resize handler to render everything upon window creation.
+  resize_handler(ev);
+
   while (1) {
-    ui_event_t ev;
     res = ui_next_event(&ev);
     if (res < 0) return 1;
-    ui_handler(ev);
+    switch (ev.type) {
+    case UI_EVENT_KEYBOARD:
+      keyboard_handler(ev.code);
+      break;
+    case UI_EVENT_RESIZE:
+      resize_handler(ev);
+      break;
+    default:;
+    }
   }
 
   return 0;
