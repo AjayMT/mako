@@ -1,7 +1,7 @@
 
 // ls.c
 //
-// List current directory contents.
+// List directory contents.
 //
 // Author: Ajay Tatachar <ajaymt2@illinois.edu>
 

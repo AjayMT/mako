@@ -85,6 +85,3 @@ uint32_t systime()
 
 uint32_t priority(int32_t p)
 { return _syscall1(SYSCALL_PRIORITY, p); }
-
-void hibernate()
-{ _syscall0(SYSCALL_HIBERNATE); }

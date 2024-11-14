@@ -647,13 +647,10 @@ static void syscall_priority(int32_t prio)
   interrupt_restore(eflags);
 }
 
-static void syscall_hibernate()
+static void syscall_ui_set_wallpaper(const char *path)
 {
-  disable_interrupts();
   process_t *current = process_current();
-  current->in_kernel = 0;
-  process_unschedule(current);
-  process_switch_next();
+  current->uregs.eax = -ui_set_wallpaper(path);
 }
 
 static syscall_t syscall_table[] = {
@@ -698,7 +695,7 @@ static syscall_t syscall_table[] = {
   syscall_resolve,
   syscall_systime,
   syscall_priority,
-  syscall_hibernate
+  syscall_ui_set_wallpaper,
 };
 
 process_registers_t *syscall_handler(cpu_state_t cs, stack_state_t ss)

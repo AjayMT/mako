@@ -21,5 +21,6 @@ uint32_t ui_swap_buffers(process_t *);
 uint32_t ui_yield(process_t *);
 uint32_t ui_next_event(process_t *, uint32_t);
 uint32_t ui_poll_events(process_t *);
+uint32_t ui_set_wallpaper(const char *);
 
 #endif /* _UI_H_ */

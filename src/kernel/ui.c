@@ -16,6 +16,7 @@
 #include "log.h"
 #include "ui.h"
 #include "pipe.h"
+#include "pit.h"
 #include "fs.h"
 
 #define CHECK(err, msg, code)                                                  \
@@ -119,15 +120,22 @@ uint32_t ui_init(uint32_t vaddr)
 
   wallpaper = kmalloc(backbuf_size);
   CHECK(wallpaper == NULL, "Failed to allocate wallpaper", ENOMEM);
-  fs_node_t wallpaper_node;
-  // TODO configurable wallpaper file and safe fallback
-  uint32_t err = fs_open_node(&wallpaper_node, "/wallpapers/harvard.wp", 0);
-  CHECK(err, "Failed to open wallpaper file", err);
 
-  uint32_t n = fs_read(&wallpaper_node, 0, wallpaper_node.length, (uint8_t *)wallpaper);
-  CHECK(n != backbuf_size, "Failed to read wallpaper file", n);
+  fs_node_t wallpaper_dir;
+  uint32_t err = fs_open_node(&wallpaper_dir, "/wallpapers", O_DIRECTORY);
+  CHECK(err, "Failed to open /wallpapers", ENOENT);
 
-  ui_redraw_all();
+  struct dirent *wallpaper_dirent = fs_readdir(&wallpaper_dir, 2);
+  CHECK(wallpaper_dirent == NULL, "Failed to read entry in /wallpapers", ENOTDIR);
+
+  const size_t path_strlen = u_strlen("/wallpapers/");
+  const size_t dirent_strlen = u_strlen(wallpaper_dirent->name);
+  char name_buf[path_strlen + dirent_strlen + 1];
+  u_memcpy(name_buf, "/wallpapers/", path_strlen);
+  u_memcpy(name_buf + path_strlen, wallpaper_dirent->name, dirent_strlen + 1);
+  err = ui_set_wallpaper(name_buf);
+  CHECK(err, "Failed to set wallpaper", err);
+  kfree(wallpaper_dirent);
 
   return 0;
 }
@@ -343,4 +351,19 @@ uint32_t ui_poll_events(process_t *p)
     count = r->event_pipe_read.length / sizeof(ui_event_t);
   kunlock(&responders_lock);
   return count;
+}
+
+uint32_t ui_set_wallpaper(const char *path)
+{
+  uint32_t eflags = interrupt_save_disable();
+  fs_node_t wallpaper_node;
+  uint32_t err = fs_open_node(&wallpaper_node, path, 0);
+  CHECK_RESTORE_EFLAGS(err, "Failed to open wallpaper file", err);
+
+  uint32_t n = fs_read(&wallpaper_node, 0, wallpaper_node.length, (uint8_t *)wallpaper);
+  CHECK_RESTORE_EFLAGS(n != backbuf_size, "Failed to read wallpaper file", n);
+
+  ui_redraw_all();
+  interrupt_restore(eflags);
+  return 0;
 }

@@ -16,5 +16,6 @@ int32_t ui_swap_buffers();
 int32_t ui_next_event(ui_event_t *);
 int32_t ui_yield();
 uint32_t ui_poll_events();
+int32_t ui_set_wallpaper(const char *);
 
 #endif /* _UI_H_ */

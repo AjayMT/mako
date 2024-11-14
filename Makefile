@@ -18,7 +18,7 @@ LIBC_OBJECTS := $(notdir $(patsubst %.c,%.o,$(wildcard src/libc/*.c)))
 CRT_OBJECTS := crt0.o crti.o crtn.o
 
 DEPS := nanoc lua doomgeneric
-APPS := dex xed pie img
+APPS := dex xed pie img wallpaper
 BIN := $(notdir $(patsubst %.c,%,$(wildcard src/bin/*.c)))
 
 GRUB_MKRESCUE := grub-mkrescue
@@ -73,8 +73,12 @@ img: src/apps/img.c src/apps/lodepng.c src/apps/lodepng.h src/apps/scancode.h li
 	$(CC) $(CFLAGS) -Isrc/libc/ -Isrc/libui/ src/apps/img.c src/apps/lodepng.c \
 	$(CRT_OBJECTS) libc.a libui.a -lgcc -o $@
 
-$(BIN): $(wildcard src/bin/*.c) libc.a $(CRT_OBJECTS)
+# wallpaper depends on libui.a
+$(filter-out wallpaper,$(BIN)): $(wildcard src/bin/*.c) libc.a $(CRT_OBJECTS)
 	$(CC) $(CFLAGS) -Isrc/libc/ src/bin/$@.c $(CRT_OBJECTS) libc.a -lgcc -o $@
+
+wallpaper: src/bin/wallpaper.c libc.a libui.a $(CRT_OBJECTS)
+	$(CC) $(CFLAGS) -Isrc/libc/ -Isrc/libui/ src/bin/$@.c $(CRT_OBJECTS) libc.a libui.a -lgcc -o $@
 
 libnanoc.a: src/nanoc.c $(wildcard src/common/*)
 	$(CC) $(CFLAGS) -ffreestanding -c src/nanoc.c -o nanoc.o

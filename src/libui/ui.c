@@ -47,3 +47,10 @@ int32_t ui_yield()
 
 uint32_t ui_poll_events()
 { return _syscall0(SYSCALL_UI_POLL_EVENTS); }
+
+int32_t ui_set_wallpaper(const char *path)
+{
+  int32_t res = _syscall1(SYSCALL_UI_SET_WALLPAPER, (uint32_t)path);
+  if (res < 0) { errno = -res; res = -1; }
+  return res;
+}
