@@ -208,7 +208,7 @@ int32_t fs_symlink(char *src, char *dst)
 {
   char *parent_path = NULL;
   int32_t basename_idx = split_basename(&parent_path, dst);
-  CHECK(basename_idx > 0, "Failed to split basename.", basename_idx);
+  CHECK(basename_idx <= 0, "Failed to split basename.", basename_idx);
 
   char *basename = parent_path + basename_idx;
   parent_path[basename_idx - 1] = '\0';
@@ -233,7 +233,7 @@ static int32_t fs_create_or_mkdir(char *path, uint16_t mask, uint8_t is_dir)
 {
   char *parent_path = NULL;
   int32_t basename_idx = split_basename(&parent_path, path);
-  CHECK(basename_idx > 0, "Failed to split basename.", basename_idx);
+  CHECK(basename_idx <= 0, "Failed to split basename.", basename_idx);
 
   char *basename = parent_path + basename_idx;
   parent_path[basename_idx - 1] = '\0';
@@ -261,7 +261,7 @@ int32_t fs_unlink(char *path)
 {
   char *parent_path = NULL;
   int32_t basename_idx = split_basename(&parent_path, path);
-  CHECK(basename_idx > 0, "Failed to split basename.", basename_idx);
+  CHECK(basename_idx <= 0, "Failed to split basename.", basename_idx);
 
   char *basename = parent_path + basename_idx;
   parent_path[basename_idx - 1] = '\0';
@@ -282,7 +282,7 @@ int32_t fs_rename(char *old, char *new)
 {
   char *parent_path = NULL;
   int32_t basename_idx = split_basename(&parent_path, old);
-  CHECK(basename_idx > 0, "Failed to split basename.", basename_idx);
+  CHECK(basename_idx <= 0, "Failed to split basename.", basename_idx);
 
   char *basename = parent_path + basename_idx;
   parent_path[basename_idx - 1] = '\0';
@@ -296,7 +296,7 @@ int32_t fs_rename(char *old, char *new)
 
   char *new_parent_path = NULL;
   int32_t new_basename_idx = split_basename(&new_parent_path, new);
-  CHECK(new_basename_idx > 0, "Failed to split basename.", new_basename_idx);
+  CHECK(new_basename_idx <= 0, "Failed to split basename.", new_basename_idx);
 
   char *new_basename = new_parent_path + new_basename_idx;
   new_parent_path[new_basename_idx - 1] = '\0';
