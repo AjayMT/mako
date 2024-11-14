@@ -457,13 +457,10 @@ static void syscall_chdir(char *path)
   }
 
   char *rpath;
-  res = resolve_path(&rpath, path);
+  res = fs_resolve_path(&rpath, path);
   if (res) { current->uregs.eax = -res; return; }
-  uint32_t len = u_strlen(rpath);
   kfree(current->wd);
-  current->wd = kmalloc(len + 1);
-  u_memcpy(current->wd, rpath, len + 1);
-  kfree(rpath);
+  current->wd = rpath;
   current->uregs.eax = 0;
 }
 
@@ -622,7 +619,7 @@ static void syscall_resolve(char *outpath, char *inpath, size_t len)
 {
   process_t *current = process_current();
   char *rpath;
-  uint32_t res = resolve_path(&rpath, inpath);
+  uint32_t res = fs_resolve_path(&rpath, inpath);
   if (res) { current->uregs.eax = -res; return; }
   size_t l = u_strlen(rpath) + 1;
   if (l > len) l = len;

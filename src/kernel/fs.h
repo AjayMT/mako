@@ -131,6 +131,6 @@ uint32_t fs_mount(fs_node_t *, const char *);
 uint32_t fs_open_node(fs_node_t *, const char *, uint32_t);
 
 // Resolve a (relative) path.
-uint32_t resolve_path(char **outpath, const char *inpath);
+uint32_t fs_resolve_path(char **outpath, const char *inpath);
 
 #endif /* _FS_H_ */

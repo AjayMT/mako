@@ -119,7 +119,7 @@ int32_t fs_readlink(fs_node_t *node, char *buf, size_t bufsize)
 }
 
 // Resolve a (relative) path.
-uint32_t resolve_path(char **outpath, const char *inpath)
+uint32_t fs_resolve_path(char **outpath, const char *inpath)
 {
   process_t *current = process_current();
   uint32_t path_len = u_strlen(inpath);
@@ -192,7 +192,7 @@ uint32_t resolve_path(char **outpath, const char *inpath)
 static int32_t split_basename(char **out, char *in)
 {
   char *resolved;
-  uint32_t res = resolve_path(&resolved, in);
+  uint32_t res = fs_resolve_path(&resolved, in);
   CHECK(res, "Could not resolve path.", -res);
 
   uint32_t dirname_length = u_strlen(resolved);
@@ -221,7 +221,7 @@ int32_t fs_symlink(char *src, char *dst)
   }
 
   char *rsrc;
-  err = resolve_path(&rsrc, src);
+  err = fs_resolve_path(&rsrc, src);
   CHECK(err, "Failed to errolve path.", -err);
   err = parent.symlink(&parent, rsrc, basename);
   kfree(parent_path);
@@ -345,7 +345,7 @@ uint32_t fs_mount(fs_node_t *local_root, const char *path)
   klock(&fs_lock);
 
   char *mpath;
-  uint32_t res = resolve_path(&mpath, path);
+  uint32_t res = fs_resolve_path(&mpath, path);
   CHECK(res, "Failed to resolve path.", res);
   size_t path_len = u_strlen(mpath);
   for (size_t i = 0; i < path_len; ++i)
@@ -432,7 +432,7 @@ uint32_t fs_open_node(fs_node_t *out_node, const char *path, uint32_t flags)
   CHECK(fs_tree == NULL, "Attempted to open before initializing filesystem.", ENXIO);
 
   char *path_segments;
-  uint32_t err = resolve_path(&path_segments, path);
+  uint32_t err = fs_resolve_path(&path_segments, path);
   CHECK(err, "Failed to resolve path.", err);
 
   size_t path_len = u_strlen(path_segments);
