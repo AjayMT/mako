@@ -9,7 +9,7 @@
 int main(int argc, char *argv[])
 {
   if (argc < 3) {
-    printf("Usage: wallpaper <input-file> <output-file>\n");
+    printf("Usage: %s <input-file> <output-file>\n", argv[0]);
     return 1;
   }
 

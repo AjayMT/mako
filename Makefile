@@ -107,4 +107,4 @@ qemu: mako.iso hda.img
 clean:
 	rm -rf *.elf *.o *.a iso/boot/kernel.elf mako.iso com1.out                 \
 	       sysroot/lib/* sysroot/bin/* sysroot/apps/* lua c4 doomgeneric nanoc \
-	       $(APPS) $(BIN) $(DEPS) hda.img hda.tar ustar_image
+	       $(APPS) $(BIN) $(DEPS) hda.img hda.tar ustar_image png2wp
