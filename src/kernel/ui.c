@@ -5,7 +5,6 @@
 //
 // Author: Ajay Tatachar <ajaymt2@illinois.edu>
 
-#include "../common/stdint.h"
 #include "process.h"
 #include "kheap.h"
 #include "klock.h"
@@ -16,8 +15,9 @@
 #include "log.h"
 #include "ui.h"
 #include "pipe.h"
-#include "pit.h"
 #include "fs.h"
+#include "ui_cursor.h"
+#include "ui_title_bar.h"
 
 #define CHECK(err, msg, code)                                                  \
   if ((err)) {                                                                 \
@@ -37,10 +37,6 @@
     return (code);                                                             \
   }
 
-#define BORDER_WIDTH     4
-#define BORDER_COLOR_KEY 0x52aaad
-#define BORDER_COLOR     0x9cefef
-
 typedef struct ui_responder_s {
   process_t *process;
   ui_window_t window;
@@ -50,14 +46,12 @@ typedef struct ui_responder_s {
   list_node_t *list_node;
 } ui_responder_t;
 
-static const size_t backbuf_size = SCREENWIDTH * SCREENHEIGHT * sizeof(uint32_t);
+static const size_t frame_size = SCREENWIDTH * SCREENHEIGHT * sizeof(uint32_t);
 static uint32_t *wallpaper = NULL;
-static uint32_t *backbuf = NULL;
-static uint32_t *postmouse = NULL;
-static uint32_t buf_vaddr = 0;
+static uint32_t *static_objects = NULL;
+static uint32_t *moving_objects = NULL;
+static uint32_t *frame_buffer = 0;
 
-static const unsigned MOUSE_WIDTH = 10;
-static const unsigned MOUSE_HEIGHT = 10;
 static int32_t mouse_x = 100;
 static int32_t mouse_y = 100;
 
@@ -66,52 +60,51 @@ static volatile uint32_t responders_lock = 0;
 
 static ui_responder_t *responders_by_gid[MAX_PROCESS_COUNT];
 
-// Blit a single window to the backbuf.
-static void ui_blit_window(ui_responder_t *r, uint8_t is_key)
+// Blit a single window to a buffer.
+static void ui_blit_window(ui_responder_t *r, uint32_t *buffer)
 {
-  uint32_t border_color = is_key ? BORDER_COLOR_KEY : BORDER_COLOR;
   process_t *p = r->process;
   uint32_t eflags = interrupt_save_disable();
   uint32_t cr3 = paging_get_cr3();
   paging_set_cr3(p->cr3);
 
-  for (uint32_t y = 0; y < BORDER_WIDTH; ++y) {
-    uint32_t *backbuf_ptr =
-      backbuf + ((y + r->window.y - BORDER_WIDTH) * SCREENWIDTH) + r->window.x - BORDER_WIDTH;
-    for (uint32_t x = 0; x < r->window.w + 2 * BORDER_WIDTH; ++x)
-      backbuf_ptr[x] = border_color;
+  static const uint32_t GRAY = 0xaaaaaa;
+  static const uint32_t BLUE = 0xcccccc;
+
+  for (uint32_t y = 0; y < TITLE_BAR_HEIGHT; ++y) {
+    uint32_t *buffer_ptr = buffer + ((y + r->window.y) * SCREENWIDTH) + r->window.x;
+    for (uint32_t x = 0; x < TITLE_BAR_WIDTH; ++x)
+      buffer_ptr[x] = TITLE_BAR_PIXELS[y * TITLE_BAR_WIDTH + x];
   }
+
   for (uint32_t y = 0; y < r->window.h; ++y) {
     uint32_t *r_buf_ptr = r->buf + (y * r->window.w);
-    uint32_t *backbuf_ptr = backbuf + ((y + r->window.y) * SCREENWIDTH) + r->window.x;
-    for (uint32_t x = 1; x <= BORDER_WIDTH; ++x) *(backbuf_ptr - x) = border_color;
-    u_memcpy(backbuf_ptr, r_buf_ptr, r->window.w * 4);
-    for (uint32_t x = 0; x < BORDER_WIDTH; ++x) backbuf_ptr[r->window.w + x] = border_color;
-  }
-  for (uint32_t y = 0; y < BORDER_WIDTH; ++y) {
-    uint32_t *backbuf_ptr =
-      backbuf + ((y + r->window.y + r->window.h) * SCREENWIDTH) + r->window.x - BORDER_WIDTH;
-    for (uint32_t x = 0; x < r->window.w + 2 * BORDER_WIDTH; ++x)
-      backbuf_ptr[x] = border_color;
+    uint32_t *buffer_ptr = buffer + ((y + TITLE_BAR_HEIGHT + r->window.y) * SCREENWIDTH) + r->window.x;
+    u_memcpy(buffer_ptr, r_buf_ptr, r->window.w * sizeof(uint32_t));
   }
 
   paging_set_cr3(cr3);
   interrupt_restore(eflags);
 }
 
-static void ui_redraw_mouse(uint32_t old_x, uint32_t old_y)
+static void ui_redraw_moving_objects(uint32_t old_x, uint32_t old_y)
 {
-  for (uint32_t y = 0; y < MOUSE_HEIGHT; ++y) {
-    for (uint32_t x = 0; x < MOUSE_WIDTH; ++x) {
+  for (uint32_t y = 0; y < CURSOR_HEIGHT; ++y) {
+    for (uint32_t x = 0; x < CURSOR_WIDTH; ++x) {
       uint32_t pixel_offset = ((old_y + y) * SCREENWIDTH) + old_x + x;
-      postmouse[pixel_offset] = backbuf[pixel_offset];
+      moving_objects[pixel_offset] = static_objects[pixel_offset];
     }
   }
 
-  for (uint32_t y = 0; y < MOUSE_HEIGHT; ++y) {
-    for (uint32_t x = 0; x < MOUSE_WIDTH; ++x) {
+  for (uint32_t y = 0; y < CURSOR_HEIGHT; ++y) {
+    if (mouse_y + y >= SCREENHEIGHT) break;
+    for (uint32_t x = 0; x < CURSOR_WIDTH; ++x) {
+      if (mouse_x + x >= SCREENWIDTH) break;
       uint32_t pixel_offset = ((mouse_y + y) * SCREENWIDTH) + mouse_x + x;
-      postmouse[pixel_offset] = 0;
+      uint32_t cursor_pixel = CURSOR_PIXELS[y * CURSOR_WIDTH + x];
+      // FIXME better opacity handling
+      if (cursor_pixel & 0xff000000)
+        moving_objects[pixel_offset] = cursor_pixel;
     }
   }
 
@@ -127,10 +120,10 @@ static void ui_redraw_mouse(uint32_t old_x, uint32_t old_y)
   if (max_x >= SCREENWIDTH) max_x = SCREENWIDTH - 1;
   if (max_y >= SCREENHEIGHT) max_y = SCREENHEIGHT - 1;
 
-  for (uint32_t y = min_y; y < max_y + MOUSE_HEIGHT; ++y) {
-    for (uint32_t x = min_x; x < max_x + MOUSE_WIDTH; ++x) {
+  for (uint32_t y = min_y; y < max_y + CURSOR_HEIGHT; ++y) {
+    for (uint32_t x = min_x; x < max_x + CURSOR_WIDTH; ++x) {
       uint32_t pixel_offset = y * SCREENWIDTH + x;
-      ((uint32_t *)buf_vaddr)[pixel_offset] = postmouse[pixel_offset];
+      frame_buffer[pixel_offset] = moving_objects[pixel_offset];
     }
   }
 }
@@ -140,33 +133,33 @@ static void ui_redraw_all()
 {
   uint32_t eflags = interrupt_save_disable();
 
-  u_memcpy(backbuf, wallpaper, backbuf_size);
+  u_memcpy(static_objects, wallpaper, frame_size);
 
   for (list_node_t *current = responders->tail; current; current = current->prev) {
     ui_responder_t *responder = current->value;
-    ui_blit_window(responder, current == responders->head);
+    ui_blit_window(responder, static_objects);
   }
 
-  u_memcpy(postmouse, backbuf, backbuf_size);
-  u_memcpy((uint32_t *)buf_vaddr, backbuf, backbuf_size);
+  u_memcpy(moving_objects, static_objects, frame_size);
+  u_memcpy(frame_buffer, static_objects, frame_size);
   interrupt_restore(eflags);
 }
 
-uint32_t ui_init(uint32_t vaddr)
+uint32_t ui_init(uint32_t video_vaddr)
 {
   u_memset(responders_by_gid, 0, sizeof(responders_by_gid));
-  buf_vaddr = vaddr;
-  backbuf = kmalloc(backbuf_size);
-  CHECK(backbuf == NULL, "Failed to allocate backbuf", ENOMEM);
+  frame_buffer = (uint32_t *)video_vaddr;
   responders = kmalloc(sizeof(list_t));
   CHECK(responders == NULL, "Failed to allocate responders", ENOMEM);
   u_memset(responders, 0, sizeof(list_t));
 
-  // FIXME this can be way smaller; bounded by the max mouse redraw rect
-  postmouse = kmalloc(backbuf_size);
-  CHECK(postmouse == NULL, "Failed to allocate postmouse", ENOMEM);
+  static_objects = kmalloc(frame_size);
+  CHECK(static_objects == NULL, "Failed to allocate static_objects", ENOMEM);
 
-  wallpaper = kmalloc(backbuf_size);
+  moving_objects = kmalloc(frame_size);
+  CHECK(moving_objects == NULL, "Failed to allocate moving_objects", ENOMEM);
+
+  wallpaper = kmalloc(frame_size);
   CHECK(wallpaper == NULL, "Failed to allocate wallpaper", ENOMEM);
 
   fs_node_t wallpaper_dir;
@@ -272,7 +265,7 @@ uint32_t ui_handle_mouse_event(int32_t dx, int32_t dy, uint8_t left_button, uint
   if (mouse_y < 0) mouse_y = 0;
   if (mouse_y >= SCREENHEIGHT) mouse_y = SCREENHEIGHT - 1;
 
-  ui_redraw_mouse(old_mouse_x, old_mouse_y);
+  ui_redraw_moving_objects(old_mouse_x, old_mouse_y);
 
   return 0;
 }
@@ -290,13 +283,8 @@ uint32_t ui_make_responder(process_t *p, uint32_t buf)
   r->window.h = SCREENHEIGHT >> 1;
 
   klock(&responders_lock);
-  if (responders->size == 0) {
-    r->window.x = SCREENWIDTH >> 2;
-    r->window.y = SCREENHEIGHT >> 2;
-  } else {
-    r->window.x = BORDER_WIDTH;
-    r->window.y = BORDER_WIDTH;
-  }
+  r->window.x = SCREENWIDTH >> 2;
+  r->window.y = SCREENHEIGHT >> 2;
 
   list_push_front(responders, r);
   r->list_node = responders->head;
@@ -341,13 +329,20 @@ uint32_t ui_swap_buffers(process_t *p)
   CHECK_RESTORE_EFLAGS(r == NULL, "No responders available", 1);
 
   if (r == responders->head->value) {
-    ui_blit_window(r, 1);
-    for (uint32_t y = 0; y < r->window.h + 2 * BORDER_WIDTH; ++y) {
-      uint32_t offset = (y + r->window.y - BORDER_WIDTH) * SCREENWIDTH + r->window.x - BORDER_WIDTH;
-      u_memcpy(postmouse + offset, backbuf + offset,
-               (r->window.w + 2 * BORDER_WIDTH) * sizeof(uint32_t));
-      u_memcpy((uint32_t *)buf_vaddr + offset, backbuf + offset,
-               (r->window.w + 2 * BORDER_WIDTH) * sizeof(uint32_t));
+    ui_blit_window(r, static_objects);
+    for (uint32_t y = 0; y < TITLE_BAR_HEIGHT; ++y) {
+      uint32_t offset = (y + r->window.y) * SCREENWIDTH + r->window.x;
+      u_memcpy(moving_objects + offset, static_objects + offset,
+               TITLE_BAR_WIDTH * sizeof(uint32_t));
+      u_memcpy(frame_buffer + offset, static_objects + offset,
+               TITLE_BAR_WIDTH * sizeof(uint32_t));
+    }
+    for (uint32_t y = 0; y < r->window.h; ++y) {
+      uint32_t offset = (y + r->window.y + TITLE_BAR_HEIGHT) * SCREENWIDTH + r->window.x;
+      u_memcpy(moving_objects + offset, static_objects + offset,
+               r->window.w * sizeof(uint32_t));
+      u_memcpy(frame_buffer + offset, static_objects + offset,
+               r->window.w * sizeof(uint32_t));
     }
     interrupt_restore(eflags);
     return 0;
@@ -430,7 +425,7 @@ uint32_t ui_set_wallpaper(const char *path)
   CHECK_RESTORE_EFLAGS(err, "Failed to open wallpaper file", err);
 
   uint32_t n = fs_read(&wallpaper_node, 0, wallpaper_node.length, (uint8_t *)wallpaper);
-  CHECK_RESTORE_EFLAGS(n != backbuf_size, "Failed to read wallpaper file", n);
+  CHECK_RESTORE_EFLAGS(n != frame_size, "Failed to read wallpaper file", n);
 
   ui_redraw_all();
   interrupt_restore(eflags);
