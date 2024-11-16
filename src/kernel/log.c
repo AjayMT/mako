@@ -25,6 +25,24 @@ static void log_ui(uint32_t i)
   }
 }
 
+static void log_i(int32_t i)
+{
+  if (i < 0) {
+    serial_write(LOG_COM, '-');
+    i = -i;
+  }
+
+  int32_t n = 1;
+  if (i >= 1000000000) n = 1000000000;
+  else while (n*10 <= i) n *= 10;
+
+  while (n > 0) {
+    serial_write(LOG_COM, '0' + (i / n));
+    i %= n;
+    n /= 10;
+  }
+}
+
 static void log_hex(uint32_t i)
 {
   char *digits = "0123456789ABCDEF";
@@ -57,6 +75,7 @@ static void log_vprintf(char *fmt, va_list ap)
 {
   char *p;
   uint32_t uival;
+  int32_t ival;
   char *sval;
 
   for (p = fmt; *p != '\0'; ++p) {
@@ -74,6 +93,10 @@ static void log_vprintf(char *fmt, va_list ap)
     case 'u':
       uival = va_arg(ap, uint32_t);
       log_ui(uival);
+      break;
+    case 'd':
+      ival = va_arg(ap, int32_t);
+      log_i(ival);
       break;
     case 'x':
       uival = va_arg(ap, uint32_t);
