@@ -52,8 +52,15 @@ typedef struct ui_responder_s {
 
 static const size_t backbuf_size = SCREENWIDTH * SCREENHEIGHT * sizeof(uint32_t);
 static uint32_t *wallpaper = NULL;
-static uint32_t buf_vaddr = 0;
 static uint32_t *backbuf = NULL;
+static uint32_t *postmouse = NULL;
+static uint32_t buf_vaddr = 0;
+
+static const unsigned MOUSE_WIDTH = 10;
+static const unsigned MOUSE_HEIGHT = 10;
+static int32_t mouse_x = 100;
+static int32_t mouse_y = 100;
+
 static list_t *responders = NULL;
 static volatile uint32_t responders_lock = 0;
 
@@ -92,6 +99,42 @@ static void ui_blit_window(ui_responder_t *r, uint8_t is_key)
   interrupt_restore(eflags);
 }
 
+static void ui_redraw_mouse(uint32_t old_x, uint32_t old_y)
+{
+  for (uint32_t y = 0; y < MOUSE_HEIGHT; ++y) {
+    for (uint32_t x = 0; x < MOUSE_WIDTH; ++x) {
+      uint32_t pixel_offset = ((old_y + y) * SCREENWIDTH) + old_x + x;
+      postmouse[pixel_offset] = backbuf[pixel_offset];
+    }
+  }
+
+  for (uint32_t y = 0; y < MOUSE_HEIGHT; ++y) {
+    for (uint32_t x = 0; x < MOUSE_WIDTH; ++x) {
+      uint32_t pixel_offset = ((mouse_y + y) * SCREENWIDTH) + mouse_x + x;
+      postmouse[pixel_offset] = 0;
+    }
+  }
+
+  uint32_t min_x = old_x;
+  if ((uint32_t)mouse_x < min_x) min_x = mouse_x;
+  uint32_t max_x = mouse_x;
+  if (max_x <  old_x) max_x = old_x;
+  uint32_t min_y = old_y;
+  if ((uint32_t)mouse_y < min_y) min_y = mouse_y;
+  uint32_t max_y = mouse_y;
+  if (max_y < old_y) max_y = old_y;
+
+  if (max_x >= SCREENWIDTH) max_x = SCREENWIDTH - 1;
+  if (max_y >= SCREENHEIGHT) max_y = SCREENHEIGHT - 1;
+
+  for (uint32_t y = min_y; y < max_y + MOUSE_HEIGHT; ++y) {
+    for (uint32_t x = min_x; x < max_x + MOUSE_WIDTH; ++x) {
+      uint32_t pixel_offset = y * SCREENWIDTH + x;
+      ((uint32_t *)buf_vaddr)[pixel_offset] = postmouse[pixel_offset];
+    }
+  }
+}
+
 // Redraw the entire screen.
 static void ui_redraw_all()
 {
@@ -104,6 +147,7 @@ static void ui_redraw_all()
     ui_blit_window(responder, current == responders->head);
   }
 
+  u_memcpy(postmouse, backbuf, backbuf_size);
   u_memcpy((uint32_t *)buf_vaddr, backbuf, backbuf_size);
   interrupt_restore(eflags);
 }
@@ -117,6 +161,10 @@ uint32_t ui_init(uint32_t vaddr)
   responders = kmalloc(sizeof(list_t));
   CHECK(responders == NULL, "Failed to allocate responders", ENOMEM);
   u_memset(responders, 0, sizeof(list_t));
+
+  // FIXME this can be way smaller; bounded by the max mouse redraw rect
+  postmouse = kmalloc(backbuf_size);
+  CHECK(postmouse == NULL, "Failed to allocate postmouse", ENOMEM);
 
   wallpaper = kmalloc(backbuf_size);
   CHECK(wallpaper == NULL, "Failed to allocate wallpaper", ENOMEM);
@@ -153,7 +201,7 @@ static uint32_t ui_dispatch_window_event(ui_responder_t *r, ui_event_type_t t)
   return 0;
 }
 
-uint32_t ui_dispatch_keyboard_event(uint8_t code)
+uint32_t ui_handle_keyboard_event(uint8_t code)
 {
   uint32_t eflags = interrupt_save_disable();
 
@@ -207,6 +255,25 @@ uint32_t ui_dispatch_keyboard_event(uint8_t code)
 
   interrupt_restore(eflags);
   if (written != sizeof(ui_event_t)) return -1;
+  return 0;
+}
+
+uint32_t ui_handle_mouse_event(int32_t dx, int32_t dy, uint8_t left_button, uint8_t right_button)
+{
+  if (dx == 0 && dy == 0) return 0;
+
+  const uint32_t old_mouse_x = mouse_x;
+  const uint32_t old_mouse_y = mouse_y;
+
+  mouse_x += dx;
+  mouse_y -= dy;
+  if (mouse_x < 0) mouse_x = 0;
+  if (mouse_x >= SCREENWIDTH) mouse_x = SCREENWIDTH - 1;
+  if (mouse_y < 0) mouse_y = 0;
+  if (mouse_y >= SCREENHEIGHT) mouse_y = SCREENHEIGHT - 1;
+
+  ui_redraw_mouse(old_mouse_x, old_mouse_y);
+
   return 0;
 }
 
@@ -277,6 +344,8 @@ uint32_t ui_swap_buffers(process_t *p)
     ui_blit_window(r, 1);
     for (uint32_t y = 0; y < r->window.h + 2 * BORDER_WIDTH; ++y) {
       uint32_t offset = (y + r->window.y - BORDER_WIDTH) * SCREENWIDTH + r->window.x - BORDER_WIDTH;
+      u_memcpy(postmouse + offset, backbuf + offset,
+               (r->window.w + 2 * BORDER_WIDTH) * sizeof(uint32_t));
       u_memcpy((uint32_t *)buf_vaddr + offset, backbuf + offset,
                (r->window.w + 2 * BORDER_WIDTH) * sizeof(uint32_t));
     }
