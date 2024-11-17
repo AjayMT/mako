@@ -306,6 +306,10 @@ static void ui_handle_mouse_click()
   ui_responder_t *new_key_responder = NULL;
   list_foreach(node, &responders) {
     ui_responder_t *r = node->value;
+    if (mouse_in_rect(r->window.x, r->window.y, TITLE_BAR_BUTTON_WIDTH, TITLE_BAR_HEIGHT)) {
+      process_kill(r->process);
+      return;
+    }
     if (mouse_in_rect(r->window.x, r->window.y, TITLE_BAR_WIDTH, TITLE_BAR_HEIGHT)) {
       new_key_responder = r;
       r->window_is_moving = 1;

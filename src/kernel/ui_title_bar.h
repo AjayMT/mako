@@ -10,6 +10,7 @@
 
 static const uint32_t TITLE_BAR_WIDTH = 150;
 static const uint32_t TITLE_BAR_HEIGHT = 20;
+static const uint32_t TITLE_BAR_BUTTON_WIDTH = 16;
 static const uint32_t TITLE_BAR_PIXELS[] = {
   0xffffd478,
   0xffffd478,
