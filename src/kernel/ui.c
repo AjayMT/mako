@@ -40,6 +40,7 @@
 typedef struct ui_responder_s {
   process_t *process;
   ui_window_t window;
+  uint8_t window_opacity;
   uint8_t window_is_moving;
   uint32_t *buf;
   fs_node_t event_pipe_read;
@@ -62,6 +63,23 @@ static volatile uint32_t responders_lock = 0;
 
 static ui_responder_t *responders_by_gid[MAX_PROCESS_COUNT];
 
+static inline uint32_t ui_alpha_blend(uint32_t bg, uint32_t fg, uint8_t opacity)
+{
+  uint8_t fg_b = ((fg & 0xff) * opacity) / 0xff;
+  uint8_t fg_g = (((fg >> 8) & 0xff) * opacity) / 0xff;
+  uint8_t fg_r = (((fg >> 16) & 0xff) * opacity) / 0xff;
+  uint32_t bg_b = bg & 0xff;
+  uint32_t bg_g = (bg >> 8) & 0xff;
+  uint32_t bg_r = (bg >> 16) & 0xff;
+
+  uint16_t t = 0xff ^ opacity;
+  uint32_t blend_g = fg_g + (((bg_g * t + 0x80) * 0x101) >> 16);
+  uint32_t blend_b = fg_b + (((bg_b * t + 0x80) * 0x101) >> 16);
+  uint32_t blend_r = fg_r + (((bg_r * t + 0x80) * 0x101) >> 16);
+
+  return blend_b | (blend_g << 8) | (blend_r << 16);
+}
+
 // Blit a single window to a buffer.
 static void ui_blit_window(ui_responder_t *r, uint32_t *buffer)
 {
@@ -80,7 +98,15 @@ static void ui_blit_window(ui_responder_t *r, uint32_t *buffer)
 
     uint32_t width = TITLE_BAR_WIDTH - x_offset;
     if (r->window.x + width > SCREENWIDTH) width = SCREENWIDTH - (r->window.x + x_offset);
-    u_memcpy(buffer_ptr, TITLE_BAR_PIXELS + y * TITLE_BAR_WIDTH + x_offset, width * sizeof(uint32_t));
+
+    if (r->window_opacity == 0xff)
+      u_memcpy(buffer_ptr, TITLE_BAR_PIXELS + y * TITLE_BAR_WIDTH + x_offset, width * sizeof(uint32_t));
+    else {
+      for (uint32_t x = 0; x < width; ++x) {
+        uint32_t title_bar_pixel = TITLE_BAR_PIXELS[y * TITLE_BAR_WIDTH + x_offset + x];
+        buffer_ptr[x] = ui_alpha_blend(buffer_ptr[x], title_bar_pixel, r->window_opacity);
+      }
+    }
   }
 
   for (int32_t y = 0; (uint32_t)y < r->window.h; ++y) {
@@ -95,10 +121,66 @@ static void ui_blit_window(ui_responder_t *r, uint32_t *buffer)
 
     uint32_t width = r->window.w - x_offset;
     if (r->window.x + width > SCREENWIDTH) width = SCREENWIDTH - (r->window.x + x_offset);
-    u_memcpy(buffer_ptr, r_buf_ptr + x_offset, width * sizeof(uint32_t));
+
+    if (r->window_opacity == 0xff)
+      u_memcpy(buffer_ptr, r_buf_ptr + x_offset, width * sizeof(uint32_t));
+    else {
+      for (uint32_t x = 0; x < width; ++x) {
+        uint32_t window_pixel = r_buf_ptr[x_offset + x];
+        buffer_ptr[x] = ui_alpha_blend(buffer_ptr[x], window_pixel, r->window_opacity);
+      }
+    }
   }
 
   paging_set_cr3(cr3);
+  interrupt_restore(eflags);
+}
+
+static void ui_redraw_key_responder()
+{
+  uint32_t eflags = interrupt_save_disable();
+  ui_responder_t *r = responders.head->value;
+
+  if (r->window_is_moving) ui_blit_window(r, moving_objects);
+  else ui_blit_window(r, static_objects);
+
+  for (int32_t y = 0; (uint32_t)y < TITLE_BAR_HEIGHT; ++y) {
+    if (y + r->window.y >= SCREENHEIGHT) break;
+    if (y + r->window.y < 0) y = -(r->window.y);
+
+    int32_t x_offset = 0;
+    if (r->window.x < 0) x_offset = -(r->window.x);
+    uint32_t offset = (y + r->window.y) * SCREENWIDTH + r->window.x + x_offset;
+
+    uint32_t width = TITLE_BAR_WIDTH - x_offset;
+    if (r->window.x + width > SCREENWIDTH) width = SCREENWIDTH - (r->window.x + x_offset);
+
+    if (r->window_is_moving)
+      u_memcpy(frame_buffer + offset, moving_objects + offset, width * sizeof(uint32_t));
+    else {
+      u_memcpy(moving_objects + offset, static_objects + offset, width * sizeof(uint32_t));
+      u_memcpy(frame_buffer + offset, static_objects + offset, width * sizeof(uint32_t));
+    }
+  }
+  for (uint32_t y = 0; y < r->window.h; ++y) {
+    if (y + TITLE_BAR_HEIGHT + r->window.y >= SCREENHEIGHT) break;
+    // Don't need to handle y < 0 case since windows can't be moved
+    // above the upper edge of the screen.
+
+    int32_t x_offset = 0;
+    if (r->window.x < 0) x_offset = -(r->window.x);
+    uint32_t offset = (y + r->window.y + TITLE_BAR_HEIGHT) * SCREENWIDTH + r->window.x + x_offset;
+
+    uint32_t width = r->window.w - x_offset;
+    if (r->window.x + width > SCREENWIDTH) width = SCREENWIDTH - (r->window.x + x_offset);
+
+    if (r->window_is_moving)
+      u_memcpy(frame_buffer + offset, moving_objects + offset, width * sizeof(uint32_t));
+    else {
+      u_memcpy(moving_objects + offset, static_objects + offset, width * sizeof(uint32_t));
+      u_memcpy(frame_buffer + offset, static_objects + offset, width * sizeof(uint32_t));
+    }
+  }
   interrupt_restore(eflags);
 }
 
@@ -304,11 +386,20 @@ static inline uint8_t mouse_in_rect(int32_t x, int32_t y, uint32_t w, uint32_t h
 static void ui_handle_mouse_click()
 {
   ui_responder_t *new_key_responder = NULL;
+  uint8_t changed_opacity = 0;
   list_foreach(node, &responders) {
     ui_responder_t *r = node->value;
     if (mouse_in_rect(r->window.x, r->window.y, TITLE_BAR_BUTTON_WIDTH, TITLE_BAR_HEIGHT)) {
       process_kill(r->process);
       return;
+    }
+    if (mouse_in_rect(r->window.x + TITLE_BAR_WIDTH - TITLE_BAR_BUTTON_WIDTH,
+                      r->window.y, TITLE_BAR_BUTTON_WIDTH, TITLE_BAR_HEIGHT)) {
+      new_key_responder = r;
+      if (r->window_opacity == 0x33) r->window_opacity = 0xff;
+      else r->window_opacity -= 0x44;
+      changed_opacity = 1;
+      break;
     }
     if (mouse_in_rect(r->window.x, r->window.y, TITLE_BAR_WIDTH, TITLE_BAR_HEIGHT)) {
       new_key_responder = r;
@@ -322,7 +413,8 @@ static void ui_handle_mouse_click()
   }
 
   if (new_key_responder == NULL) return;
-  if (new_key_responder == responders.head->value && !new_key_responder->window_is_moving)
+  if (new_key_responder == responders.head->value && !new_key_responder->window_is_moving
+      && !changed_opacity)
     return;
 
   if (new_key_responder != responders.head->value) {
@@ -392,6 +484,7 @@ uint32_t ui_make_responder(process_t *p, uint32_t buf)
   r->buf = (uint32_t *)buf;
   r->window.w = SCREENWIDTH >> 1;
   r->window.h = SCREENHEIGHT >> 1;
+  r->window_opacity = 0xff;
 
   klock(&responders_lock);
   r->window.x = SCREENWIDTH >> 2;
@@ -439,53 +532,11 @@ uint32_t ui_swap_buffers(process_t *p)
   ui_responder_t *r = responders_by_gid[p->gid];
   CHECK_RESTORE_EFLAGS(r == NULL, "No responders available", 1);
 
-  if (r == responders.head->value) {
-    if (r->window_is_moving) ui_blit_window(r, moving_objects);
-    else ui_blit_window(r, static_objects);
+  if (r == responders.head->value && r->window_opacity == 0xff)
+    ui_redraw_key_responder();
+  else ui_redraw_all();
 
-    for (int32_t y = 0; (uint32_t)y < TITLE_BAR_HEIGHT; ++y) {
-      if (y + r->window.y >= SCREENHEIGHT) break;
-      if (y + r->window.y < 0) y = -(r->window.y);
-
-      int32_t x_offset = 0;
-      if (r->window.x < 0) x_offset = -(r->window.x);
-      uint32_t offset = (y + r->window.y) * SCREENWIDTH + r->window.x + x_offset;
-
-      uint32_t width = TITLE_BAR_WIDTH - x_offset;
-      if (r->window.x + width > SCREENWIDTH) width = SCREENWIDTH - (r->window.x + x_offset);
-
-      if (r->window_is_moving)
-        u_memcpy(frame_buffer + offset, moving_objects + offset, width * sizeof(uint32_t));
-      else {
-        u_memcpy(moving_objects + offset, static_objects + offset, width * sizeof(uint32_t));
-        u_memcpy(frame_buffer + offset, static_objects + offset, width * sizeof(uint32_t));
-      }
-    }
-    for (uint32_t y = 0; y < r->window.h; ++y) {
-      if (y + TITLE_BAR_HEIGHT + r->window.y >= SCREENHEIGHT) break;
-      // Don't need to handle y < 0 case since windows can't be moved
-      // above the upper edge of the screen.
-
-      int32_t x_offset = 0;
-      if (r->window.x < 0) x_offset = -(r->window.x);
-      uint32_t offset = (y + r->window.y + TITLE_BAR_HEIGHT) * SCREENWIDTH + r->window.x + x_offset;
-
-      uint32_t width = r->window.w - x_offset;
-      if (r->window.x + width > SCREENWIDTH) width = SCREENWIDTH - (r->window.x + x_offset);
-
-      if (r->window_is_moving)
-        u_memcpy(frame_buffer + offset, moving_objects + offset, width * sizeof(uint32_t));
-      else {
-        u_memcpy(moving_objects + offset, static_objects + offset, width * sizeof(uint32_t));
-        u_memcpy(frame_buffer + offset, static_objects + offset, width * sizeof(uint32_t));
-      }
-    }
-    interrupt_restore(eflags);
-    return 0;
-  }
-
-  ui_redraw_all();
-
+  interrupt_restore(eflags);
   return 0;
 }
 
