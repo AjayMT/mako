@@ -130,10 +130,25 @@ static void ui_blit_window(ui_responder_t *r, uint32_t *buffer)
         buffer_ptr[x] = ui_alpha_blend(buffer_ptr[x], window_pixel, r->window_opacity);
       }
     }
+
   }
 
   paging_set_cr3(cr3);
   interrupt_restore(eflags);
+}
+
+static void ui_blit_cursor()
+{
+  for (uint32_t y = 0; y < CURSOR_HEIGHT; ++y) {
+    if (mouse_y + y >= SCREENHEIGHT) break;
+    for (uint32_t x = 0; x < CURSOR_WIDTH; ++x) {
+      if (mouse_x + x >= SCREENWIDTH) break;
+      uint32_t pixel_offset = ((mouse_y + y) * SCREENWIDTH) + mouse_x + x;
+      uint32_t cursor_pixel = CURSOR_PIXELS[y * CURSOR_WIDTH + x];
+      if (cursor_pixel & 0xff000000)
+        moving_objects[pixel_offset] = cursor_pixel;
+    }
+  }
 }
 
 static void ui_redraw_key_responder()
@@ -155,12 +170,9 @@ static void ui_redraw_key_responder()
     uint32_t width = TITLE_BAR_WIDTH - x_offset;
     if (r->window.x + width > SCREENWIDTH) width = SCREENWIDTH - (r->window.x + x_offset);
 
-    if (r->window_is_moving)
-      u_memcpy(frame_buffer + offset, moving_objects + offset, width * sizeof(uint32_t));
-    else {
+    if (!r->window_is_moving)
       u_memcpy(moving_objects + offset, static_objects + offset, width * sizeof(uint32_t));
-      u_memcpy(frame_buffer + offset, static_objects + offset, width * sizeof(uint32_t));
-    }
+    u_memcpy(frame_buffer + offset, moving_objects + offset, width * sizeof(uint32_t));
   }
   for (uint32_t y = 0; y < r->window.h; ++y) {
     if (y + TITLE_BAR_HEIGHT + r->window.y >= SCREENHEIGHT) break;
@@ -174,37 +186,34 @@ static void ui_redraw_key_responder()
     uint32_t width = r->window.w - x_offset;
     if (r->window.x + width > SCREENWIDTH) width = SCREENWIDTH - (r->window.x + x_offset);
 
-    if (r->window_is_moving)
-      u_memcpy(frame_buffer + offset, moving_objects + offset, width * sizeof(uint32_t));
-    else {
+    if (!r->window_is_moving)
       u_memcpy(moving_objects + offset, static_objects + offset, width * sizeof(uint32_t));
-      u_memcpy(frame_buffer + offset, static_objects + offset, width * sizeof(uint32_t));
-    }
+    u_memcpy(frame_buffer + offset, moving_objects + offset, width * sizeof(uint32_t));
   }
   interrupt_restore(eflags);
 }
 
 static void ui_redraw_moving_objects(int32_t old_x, int32_t old_y)
 {
-  uint32_t redraw_rect_w = CURSOR_WIDTH;
-  uint32_t redraw_rect_h = CURSOR_HEIGHT;
+  uint32_t moved_object_w = CURSOR_WIDTH;
+  uint32_t moved_object_h = CURSOR_HEIGHT;
 
   ui_responder_t *key_responder = NULL;
   if (responders.size) {
     key_responder = responders.head->value;
     if (key_responder->window_is_moving) {
-      redraw_rect_w = key_responder->window.w;
-      redraw_rect_h = key_responder->window.h + TITLE_BAR_HEIGHT;
+      moved_object_w = key_responder->window.w;
+      moved_object_h = key_responder->window.h + TITLE_BAR_HEIGHT;
     }
   }
 
-  for (int32_t y = 0; (uint32_t)y < redraw_rect_h; ++y) {
+  for (int32_t y = 0; (uint32_t)y < moved_object_h; ++y) {
     if (old_y + y >= SCREENHEIGHT) break;
     if (old_y + y < 0) y = -old_y;
     int32_t x_offset = 0;
     if (old_x + x_offset < 0) x_offset = -old_x;
     uint32_t offset = ((old_y + y) * SCREENWIDTH) + old_x + x_offset;
-    uint32_t width = redraw_rect_w - x_offset;
+    uint32_t width = moved_object_w - x_offset;
     if (old_x + width > SCREENWIDTH) width = SCREENWIDTH - (old_x + x_offset);
     u_memcpy(moving_objects + offset, static_objects + offset, width * sizeof(uint32_t));
   }
@@ -212,17 +221,7 @@ static void ui_redraw_moving_objects(int32_t old_x, int32_t old_y)
   if (key_responder && key_responder->window_is_moving)
     ui_blit_window(key_responder, moving_objects);
 
-  for (uint32_t y = 0; y < CURSOR_HEIGHT; ++y) {
-    if (mouse_y + y >= SCREENHEIGHT) break;
-    for (uint32_t x = 0; x < CURSOR_WIDTH; ++x) {
-      if (mouse_x + x >= SCREENWIDTH) break;
-      uint32_t pixel_offset = ((mouse_y + y) * SCREENWIDTH) + mouse_x + x;
-      uint32_t cursor_pixel = CURSOR_PIXELS[y * CURSOR_WIDTH + x];
-      // FIXME better opacity handling
-      if (cursor_pixel & 0xff000000)
-        moving_objects[pixel_offset] = cursor_pixel;
-    }
-  }
+  ui_blit_cursor();
 
   int32_t min_x = old_x;
   if (mouse_x < min_x) min_x = mouse_x;
@@ -236,10 +235,10 @@ static void ui_redraw_moving_objects(int32_t old_x, int32_t old_y)
   if (min_y < 0) min_y = 0;
   if (min_x < 0) min_x = 0;
 
-  for (uint32_t y = min_y; y < max_y + redraw_rect_h; ++y) {
+  for (uint32_t y = min_y; y < max_y + moved_object_h; ++y) {
     if (y >= SCREENHEIGHT) break;
     uint32_t offset = y * SCREENWIDTH + min_x;
-    uint32_t width = max_x + redraw_rect_w - min_x;
+    uint32_t width = max_x + moved_object_w - min_x;
     if (min_x + width > SCREENWIDTH) width = SCREENWIDTH - min_x;
     u_memcpy(frame_buffer + offset, moving_objects + offset, width * sizeof(uint32_t));
   }
@@ -263,15 +262,18 @@ static void ui_redraw_all()
     if (key_responder->window_is_moving) {
       u_memcpy(moving_objects, static_objects, frame_size);
       ui_blit_window(key_responder, moving_objects);
+      ui_blit_cursor();
       u_memcpy(frame_buffer, moving_objects, frame_size);
     } else {
       ui_blit_window(key_responder, static_objects);
       u_memcpy(moving_objects, static_objects, frame_size);
-      u_memcpy(frame_buffer, static_objects, frame_size);
+      ui_blit_cursor();
+      u_memcpy(frame_buffer, moving_objects, frame_size);
     }
   } else {
     u_memcpy(moving_objects, static_objects, frame_size);
-    u_memcpy(frame_buffer, static_objects, frame_size);
+    ui_blit_cursor();
+    u_memcpy(frame_buffer, moving_objects, frame_size);
   }
 
   interrupt_restore(eflags);
