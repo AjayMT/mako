@@ -50,11 +50,6 @@ struct dim {
   uint32_t h;
 };
 
-// FIXME Strange bug: Create two instances of an app (e.g. launch
-// another pie from pie on boot-up) and drag both to the upper edge
-// of the screen such that their title bars are above the screen.
-// Click close button on either and observe page fault.
-
 // FIXME make a pixel_buffer type with uint32_t* and line stride
 
 typedef struct ui_responder_s {
@@ -190,7 +185,7 @@ static void ui_redraw_key_responder()
     .y = max(r->window.y - TITLE_BAR_HEIGHT, 0),
   };
   const struct dim title_bar_dim = {
-    .w = min(r->window.x + r->window.w, SCREENWIDTH) - title_bar_pos.x,
+    .w = min(r->window.x + TITLE_BAR_WIDTH, SCREENWIDTH) - title_bar_pos.x,
     .h = min(r->window.y, SCREENHEIGHT) - title_bar_pos.y,
   };
   const struct point window_pos = {
@@ -417,6 +412,7 @@ static void ui_handle_mouse_click()
   list_foreach(node, &responders) {
     ui_responder_t *r = node->value;
     if (mouse_in_rect(r->window.x, r->window.y - TITLE_BAR_HEIGHT, TITLE_BAR_BUTTON_WIDTH, TITLE_BAR_HEIGHT)) {
+      // FIXME this may block on the responders lock
       process_kill(r->process);
       return;
     }

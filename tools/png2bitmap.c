@@ -24,8 +24,8 @@ int main(int argc, char *argv[])
   }
 
   char *prefix = argv[2];
-  printf("static const uint32_t %s_WIDTH = %u;\n", prefix, w);
-  printf("static const uint32_t %s_HEIGHT = %u;\n", prefix, h);
+  printf("#define %s_WIDTH  %u\n", prefix, w);
+  printf("#define %s_HEIGHT %u\n", prefix, h);
   printf("static const uint32_t %s_PIXELS[] = {\n", prefix);
 
   for (unsigned i = 0; i < w * h; ++i) {

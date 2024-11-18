@@ -8,8 +8,8 @@
 #ifndef UI_CURSOR_H
 #define UI_CURSOR_H
 
-static const uint32_t CURSOR_WIDTH = 15;
-static const uint32_t CURSOR_HEIGHT = 15;
+#define CURSOR_WIDTH  15
+#define CURSOR_HEIGHT 15
 static const uint32_t CURSOR_PIXELS[] = {
   0xffffffff,
   0xffffffff,

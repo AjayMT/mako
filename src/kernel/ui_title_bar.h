@@ -8,9 +8,9 @@
 #ifndef UI_TITLE_BAR_H
 #define UI_TITLE_BAR_H
 
-static const uint32_t TITLE_BAR_WIDTH = 150;
-static const uint32_t TITLE_BAR_HEIGHT = 20;
-static const uint32_t TITLE_BAR_BUTTON_WIDTH = 16;
+#define TITLE_BAR_WIDTH  150
+#define TITLE_BAR_HEIGHT 20
+#define TITLE_BAR_BUTTON_WIDTH 16
 static const uint32_t TITLE_BAR_PIXELS[] = {
   0xffffd478,
   0xffffd478,
