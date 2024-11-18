@@ -37,6 +37,26 @@
     return (code);                                                             \
   }
 
+#define min(a, b) ((a) < (b) ? (a) : (b))
+#define max(a, b) ((a) > (b) ? (a) : (b))
+
+struct point {
+  int32_t x;
+  int32_t y;
+};
+
+struct dim {
+  uint32_t w;
+  uint32_t h;
+};
+
+// FIXME Strange bug: Create two instances of an app (e.g. launch
+// another pie from pie on boot-up) and drag both to the upper edge
+// of the screen such that their title bars are above the screen.
+// Click close button on either and observe page fault.
+
+// FIXME make a pixel_buffer type with uint32_t* and line stride
+
 typedef struct ui_responder_s {
   process_t *process;
   ui_window_t window;
@@ -54,6 +74,7 @@ static uint32_t *static_objects = NULL;
 static uint32_t *moving_objects = NULL;
 static uint32_t *frame_buffer = 0;
 
+// FIXME use a struct point for mouse pos
 static int32_t mouse_x = 100;
 static int32_t mouse_y = 100;
 static uint8_t mouse_left_clicked = 0;
@@ -63,75 +84,79 @@ static volatile uint32_t responders_lock = 0;
 
 static ui_responder_t *responders_by_gid[MAX_PROCESS_COUNT];
 
-static inline uint32_t ui_alpha_blend(uint32_t bg, uint32_t fg, uint8_t opacity)
+static inline uint32_t blend_alpha(uint32_t bg, uint32_t fg, uint8_t opacity)
 {
-  uint8_t fg_b = ((fg & 0xff) * opacity) / 0xff;
-  uint8_t fg_g = (((fg >> 8) & 0xff) * opacity) / 0xff;
-  uint8_t fg_r = (((fg >> 16) & 0xff) * opacity) / 0xff;
-  uint32_t bg_b = bg & 0xff;
-  uint32_t bg_g = (bg >> 8) & 0xff;
-  uint32_t bg_r = (bg >> 16) & 0xff;
+  const uint8_t fg_b = ((fg & 0xff) * opacity) / 0xff;
+  const uint8_t fg_g = (((fg >> 8) & 0xff) * opacity) / 0xff;
+  const uint8_t fg_r = (((fg >> 16) & 0xff) * opacity) / 0xff;
+  const uint32_t bg_b = bg & 0xff;
+  const uint32_t bg_g = (bg >> 8) & 0xff;
+  const uint32_t bg_r = (bg >> 16) & 0xff;
 
-  uint16_t t = 0xff ^ opacity;
-  uint32_t blend_g = fg_g + (((bg_g * t + 0x80) * 0x101) >> 16);
-  uint32_t blend_b = fg_b + (((bg_b * t + 0x80) * 0x101) >> 16);
-  uint32_t blend_r = fg_r + (((bg_r * t + 0x80) * 0x101) >> 16);
+  const uint16_t t = 0xff ^ opacity;
+  const uint32_t blend_g = fg_g + (((bg_g * t + 0x80) * 0x101) >> 16);
+  const uint32_t blend_b = fg_b + (((bg_b * t + 0x80) * 0x101) >> 16);
+  const uint32_t blend_r = fg_r + (((bg_r * t + 0x80) * 0x101) >> 16);
 
   return blend_b | (blend_g << 8) | (blend_r << 16);
+}
+
+static void draw_rect(
+  uint32_t *dst, uint32_t dst_stride, struct point dst_point,
+  const uint32_t *src, uint32_t src_stride, struct point src_point,
+  struct dim dim, uint8_t opacity
+)
+{
+  for (uint32_t y = 0; y < dim.h; ++y) {
+    const uint32_t dst_offset = (dst_point.y + y) * dst_stride + dst_point.x;
+    const uint32_t src_offset = (src_point.y + y) * src_stride + src_point.x;
+    if (opacity == 0xff)
+      u_memcpy(dst + dst_offset, src + src_offset, dim.w * sizeof(uint32_t));
+    else
+      for (uint32_t x = 0; x < dim.w; ++x)
+        dst[dst_offset + x] = blend_alpha(dst[dst_offset + x], src[src_offset + x], opacity);
+  }
 }
 
 // Blit a single window to a buffer.
 static void ui_blit_window(ui_responder_t *r, uint32_t *buffer)
 {
-  process_t *p = r->process;
-  uint32_t eflags = interrupt_save_disable();
-  uint32_t cr3 = paging_get_cr3();
+  const process_t *p = r->process;
+  const uint32_t eflags = interrupt_save_disable();
+  const uint32_t cr3 = paging_get_cr3();
   paging_set_cr3(p->cr3);
 
-  for (int32_t y = 0; (uint32_t)y < TITLE_BAR_HEIGHT; ++y) {
-    if (r->window.y + y < 0) y = -(r->window.y);
-    if (y + r->window.y >= SCREENHEIGHT) break;
+  const struct point title_bar_dst = {
+    .x = max(r->window.x, 0),
+    .y = max(r->window.y - TITLE_BAR_HEIGHT, 0),
+  };
+  const struct point title_bar_src = {
+    .x = title_bar_dst.x - r->window.x,
+    .y = title_bar_dst.y - (r->window.y - TITLE_BAR_HEIGHT),
+  };
+  const struct dim title_bar_dim = {
+    .w = min(r->window.x + TITLE_BAR_WIDTH, SCREENWIDTH) - title_bar_dst.x,
+    .h = min(r->window.y, SCREENHEIGHT) - title_bar_dst.y,
+  };
 
-    int32_t x_offset = 0;
-    if (r->window.x < 0) x_offset = -(r->window.x);
-    uint32_t *buffer_ptr = buffer + ((y + r->window.y) * SCREENWIDTH) + r->window.x + x_offset;
+  draw_rect(buffer, SCREENWIDTH, title_bar_dst, TITLE_BAR_PIXELS, TITLE_BAR_WIDTH, title_bar_src,
+            title_bar_dim, r->window_opacity);
 
-    uint32_t width = TITLE_BAR_WIDTH - x_offset;
-    if (r->window.x + width > SCREENWIDTH) width = SCREENWIDTH - (r->window.x + x_offset);
+  const struct point window_dst = {
+    .x = max(r->window.x, 0),
+    .y = max(r->window.y, 0),
+  };
+  const struct point window_src = {
+    .x = window_dst.x - r->window.x,
+    .y = window_dst.y - r->window.y,
+  };
+  const struct dim window_dim = {
+    .w = min(r->window.x + r->window.w, SCREENWIDTH) - window_dst.x,
+    .h = min(r->window.y + r->window.h, SCREENHEIGHT) - window_dst.y,
+  };
 
-    if (r->window_opacity == 0xff)
-      u_memcpy(buffer_ptr, TITLE_BAR_PIXELS + y * TITLE_BAR_WIDTH + x_offset, width * sizeof(uint32_t));
-    else {
-      for (uint32_t x = 0; x < width; ++x) {
-        uint32_t title_bar_pixel = TITLE_BAR_PIXELS[y * TITLE_BAR_WIDTH + x_offset + x];
-        buffer_ptr[x] = ui_alpha_blend(buffer_ptr[x], title_bar_pixel, r->window_opacity);
-      }
-    }
-  }
-
-  for (int32_t y = 0; (uint32_t)y < r->window.h; ++y) {
-    if (y + TITLE_BAR_HEIGHT + r->window.y >= SCREENHEIGHT) break;
-    // Don't need to handle y < 0 case since windows can't be moved
-    // above the upper edge of the screen.
-
-    uint32_t *r_buf_ptr = r->buf + (y * r->window.w);
-    int32_t x_offset = 0;
-    if (r->window.x < 0) x_offset = -(r->window.x);
-    uint32_t *buffer_ptr = buffer + ((y + TITLE_BAR_HEIGHT + r->window.y) * SCREENWIDTH) + r->window.x + x_offset;
-
-    uint32_t width = r->window.w - x_offset;
-    if (r->window.x + width > SCREENWIDTH) width = SCREENWIDTH - (r->window.x + x_offset);
-
-    if (r->window_opacity == 0xff)
-      u_memcpy(buffer_ptr, r_buf_ptr + x_offset, width * sizeof(uint32_t));
-    else {
-      for (uint32_t x = 0; x < width; ++x) {
-        uint32_t window_pixel = r_buf_ptr[x_offset + x];
-        buffer_ptr[x] = ui_alpha_blend(buffer_ptr[x], window_pixel, r->window_opacity);
-      }
-    }
-
-  }
+  draw_rect(buffer, SCREENWIDTH, window_dst, r->buf, r->window.w, window_src,
+            window_dim, r->window_opacity);
 
   paging_set_cr3(cr3);
   interrupt_restore(eflags);
@@ -143,8 +168,9 @@ static void ui_blit_cursor()
     if (mouse_y + y >= SCREENHEIGHT) break;
     for (uint32_t x = 0; x < CURSOR_WIDTH; ++x) {
       if (mouse_x + x >= SCREENWIDTH) break;
-      uint32_t pixel_offset = ((mouse_y + y) * SCREENWIDTH) + mouse_x + x;
-      uint32_t cursor_pixel = CURSOR_PIXELS[y * CURSOR_WIDTH + x];
+      const uint32_t pixel_offset = ((mouse_y + y) * SCREENWIDTH) + mouse_x + x;
+      const uint32_t cursor_pixel = CURSOR_PIXELS[y * CURSOR_WIDTH + x];
+      // Only draw fully opaque pixels
       if (cursor_pixel & 0xff000000)
         moving_objects[pixel_offset] = cursor_pixel;
     }
@@ -159,41 +185,41 @@ static void ui_redraw_key_responder()
   if (r->window_is_moving) ui_blit_window(r, moving_objects);
   else ui_blit_window(r, static_objects);
 
-  for (int32_t y = 0; (uint32_t)y < TITLE_BAR_HEIGHT; ++y) {
-    if (y + r->window.y >= SCREENHEIGHT) break;
-    if (y + r->window.y < 0) y = -(r->window.y);
+  const struct point title_bar_pos = {
+    .x = max(r->window.x, 0),
+    .y = max(r->window.y - TITLE_BAR_HEIGHT, 0),
+  };
+  const struct dim title_bar_dim = {
+    .w = min(r->window.x + r->window.w, SCREENWIDTH) - title_bar_pos.x,
+    .h = min(r->window.y, SCREENHEIGHT) - title_bar_pos.y,
+  };
+  const struct point window_pos = {
+    .x = max(r->window.x, 0),
+    .y = max(r->window.y, 0),
+  };
+  const struct dim window_dim = {
+    .w = min(r->window.x + r->window.w, SCREENWIDTH) - window_pos.x,
+    .h = min(r->window.y + r->window.h, SCREENHEIGHT) - window_pos.y,
+  };
 
-    int32_t x_offset = 0;
-    if (r->window.x < 0) x_offset = -(r->window.x);
-    uint32_t offset = (y + r->window.y) * SCREENWIDTH + r->window.x + x_offset;
-
-    uint32_t width = TITLE_BAR_WIDTH - x_offset;
-    if (r->window.x + width > SCREENWIDTH) width = SCREENWIDTH - (r->window.x + x_offset);
-
-    if (!r->window_is_moving)
-      u_memcpy(moving_objects + offset, static_objects + offset, width * sizeof(uint32_t));
-    u_memcpy(frame_buffer + offset, moving_objects + offset, width * sizeof(uint32_t));
+  if (r->window_is_moving) ui_blit_window(r, moving_objects);
+  else {
+    ui_blit_window(r, static_objects);
+    draw_rect(moving_objects, SCREENWIDTH, title_bar_pos, static_objects, SCREENWIDTH, title_bar_pos,
+              title_bar_dim, 0xff);
+    draw_rect(moving_objects, SCREENWIDTH, window_pos, static_objects, SCREENWIDTH, window_pos,
+              window_dim, 0xff);
   }
-  for (uint32_t y = 0; y < r->window.h; ++y) {
-    if (y + TITLE_BAR_HEIGHT + r->window.y >= SCREENHEIGHT) break;
-    // Don't need to handle y < 0 case since windows can't be moved
-    // above the upper edge of the screen.
 
-    int32_t x_offset = 0;
-    if (r->window.x < 0) x_offset = -(r->window.x);
-    uint32_t offset = (y + r->window.y + TITLE_BAR_HEIGHT) * SCREENWIDTH + r->window.x + x_offset;
+  draw_rect(frame_buffer, SCREENWIDTH, title_bar_pos, moving_objects, SCREENWIDTH, title_bar_pos,
+            title_bar_dim, 0xff);
+  draw_rect(frame_buffer, SCREENWIDTH, window_pos, moving_objects, SCREENWIDTH, window_pos,
+            window_dim, 0xff);
 
-    uint32_t width = r->window.w - x_offset;
-    if (r->window.x + width > SCREENWIDTH) width = SCREENWIDTH - (r->window.x + x_offset);
-
-    if (!r->window_is_moving)
-      u_memcpy(moving_objects + offset, static_objects + offset, width * sizeof(uint32_t));
-    u_memcpy(frame_buffer + offset, moving_objects + offset, width * sizeof(uint32_t));
-  }
   interrupt_restore(eflags);
 }
 
-static void ui_redraw_moving_objects(int32_t old_x, int32_t old_y)
+static void ui_redraw_moving_objects(struct point old, struct point new)
 {
   uint32_t moved_object_w = CURSOR_WIDTH;
   uint32_t moved_object_h = CURSOR_HEIGHT;
@@ -207,47 +233,45 @@ static void ui_redraw_moving_objects(int32_t old_x, int32_t old_y)
     }
   }
 
-  for (int32_t y = 0; (uint32_t)y < moved_object_h; ++y) {
-    if (old_y + y >= SCREENHEIGHT) break;
-    if (old_y + y < 0) y = -old_y;
-    int32_t x_offset = 0;
-    if (old_x + x_offset < 0) x_offset = -old_x;
-    uint32_t offset = ((old_y + y) * SCREENWIDTH) + old_x + x_offset;
-    uint32_t width = moved_object_w - x_offset;
-    if (old_x + width > SCREENWIDTH) width = SCREENWIDTH - (old_x + x_offset);
-    u_memcpy(moving_objects + offset, static_objects + offset, width * sizeof(uint32_t));
-  }
+  const struct point old_rect_pos = {
+    .x = max(old.x, 0),
+    .y = max(old.y, 0),
+  };
+  const struct dim old_rect_dim = {
+    .w = min(old.x + moved_object_w, SCREENWIDTH) - old_rect_pos.x,
+    .h = min(old.y + moved_object_h, SCREENHEIGHT) - old_rect_pos.y,
+  };
+
+  draw_rect(moving_objects, SCREENWIDTH, old_rect_pos, static_objects, SCREENWIDTH, old_rect_pos,
+            old_rect_dim, 0xff);
 
   if (key_responder && key_responder->window_is_moving)
     ui_blit_window(key_responder, moving_objects);
 
   ui_blit_cursor();
 
-  int32_t min_x = old_x;
-  if (mouse_x < min_x) min_x = mouse_x;
-  int32_t max_x = mouse_x;
-  if (max_x < old_x) max_x = old_x;
-  int32_t min_y = old_y;
-  if (mouse_y < min_y) min_y = mouse_y;
-  int32_t max_y = mouse_y;
-  if (max_y < old_y) max_y = old_y;
+  const int32_t min_x = min(old.x, new.x);
+  const int32_t max_x = max(old.x, new.x);
+  const int32_t min_y = min(old.y, new.y);
+  const int32_t max_y = max(old.y, new.y);
 
-  if (min_y < 0) min_y = 0;
-  if (min_x < 0) min_x = 0;
+  const struct point redraw_pos = {
+    .x = max(min_x, 0),
+    .y = max(min_y, 0),
+  };
+  const struct dim redraw_rect_dim = {
+    .w = min(max_x + moved_object_w, SCREENWIDTH) - redraw_pos.x,
+    .h = min(max_y + moved_object_h, SCREENHEIGHT) - redraw_pos.y,
+  };
 
-  for (uint32_t y = min_y; y < max_y + moved_object_h; ++y) {
-    if (y >= SCREENHEIGHT) break;
-    uint32_t offset = y * SCREENWIDTH + min_x;
-    uint32_t width = max_x + moved_object_w - min_x;
-    if (min_x + width > SCREENWIDTH) width = SCREENWIDTH - min_x;
-    u_memcpy(frame_buffer + offset, moving_objects + offset, width * sizeof(uint32_t));
-  }
+  draw_rect(frame_buffer, SCREENWIDTH, redraw_pos, moving_objects, SCREENWIDTH, redraw_pos,
+            redraw_rect_dim, 0xff);
 }
 
 // Redraw the entire screen.
 static void ui_redraw_all()
 {
-  uint32_t eflags = interrupt_save_disable();
+  const uint32_t eflags = interrupt_save_disable();
 
   u_memcpy(static_objects, wallpaper, frame_size);
 
@@ -285,6 +309,7 @@ uint32_t ui_init(uint32_t video_vaddr)
   u_memset(&responders, 0, sizeof(list_t));
   frame_buffer = (uint32_t *)video_vaddr;
 
+  // FIXME these should be page allocations and not kmallocs
   static_objects = kmalloc(frame_size);
   CHECK(static_objects == NULL, "Failed to allocate static_objects", ENOMEM);
 
@@ -391,24 +416,24 @@ static void ui_handle_mouse_click()
   uint8_t changed_opacity = 0;
   list_foreach(node, &responders) {
     ui_responder_t *r = node->value;
-    if (mouse_in_rect(r->window.x, r->window.y, TITLE_BAR_BUTTON_WIDTH, TITLE_BAR_HEIGHT)) {
+    if (mouse_in_rect(r->window.x, r->window.y - TITLE_BAR_HEIGHT, TITLE_BAR_BUTTON_WIDTH, TITLE_BAR_HEIGHT)) {
       process_kill(r->process);
       return;
     }
     if (mouse_in_rect(r->window.x + TITLE_BAR_WIDTH - TITLE_BAR_BUTTON_WIDTH,
-                      r->window.y, TITLE_BAR_BUTTON_WIDTH, TITLE_BAR_HEIGHT)) {
+                      r->window.y - TITLE_BAR_HEIGHT, TITLE_BAR_BUTTON_WIDTH, TITLE_BAR_HEIGHT)) {
       new_key_responder = r;
       if (r->window_opacity == 0x33) r->window_opacity = 0xff;
       else r->window_opacity -= 0x44;
       changed_opacity = 1;
       break;
     }
-    if (mouse_in_rect(r->window.x, r->window.y, TITLE_BAR_WIDTH, TITLE_BAR_HEIGHT)) {
+    if (mouse_in_rect(r->window.x, r->window.y - TITLE_BAR_HEIGHT, TITLE_BAR_WIDTH, TITLE_BAR_HEIGHT)) {
       new_key_responder = r;
       r->window_is_moving = 1;
       break;
     }
-    if (mouse_in_rect(r->window.x, r->window.y + TITLE_BAR_HEIGHT, r->window.w, r->window.h)) {
+    if (mouse_in_rect(r->window.x, r->window.y, r->window.w, r->window.h)) {
       new_key_responder = r;
       break;
     }
@@ -456,21 +481,25 @@ uint32_t ui_handle_mouse_event(int32_t dx, int32_t dy, uint8_t left_button, uint
 
   mouse_x += dx;
   mouse_y -= dy;
-  if (mouse_x < 0) mouse_x = 0;
-  if (mouse_x >= SCREENWIDTH) mouse_x = SCREENWIDTH - 1;
-  if (mouse_y < 0) mouse_y = 0;
-  if (mouse_y >= SCREENHEIGHT) mouse_y = SCREENHEIGHT - 1;
+  mouse_x = max(mouse_x, 0);
+  mouse_x = min(mouse_x, SCREENWIDTH - 1);
+  mouse_y = max(mouse_y, 0);
+  mouse_y = min(mouse_y, SCREENHEIGHT - 1);
 
   if (key_responder && key_responder->window_is_moving) {
     const uint32_t old_window_x = key_responder->window.x;
     const uint32_t old_window_y = key_responder->window.y;
     key_responder->window.x += mouse_x - old_mouse_x;
     key_responder->window.y += mouse_y - old_mouse_y;
-    ui_redraw_moving_objects(old_window_x, old_window_y);
+    struct point old = { .x = old_window_x, .y = old_window_y - TITLE_BAR_HEIGHT };
+    struct point new = { .x = key_responder->window.x, .y = key_responder->window.y - TITLE_BAR_HEIGHT };
+    ui_redraw_moving_objects(old, new);
     return 0;
   }
 
-  ui_redraw_moving_objects(old_mouse_x, old_mouse_y);
+  struct point old = { .x = old_mouse_x, .y = old_mouse_y };
+  struct point new = { .x = mouse_x, .y = mouse_y };
+  ui_redraw_moving_objects(old, new);
 
   return 0;
 }
