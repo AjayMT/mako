@@ -50,14 +50,17 @@ struct dim {
   uint32_t h;
 };
 
-// FIXME make a pixel_buffer type with uint32_t* and line stride
+struct pixel_buffer {
+  uint32_t *buf;
+  uint32_t stride;
+};
 
 typedef struct ui_responder_s {
   process_t *process;
   ui_window_t window;
   uint8_t window_opacity;
   uint8_t window_is_moving;
-  uint32_t *buf;
+  struct pixel_buffer buf;
   fs_node_t event_pipe_read;
   fs_node_t event_pipe_write;
   list_node_t *list_node;
@@ -65,9 +68,9 @@ typedef struct ui_responder_s {
 
 static const size_t frame_size = SCREENWIDTH * SCREENHEIGHT * sizeof(uint32_t);
 static uint32_t *wallpaper = NULL;
-static uint32_t *static_objects = NULL;
-static uint32_t *moving_objects = NULL;
-static uint32_t *frame_buffer = 0;
+static struct pixel_buffer static_objects = { NULL, 0 };
+static struct pixel_buffer moving_objects = { NULL, 0 };
+static struct pixel_buffer frame_buffer = { NULL, 0 };
 
 // FIXME use a struct point for mouse pos
 static int32_t mouse_x = 100;
@@ -96,25 +99,25 @@ static inline uint32_t blend_alpha(uint32_t bg, uint32_t fg, uint8_t opacity)
   return blend_b | (blend_g << 8) | (blend_r << 16);
 }
 
-static void draw_rect(
-  uint32_t *dst, uint32_t dst_stride, struct point dst_point,
-  const uint32_t *src, uint32_t src_stride, struct point src_point,
+static void copy_rect(
+  struct pixel_buffer dst, struct point dst_point,
+  const struct pixel_buffer src, struct point src_point,
   struct dim dim, uint8_t opacity
 )
 {
   for (uint32_t y = 0; y < dim.h; ++y) {
-    const uint32_t dst_offset = (dst_point.y + y) * dst_stride + dst_point.x;
-    const uint32_t src_offset = (src_point.y + y) * src_stride + src_point.x;
+    const uint32_t dst_offset = (dst_point.y + y) * dst.stride + dst_point.x;
+    const uint32_t src_offset = (src_point.y + y) * src.stride + src_point.x;
     if (opacity == 0xff)
-      u_memcpy(dst + dst_offset, src + src_offset, dim.w * sizeof(uint32_t));
+      u_memcpy(dst.buf + dst_offset, src.buf + src_offset, dim.w * sizeof(uint32_t));
     else
       for (uint32_t x = 0; x < dim.w; ++x)
-        dst[dst_offset + x] = blend_alpha(dst[dst_offset + x], src[src_offset + x], opacity);
+        dst.buf[dst_offset + x] = blend_alpha(dst.buf[dst_offset + x], src.buf[src_offset + x], opacity);
   }
 }
 
 // Blit a single window to a buffer.
-static void ui_blit_window(ui_responder_t *r, uint32_t *buffer)
+static void ui_blit_window(ui_responder_t *r, struct pixel_buffer buffer)
 {
   const process_t *p = r->process;
   const uint32_t eflags = interrupt_save_disable();
@@ -134,8 +137,8 @@ static void ui_blit_window(ui_responder_t *r, uint32_t *buffer)
     .h = min(r->window.y, SCREENHEIGHT) - title_bar_dst.y,
   };
 
-  draw_rect(buffer, SCREENWIDTH, title_bar_dst, TITLE_BAR_PIXELS, TITLE_BAR_WIDTH, title_bar_src,
-            title_bar_dim, r->window_opacity);
+  const struct pixel_buffer title_bar_buf = { (uint32_t *)TITLE_BAR_PIXELS, TITLE_BAR_WIDTH };
+  copy_rect(buffer, title_bar_dst, title_bar_buf, title_bar_src, title_bar_dim, r->window_opacity);
 
   const struct point window_dst = {
     .x = max(r->window.x, 0),
@@ -150,8 +153,7 @@ static void ui_blit_window(ui_responder_t *r, uint32_t *buffer)
     .h = min(r->window.y + r->window.h, SCREENHEIGHT) - window_dst.y,
   };
 
-  draw_rect(buffer, SCREENWIDTH, window_dst, r->buf, r->window.w, window_src,
-            window_dim, r->window_opacity);
+  copy_rect(buffer, window_dst, r->buf, window_src, window_dim, r->window_opacity);
 
   paging_set_cr3(cr3);
   interrupt_restore(eflags);
@@ -167,7 +169,7 @@ static void ui_blit_cursor()
       const uint32_t cursor_pixel = CURSOR_PIXELS[y * CURSOR_WIDTH + x];
       // Only draw fully opaque pixels
       if (cursor_pixel & 0xff000000)
-        moving_objects[pixel_offset] = cursor_pixel;
+        moving_objects.buf[pixel_offset] = cursor_pixel;
     }
   }
 }
@@ -200,16 +202,12 @@ static void ui_redraw_key_responder()
   if (r->window_is_moving) ui_blit_window(r, moving_objects);
   else {
     ui_blit_window(r, static_objects);
-    draw_rect(moving_objects, SCREENWIDTH, title_bar_pos, static_objects, SCREENWIDTH, title_bar_pos,
-              title_bar_dim, 0xff);
-    draw_rect(moving_objects, SCREENWIDTH, window_pos, static_objects, SCREENWIDTH, window_pos,
-              window_dim, 0xff);
+    copy_rect(moving_objects, title_bar_pos, static_objects, title_bar_pos, title_bar_dim, 0xff);
+    copy_rect(moving_objects, window_pos, static_objects, window_pos, window_dim, 0xff);
   }
 
-  draw_rect(frame_buffer, SCREENWIDTH, title_bar_pos, moving_objects, SCREENWIDTH, title_bar_pos,
-            title_bar_dim, 0xff);
-  draw_rect(frame_buffer, SCREENWIDTH, window_pos, moving_objects, SCREENWIDTH, window_pos,
-            window_dim, 0xff);
+  copy_rect(frame_buffer, title_bar_pos, moving_objects, title_bar_pos, title_bar_dim, 0xff);
+  copy_rect(frame_buffer, window_pos, moving_objects, window_pos, window_dim, 0xff);
 
   interrupt_restore(eflags);
 }
@@ -237,8 +235,7 @@ static void ui_redraw_moving_objects(struct point old, struct point new)
     .h = min(old.y + moved_object_h, SCREENHEIGHT) - old_rect_pos.y,
   };
 
-  draw_rect(moving_objects, SCREENWIDTH, old_rect_pos, static_objects, SCREENWIDTH, old_rect_pos,
-            old_rect_dim, 0xff);
+  copy_rect(moving_objects, old_rect_pos, static_objects, old_rect_pos, old_rect_dim, 0xff);
 
   if (key_responder && key_responder->window_is_moving)
     ui_blit_window(key_responder, moving_objects);
@@ -259,8 +256,7 @@ static void ui_redraw_moving_objects(struct point old, struct point new)
     .h = min(max_y + moved_object_h, SCREENHEIGHT) - redraw_pos.y,
   };
 
-  draw_rect(frame_buffer, SCREENWIDTH, redraw_pos, moving_objects, SCREENWIDTH, redraw_pos,
-            redraw_rect_dim, 0xff);
+  copy_rect(frame_buffer, redraw_pos, moving_objects, redraw_pos, redraw_rect_dim, 0xff);
 }
 
 // Redraw the entire screen.
@@ -268,7 +264,7 @@ static void ui_redraw_all()
 {
   const uint32_t eflags = interrupt_save_disable();
 
-  u_memcpy(static_objects, wallpaper, frame_size);
+  u_memcpy(static_objects.buf, wallpaper, frame_size);
 
   // Blit all but the key responder
   for (list_node_t *current = responders.tail; current != responders.head; current = current->prev) {
@@ -279,20 +275,20 @@ static void ui_redraw_all()
   if (responders.size) {
     ui_responder_t *key_responder = responders.head->value;
     if (key_responder->window_is_moving) {
-      u_memcpy(moving_objects, static_objects, frame_size);
+      u_memcpy(moving_objects.buf, static_objects.buf, frame_size);
       ui_blit_window(key_responder, moving_objects);
       ui_blit_cursor();
-      u_memcpy(frame_buffer, moving_objects, frame_size);
+      u_memcpy(frame_buffer.buf, moving_objects.buf, frame_size);
     } else {
       ui_blit_window(key_responder, static_objects);
-      u_memcpy(moving_objects, static_objects, frame_size);
+      u_memcpy(moving_objects.buf, static_objects.buf, frame_size);
       ui_blit_cursor();
-      u_memcpy(frame_buffer, moving_objects, frame_size);
+      u_memcpy(frame_buffer.buf, moving_objects.buf, frame_size);
     }
   } else {
-    u_memcpy(moving_objects, static_objects, frame_size);
+    u_memcpy(moving_objects.buf, static_objects.buf, frame_size);
     ui_blit_cursor();
-    u_memcpy(frame_buffer, moving_objects, frame_size);
+    u_memcpy(frame_buffer.buf, moving_objects.buf, frame_size);
   }
 
   interrupt_restore(eflags);
@@ -302,14 +298,17 @@ uint32_t ui_init(uint32_t video_vaddr)
 {
   u_memset(responders_by_gid, 0, sizeof(responders_by_gid));
   u_memset(&responders, 0, sizeof(list_t));
-  frame_buffer = (uint32_t *)video_vaddr;
+  frame_buffer.buf = (uint32_t *)video_vaddr;
+  frame_buffer.stride = SCREENWIDTH;
 
   // FIXME these should be page allocations and not kmallocs
-  static_objects = kmalloc(frame_size);
-  CHECK(static_objects == NULL, "Failed to allocate static_objects", ENOMEM);
+  static_objects.buf = kmalloc(frame_size);
+  static_objects.stride = SCREENWIDTH;
+  CHECK(static_objects.buf == NULL, "Failed to allocate static_objects", ENOMEM);
 
-  moving_objects = kmalloc(frame_size);
-  CHECK(moving_objects == NULL, "Failed to allocate moving_objects", ENOMEM);
+  moving_objects.buf = kmalloc(frame_size);
+  moving_objects.stride = SCREENWIDTH;
+  CHECK(moving_objects.buf == NULL, "Failed to allocate moving_objects", ENOMEM);
 
   wallpaper = kmalloc(frame_size);
   CHECK(wallpaper == NULL, "Failed to allocate wallpaper", ENOMEM);
@@ -508,7 +507,7 @@ uint32_t ui_make_responder(process_t *p, uint32_t buf)
   uint32_t err = pipe_create(&r->event_pipe_read, &r->event_pipe_write);
   CHECK(err, "Failed to create event pipe.", err);
   r->process = p;
-  r->buf = (uint32_t *)buf;
+  r->buf = (struct pixel_buffer){ (uint32_t *)buf, SCREENWIDTH >> 1 };
   r->window.w = SCREENWIDTH >> 1;
   r->window.h = SCREENHEIGHT >> 1;
   r->window_opacity = 0xff;
