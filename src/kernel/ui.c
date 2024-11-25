@@ -72,9 +72,7 @@ static struct pixel_buffer static_objects = { NULL, 0 };
 static struct pixel_buffer moving_objects = { NULL, 0 };
 static struct pixel_buffer frame_buffer = { NULL, 0 };
 
-// FIXME use a struct point for mouse pos
-static int32_t mouse_x = 100;
-static int32_t mouse_y = 100;
+struct point mouse_pos = { 100, 100 };
 static uint8_t mouse_left_clicked = 0;
 
 static list_t responders;
@@ -162,10 +160,10 @@ static void ui_blit_window(ui_responder_t *r, struct pixel_buffer buffer)
 static void ui_blit_cursor()
 {
   for (uint32_t y = 0; y < CURSOR_HEIGHT; ++y) {
-    if (mouse_y + y >= SCREENHEIGHT) break;
+    if (mouse_pos.y + y >= SCREENHEIGHT) break;
     for (uint32_t x = 0; x < CURSOR_WIDTH; ++x) {
-      if (mouse_x + x >= SCREENWIDTH) break;
-      const uint32_t pixel_offset = ((mouse_y + y) * SCREENWIDTH) + mouse_x + x;
+      if (mouse_pos.x + x >= SCREENWIDTH) break;
+      const uint32_t pixel_offset = ((mouse_pos.y + y) * SCREENWIDTH) + mouse_pos.x + x;
       const uint32_t cursor_pixel = CURSOR_PIXELS[y * CURSOR_WIDTH + x];
       // Only draw fully opaque pixels
       if (cursor_pixel & 0xff000000)
@@ -401,7 +399,7 @@ uint32_t ui_handle_keyboard_event(uint8_t code)
 
 static inline uint8_t mouse_in_rect(int32_t x, int32_t y, uint32_t w, uint32_t h)
 {
-  return mouse_x >= x && mouse_x < x + (int32_t)w && mouse_y >= y && mouse_y < y + (int32_t)h;
+  return mouse_pos.x >= x && mouse_pos.x < x + (int32_t)w && mouse_pos.y >= y && mouse_pos.y < y + (int32_t)h;
 }
 
 static void ui_handle_mouse_click()
@@ -471,30 +469,27 @@ uint32_t ui_handle_mouse_event(int32_t dx, int32_t dy, uint8_t left_button, uint
     return 0;
   }
 
-  const uint32_t old_mouse_x = mouse_x;
-  const uint32_t old_mouse_y = mouse_y;
+  const struct point old_mouse_pos = mouse_pos;
 
-  mouse_x += dx;
-  mouse_y -= dy;
-  mouse_x = max(mouse_x, 0);
-  mouse_x = min(mouse_x, SCREENWIDTH - 1);
-  mouse_y = max(mouse_y, 0);
-  mouse_y = min(mouse_y, SCREENHEIGHT - 1);
+  mouse_pos.x += dx;
+  mouse_pos.y -= dy;
+  mouse_pos.x = max(mouse_pos.x, 0);
+  mouse_pos.x = min(mouse_pos.x, SCREENWIDTH - 1);
+  mouse_pos.y = max(mouse_pos.y, 0);
+  mouse_pos.y = min(mouse_pos.y, SCREENHEIGHT - 1);
 
   if (key_responder && key_responder->window_is_moving) {
     const uint32_t old_window_x = key_responder->window.x;
     const uint32_t old_window_y = key_responder->window.y;
-    key_responder->window.x += mouse_x - old_mouse_x;
-    key_responder->window.y += mouse_y - old_mouse_y;
+    key_responder->window.x += mouse_pos.x - old_mouse_pos.x;
+    key_responder->window.y += mouse_pos.y - old_mouse_pos.y;
     struct point old = { .x = old_window_x, .y = old_window_y - TITLE_BAR_HEIGHT };
     struct point new = { .x = key_responder->window.x, .y = key_responder->window.y - TITLE_BAR_HEIGHT };
     ui_redraw_moving_objects(old, new);
     return 0;
   }
 
-  struct point old = { .x = old_mouse_x, .y = old_mouse_y };
-  struct point new = { .x = mouse_x, .y = mouse_y };
-  ui_redraw_moving_objects(old, new);
+  ui_redraw_moving_objects(old_mouse_pos, mouse_pos);
 
   return 0;
 }
