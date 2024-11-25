@@ -48,7 +48,7 @@ void page_fault_handler(
     );
 }
 
-uint32_t debug_write(fs_node_t *n, size_t offset, size_t size, uint8_t *buf)
+uint32_t debug_write(fs_node_t *n, uint32_t offset, uint32_t size, uint8_t *buf)
 {
   log_debug("procdebug", "%u: %s", process_current()->pid, (char *)buf);
   return size;
@@ -125,15 +125,15 @@ void kmain(
   res = ui_init(video_vaddr);
   CHECK(res, "ui");
 
-  fs_node_t *debug_node = kmalloc(sizeof(fs_node_t));
-  u_memset(debug_node, 0, sizeof(fs_node_t));
-  debug_node->write = debug_write;
-  res = fs_mount(debug_node, "/dev/debug");
+  static fs_node_t debug_node;
+  u_memset(&debug_node, 0, sizeof(fs_node_t));
+  debug_node.write = debug_write;
+  res = fs_mount(&debug_node, "/dev/debug");
   CHECK(res, "debug_node");
 
-  fs_node_t *null_node = kmalloc(sizeof(fs_node_t));
-  u_memset(null_node, 0, sizeof(fs_node_t));
-  res = fs_mount(null_node, "/dev/null");
+  static fs_node_t null_node;
+  u_memset(&null_node, 0, sizeof(fs_node_t));
+  res = fs_mount(&null_node, "/dev/null");
   CHECK(res, "null_node");
 
   fs_node_t init_node;
