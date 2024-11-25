@@ -113,11 +113,12 @@ void kmain(
   res = ps2_init();
   CHECK(res, "ps2");
 
-  uint32_t video_vaddr = paging_next_vaddr(768, KERNEL_START_VADDR);
+  const uint32_t num_video_pages = (SCREENWIDTH * SCREENHEIGHT * sizeof(uint32_t)) >> 12;
+  uint32_t video_vaddr = paging_next_vaddr(num_video_pages, KERNEL_START_VADDR);
   page_table_entry_t flags; u_memset(&flags, 0, sizeof(flags));
   flags.rw = 1;
   paging_result_t r;
-  for (uint32_t i = 0; i < 768; ++i) {
+  for (uint32_t i = 0; i < num_video_pages; ++i) {
     r = paging_map(video_vaddr + (i << 12), 0xFD000000 + (i << 12), flags);
     CHECK(r != PAGING_OK, "ui");
   }

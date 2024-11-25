@@ -5,12 +5,14 @@
 //
 // Author: Ajay Tatachar <ajaymt2@illinois.edu>
 
+#include "constants.h"
 #include "process.h"
 #include "kheap.h"
 #include "klock.h"
 #include "ds.h"
 #include "util.h"
 #include "paging.h"
+#include "pmm.h"
 #include "interrupt.h"
 #include "log.h"
 #include "ui.h"
@@ -66,7 +68,7 @@ typedef struct ui_responder_s {
   list_node_t *list_node;
 } ui_responder_t;
 
-static const size_t frame_size = SCREENWIDTH * SCREENHEIGHT * sizeof(uint32_t);
+static const size_t frame_size = SCREENWIDTH * SCREENHEIGHT;
 static uint32_t *wallpaper = NULL;
 static struct pixel_buffer static_objects = { NULL, 0 };
 static struct pixel_buffer moving_objects = { NULL, 0 };
@@ -82,6 +84,9 @@ static ui_responder_t *responders_by_gid[MAX_PROCESS_COUNT];
 
 static inline uint32_t blend_alpha(uint32_t bg, uint32_t fg, uint8_t opacity)
 {
+  if (opacity == 0) return bg;
+  if (opacity == 0xff) return fg;
+
   const uint8_t fg_b = ((fg & 0xff) * opacity) / 0xff;
   const uint8_t fg_g = (((fg >> 8) & 0xff) * opacity) / 0xff;
   const uint8_t fg_r = (((fg >> 16) & 0xff) * opacity) / 0xff;
@@ -107,7 +112,7 @@ static void copy_rect(
     const uint32_t dst_offset = (dst_point.y + y) * dst.stride + dst_point.x;
     const uint32_t src_offset = (src_point.y + y) * src.stride + src_point.x;
     if (opacity == 0xff)
-      u_memcpy(dst.buf + dst_offset, src.buf + src_offset, dim.w * sizeof(uint32_t));
+      u_memcpy32(dst.buf + dst_offset, src.buf + src_offset, dim.w);
     else
       for (uint32_t x = 0; x < dim.w; ++x)
         dst.buf[dst_offset + x] = blend_alpha(dst.buf[dst_offset + x], src.buf[src_offset + x], opacity);
@@ -262,7 +267,7 @@ static void ui_redraw_all()
 {
   const uint32_t eflags = interrupt_save_disable();
 
-  u_memcpy(static_objects.buf, wallpaper, frame_size);
+  u_memcpy32(static_objects.buf, wallpaper, frame_size);
 
   // Blit all but the key responder
   for (list_node_t *current = responders.tail; current != responders.head; current = current->prev) {
@@ -273,20 +278,20 @@ static void ui_redraw_all()
   if (responders.size) {
     ui_responder_t *key_responder = responders.head->value;
     if (key_responder->window_is_moving) {
-      u_memcpy(moving_objects.buf, static_objects.buf, frame_size);
+      u_memcpy32(moving_objects.buf, static_objects.buf, frame_size);
       ui_blit_window(key_responder, moving_objects);
       ui_blit_cursor();
-      u_memcpy(frame_buffer.buf, moving_objects.buf, frame_size);
+      u_memcpy32(frame_buffer.buf, moving_objects.buf, frame_size);
     } else {
       ui_blit_window(key_responder, static_objects);
-      u_memcpy(moving_objects.buf, static_objects.buf, frame_size);
+      u_memcpy32(moving_objects.buf, static_objects.buf, frame_size);
       ui_blit_cursor();
-      u_memcpy(frame_buffer.buf, moving_objects.buf, frame_size);
+      u_memcpy32(frame_buffer.buf, moving_objects.buf, frame_size);
     }
   } else {
-    u_memcpy(moving_objects.buf, static_objects.buf, frame_size);
+    u_memcpy32(moving_objects.buf, static_objects.buf, frame_size);
     ui_blit_cursor();
-    u_memcpy(frame_buffer.buf, moving_objects.buf, frame_size);
+    u_memcpy32(frame_buffer.buf, moving_objects.buf, frame_size);
   }
 
   interrupt_restore(eflags);
@@ -299,16 +304,15 @@ uint32_t ui_init(uint32_t video_vaddr)
   frame_buffer.buf = (uint32_t *)video_vaddr;
   frame_buffer.stride = SCREENWIDTH;
 
-  // FIXME these should be page allocations and not kmallocs
-  static_objects.buf = kmalloc(frame_size);
-  static_objects.stride = SCREENWIDTH;
+  static_objects.buf = kmalloc(frame_size * sizeof(uint32_t));
   CHECK(static_objects.buf == NULL, "Failed to allocate static_objects", ENOMEM);
+  static_objects.stride = SCREENWIDTH;
 
-  moving_objects.buf = kmalloc(frame_size);
-  moving_objects.stride = SCREENWIDTH;
+  moving_objects.buf = kmalloc(frame_size * sizeof(uint32_t));
   CHECK(moving_objects.buf == NULL, "Failed to allocate moving_objects", ENOMEM);
+  moving_objects.stride = SCREENWIDTH;
 
-  wallpaper = kmalloc(frame_size);
+  wallpaper = kmalloc(frame_size * sizeof(uint32_t));
   CHECK(wallpaper == NULL, "Failed to allocate wallpaper", ENOMEM);
 
   fs_node_t wallpaper_dir;
@@ -409,8 +413,7 @@ static void ui_handle_mouse_click()
   list_foreach(node, &responders) {
     ui_responder_t *r = node->value;
     if (mouse_in_rect(r->window.x, r->window.y - TITLE_BAR_HEIGHT, TITLE_BAR_BUTTON_WIDTH, TITLE_BAR_HEIGHT)) {
-      // FIXME this may block on the responders lock
-      process_kill(r->process);
+      if (!responders_lock) process_kill(r->process);
       return;
     }
     if (mouse_in_rect(r->window.x + TITLE_BAR_WIDTH - TITLE_BAR_BUTTON_WIDTH,
@@ -632,7 +635,7 @@ uint32_t ui_set_wallpaper(const char *path)
   CHECK_RESTORE_EFLAGS(err, "Failed to open wallpaper file", err);
 
   uint32_t n = fs_read(&wallpaper_node, 0, wallpaper_node.length, (uint8_t *)wallpaper);
-  CHECK_RESTORE_EFLAGS(n != frame_size, "Failed to read wallpaper file", n);
+  CHECK_RESTORE_EFLAGS(n != (frame_size * sizeof(uint32_t)), "Failed to read wallpaper file", n);
 
   ui_redraw_all();
   interrupt_restore(eflags);

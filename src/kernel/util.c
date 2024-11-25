@@ -21,10 +21,32 @@ void *u_memset(void *dest, int32_t c, size_t n)
   return dest;
 }
 
+void *u_memset32(void *dest, int32_t c, size_t n)
+{
+  asm volatile(
+    "cld; rep stosl"
+    : "=c"((int){0})
+    : "D"(dest), "a"(c), "c"(n)
+    : "flags", "memory"
+    );
+  return dest;
+}
+
 void *u_memcpy(void *dest, const void *src, size_t n)
 {
   asm volatile (
     "cld; rep movsb"
+    : "=c"((int){0})
+    : "D"(dest), "S"(src), "c"(n)
+    : "flags", "memory"
+    );
+  return dest;
+}
+
+void *u_memcpy32(void *dest, const void *src, size_t n)
+{
+  asm volatile (
+    "cld; rep movsl"
     : "=c"((int){0})
     : "D"(dest), "S"(src), "c"(n)
     : "flags", "memory"
