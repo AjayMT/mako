@@ -17,7 +17,7 @@ KERNEL_OBJECTS := $(notdir $(patsubst %.c,%.o,$(wildcard src/kernel/*.c)))
 LIBC_OBJECTS := $(notdir $(patsubst %.c,%.o,$(wildcard src/libc/*.c)))
 CRT_OBJECTS := crt0.o crti.o crtn.o
 
-DEPS := nanoc lua doomgeneric
+PORTS := nanoc lua doomgeneric
 APPS := dex xed pie img wallpaper
 BIN := $(notdir $(patsubst %.c,%,$(wildcard src/bin/*.c)))
 
@@ -47,7 +47,7 @@ $(KERNEL_ASM_OBJECTS): $(wildcard src/kernel/*.s)
 
 # ==== HDD Image ===
 
-hda.img: $(APPS) $(BIN) $(DEPS) libnanoc.a $(shell find sysroot -type f)
+hda.img: $(APPS) $(BIN) $(PORTS) libnanoc.a $(shell find sysroot -type f)
 	cp libnanoc.a sysroot/lib
 	cp $(APPS) sysroot/apps
 	cp $(BIN) sysroot/bin
@@ -55,15 +55,15 @@ hda.img: $(APPS) $(BIN) $(DEPS) libnanoc.a $(shell find sysroot -type f)
 	cp doomgeneric sysroot/apps
 	./gen-hda.sh
 
-# $(DEPS)
-lua: $(shell find deps/lua -type f) libc.a $(CRT_OBJECTS)
-	$(MAKE) -C deps/lua generic
-	cp deps/lua/src/lua .
-nanoc: $(wildcard deps/nanoc/*) libc.a $(CRT_OBJECTS)
-	$(CC) $(CFLAGS) -Isrc/libc/ deps/nanoc/nanoc.c $(CRT_OBJECTS) libc.a -lgcc -o nanoc
-doomgeneric: $(shell find deps/doomgeneric -type f) libui.a libc.a $(CRT_OBJECTS)
-	$(MAKE) -C deps/doomgeneric/doomgeneric
-	cp deps/doomgeneric/doomgeneric/doomgeneric .
+# $(PORTS)
+lua: $(shell find ports/lua -type f) libc.a $(CRT_OBJECTS)
+	$(MAKE) -C ports/lua generic
+	cp ports/lua/src/lua .
+nanoc: $(wildcard ports/nanoc/*) libc.a $(CRT_OBJECTS)
+	$(CC) $(CFLAGS) -Isrc/libc/ ports/nanoc/nanoc.c $(CRT_OBJECTS) libc.a -lgcc -o nanoc
+doomgeneric: $(shell find ports/doomgeneric -type f) libui.a libc.a $(CRT_OBJECTS)
+	$(MAKE) -C ports/doomgeneric/doomgeneric
+	cp ports/doomgeneric/doomgeneric/doomgeneric .
 
 # Need two rules for $(APPS) since they have different dependencies
 dex xed pie: $(wildcard src/apps/*) libc.a libui.a $(CRT_OBJECTS)
@@ -111,4 +111,4 @@ qemu: mako.iso hda.img
 clean:
 	rm -rf *.elf *.o *.a iso/boot/kernel.elf mako.iso com1.out                 \
 	       sysroot/lib/* sysroot/bin/* sysroot/apps/* lua c4 doomgeneric nanoc \
-	       $(APPS) $(BIN) $(DEPS) hda.img hda.tar ustar_image png2wp png2bitmap
+	       $(APPS) $(BIN) $(PORTS) hda.img hda.tar ustar_image png2wp png2bitmap
