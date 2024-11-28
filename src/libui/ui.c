@@ -12,12 +12,6 @@
 #include "../libc/errno.h"
 #include "../libc/_syscall.h"
 #include "ui.h"
-
-struct font_char_info {
-  unsigned width;
-  unsigned data_offset;
-};
-
 #include "../common/ui_font_data.h"
 
 int32_t ui_acquire_window(const char *name)

@@ -20,12 +20,6 @@
 #include "fs.h"
 #include "ui_cursor.h"
 #include "ui_title_bar.h"
-
-struct font_char_info {
-  unsigned width;
-  unsigned data_offset;
-};
-
 #include "../common/ui_font_data.h"
 
 #define CHECK(err, msg, code)                                                  \

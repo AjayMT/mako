@@ -8,6 +8,11 @@
 #ifndef UI_FONT_DATA_H
 #define UI_FONT_DATA_H
 
+struct font_char_info {
+  unsigned width;
+  unsigned data_offset;
+};
+
 #define LUCIDA_GRANDE_HEIGHT 14
 static uint8_t lucida_grande_data[] = {
   // ' '
