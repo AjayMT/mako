@@ -592,7 +592,7 @@ static void keyboard_handler(uint8_t code)
   if (cs == CS_NORMAL) {
     MOVEMENT;
     if (moved) {
-      if (update) ui_swap_buffers();
+      if (update) ui_redraw_rect(0, 0, window_w, window_h);
       return;
     }
     switch (code) {
@@ -661,14 +661,14 @@ static void keyboard_handler(uint8_t code)
         exit(0);
     default: update = 0;
     }
-    if (update) ui_swap_buffers();
+    if (update) ui_redraw_rect(0, 0, window_w, window_h);
     return;
   }
 
   if (cs == CS_EDIT) {
     MOVEMENT;
     if (moved) {
-      if (update) ui_swap_buffers();
+      if (update) ui_redraw_rect(0, 0, window_w, window_h);
       return;
     }
     char deleted = 0;
@@ -791,7 +791,7 @@ static void keyboard_handler(uint8_t code)
       update_cursor(old_cursor_idx, 0);
       break;
     }
-    if (update) ui_swap_buffers();
+    if (update) ui_redraw_rect(0, 0, window_w, window_h);
     return;
   }
 
@@ -802,7 +802,7 @@ static void keyboard_handler(uint8_t code)
 
       clear_selection();
       render_selection();
-      ui_swap_buffers();
+      ui_redraw_rect(0, 0, window_w, window_h);
 
       return;
     }
@@ -869,7 +869,7 @@ static void keyboard_handler(uint8_t code)
     default: update = 0;
     }
 
-    if (update) ui_swap_buffers();
+    if (update) ui_redraw_rect(0, 0, window_w, window_h);
     return;
   }
 
@@ -910,7 +910,7 @@ static void keyboard_handler(uint8_t code)
       break;
     default: update = 0;
     }
-    if (update) ui_swap_buffers();
+    if (update) ui_redraw_rect(0, 0, window_w, window_h);
     return;
   }
 
@@ -984,7 +984,7 @@ static void keyboard_handler(uint8_t code)
         P.cursor_idx = 0;
         update_cursor(0, 0);
       });
-    if (update) ui_swap_buffers();
+    if (update) ui_redraw_rect(0, 0, window_w, window_h);
     return;
   }
 
@@ -1003,7 +1003,7 @@ static void keyboard_handler(uint8_t code)
           render_footer();
         }
       });
-    if (update) ui_swap_buffers();
+    if (update) ui_redraw_rect(0, 0, window_w, window_h);
     return;
   }
 }
@@ -1030,7 +1030,7 @@ static void resize_handler(ui_event_t ev)
   update_cursor(0, 0);
   P.buffer_idx = P.top_idx;
 
-  ui_swap_buffers();
+  ui_redraw_rect(0, 0, window_w, window_h);
 }
 
 int main(int argc, char *argv[])

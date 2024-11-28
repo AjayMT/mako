@@ -588,10 +588,10 @@ static void syscall_ui_make_responder(uint32_t buf, const char *name)
   current->uregs.eax = -ui_make_responder(current, buf, name);
 }
 
-static void syscall_ui_swap_buffers()
+static void syscall_ui_redraw_rect(uint32_t x, uint32_t y, uint32_t w, uint32_t h)
 {
   process_t *current = process_current();
-  current->uregs.eax = -ui_swap_buffers(current);
+  current->uregs.eax = -ui_redraw_rect(current, x, y, w, h);
 }
 
 static void syscall_ui_next_event(uint32_t buf)
@@ -684,7 +684,7 @@ static syscall_t syscall_table[] = {
   syscall_thread_register,
   syscall_yield,
   syscall_ui_make_responder,
-  syscall_ui_swap_buffers,
+  syscall_ui_redraw_rect,
   syscall_ui_next_event,
   syscall_ui_poll_events,
   syscall_ui_yield,

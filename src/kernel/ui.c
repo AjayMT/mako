@@ -227,13 +227,34 @@ static void ui_blit_cursor()
   }
 }
 
-static void ui_redraw_key_responder()
+static void ui_redraw_key_responder(struct point origin, struct dim dim)
 {
   uint32_t eflags = interrupt_save_disable();
   ui_responder_t *r = responders.head->value;
 
-  if (r->window_is_moving) ui_blit_window(r, moving_objects);
-  else ui_blit_window(r, static_objects);
+  if (origin.x != 0 || origin.y != 0 || dim.w != r->window.w || dim.h != r->window.h) {
+    // Partial redraw.
+    const struct point dst = { r->window.x + origin.x, r->window.y + origin.y };
+    const struct dim clamped_dim = {
+      .w = min(origin.x + dim.w, r->window.w) - origin.x,
+      .h = min(origin.y + dim.h, r->window.h) - origin.y,
+    };
+
+    const uint32_t cr3 = paging_get_cr3();
+    paging_set_cr3(r->process->cr3);
+    if (r->window_is_moving)
+      copy_rect(moving_objects, dst, r->buf, origin, clamped_dim, r->window_opacity);
+    else {
+      copy_rect(static_objects, dst, r->buf, origin, clamped_dim, r->window_opacity);
+      copy_rect(moving_objects, dst, static_objects, dst, clamped_dim, 0xff);
+    }
+    paging_set_cr3(cr3);
+
+    copy_rect(frame_buffer, dst, moving_objects, dst, clamped_dim, 0xff);
+
+    interrupt_restore(eflags);
+    return;
+  }
 
   const struct point title_bar_pos = {
     .x = max(r->window.x, 0),
@@ -602,14 +623,17 @@ uint32_t ui_kill(process_t *p)
   return 0;
 }
 
-uint32_t ui_swap_buffers(process_t *p)
+uint32_t ui_redraw_rect(process_t *p, uint32_t x, uint32_t y, uint32_t w, uint32_t h)
 {
   uint32_t eflags = interrupt_save_disable();
   ui_responder_t *r = responders_by_gid[p->gid];
   CHECK_RESTORE_EFLAGS(r == NULL, "No responders available", 1);
 
+  struct point origin = { (int32_t)x, (int32_t)y };
+  struct dim dim = { w, h };
+
   if (r == responders.head->value && r->window_opacity == 0xff)
-    ui_redraw_key_responder();
+    ui_redraw_key_responder(origin, dim);
   else ui_redraw_all();
 
   interrupt_restore(eflags);

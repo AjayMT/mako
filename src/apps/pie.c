@@ -227,7 +227,7 @@ static void exec_thread()
       render_buffer(old_screen_line_idx);
     }
 
-    ui_swap_buffers();
+    ui_redraw_rect(0, 0, window_w, window_h);
 
     thread_unlock(&ui_lock);
   }
@@ -239,7 +239,7 @@ static void exec_thread()
   update_footer_text();
   render_footer();
   render_path();
-  ui_swap_buffers();
+  ui_redraw_rect(0, 0, window_w, window_h);
 
   close(proc_read_fd);
   proc_read_fd = 0;
@@ -466,7 +466,7 @@ static void keyboard_handler(uint8_t code)
         update_footer_text();
         render_footer();
       });
-    if (update) ui_swap_buffers();
+    if (update) ui_redraw_rect(0, window_h - FOOTER_HEIGHT, window_w, FOOTER_HEIGHT);
     thread_unlock(&ui_lock);
     return;
   }
@@ -526,7 +526,7 @@ static void keyboard_handler(uint8_t code)
         update_footer_text();
         render_footer();
       });
-    if (update) ui_swap_buffers();
+    if (update) ui_redraw_rect(0, 0, window_w, window_h);
     thread_unlock(&ui_lock);
     return;
   }
@@ -557,7 +557,7 @@ static void resize_handler(ui_event_t ev)
   render_path();
   render_footer();
 
-  ui_swap_buffers();
+  ui_redraw_rect(0, 0, window_w, window_h);
   thread_unlock(&ui_lock);
 }
 

@@ -31,9 +31,9 @@ int32_t ui_acquire_window(const char *name)
   return buf;
 }
 
-int32_t ui_swap_buffers()
+int32_t ui_redraw_rect(uint32_t x, uint32_t y, uint32_t w, uint32_t h)
 {
-  int32_t res = _syscall0(SYSCALL_UI_SWAP_BUFFERS);
+  int32_t res = _syscall4(SYSCALL_UI_REDRAW_RECT, x, y, w, h);
   if (res < 0) { errno = -res; res = -1; }
   return res;
 }

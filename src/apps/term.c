@@ -24,7 +24,7 @@ void resize_handler(ui_event_t ev)
   ui_render_text(ui_buf + 10 * ev.width + 10, ev.width, str, strlen(str), UI_FONT_LUCIDA_GRANDE);
   ui_render_text(ui_buf + 30 * ev.width + 10, ev.width, str, strlen(str), UI_FONT_MONACO);
 
-  ui_swap_buffers();
+  ui_redraw_rect(0, 0, ev.width, ev.height);
 }
 
 int main(int argc, char *argv[])

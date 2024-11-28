@@ -302,7 +302,7 @@ static void duplication_thread(void *data)
   load_dirents();
   render_dirents();
   update_cursor(cursor_idx);
-  ui_swap_buffers();
+  ui_redraw_rect(0, 0, window_w, window_h);
   thread_unlock(&ui_lock);
   free(start_dir);
   free(entname);
@@ -418,7 +418,7 @@ static void exec_thread(void *data)
   cs = CS_DEFAULT;
   update_footer_text();
   render_footer();
-  ui_swap_buffers();
+  ui_redraw_rect(0, 0, window_w, window_h);
   thread_unlock(&ui_lock);
 }
 
@@ -551,7 +551,7 @@ static void keyboard_handler(uint8_t code)
     default:
       swap = 0;
     }
-    if (swap) ui_swap_buffers();
+    if (swap) ui_redraw_rect(0, 0, window_w, window_h);
     thread_unlock(&ui_lock);
     return;
   }
@@ -569,12 +569,12 @@ static void keyboard_handler(uint8_t code)
       cs = CS_DEFAULT;
       update_footer_text();
       render_footer();
-      ui_swap_buffers();
+      ui_redraw_rect(0, 0, window_w, window_h);
     } else if (update) {
       cs = CS_CREATE_NAME;
       update_footer_text();
       render_footer();
-      ui_swap_buffers();
+      ui_redraw_rect(0, 0, window_w, window_h);
     }
     thread_unlock(&ui_lock);
     return;
@@ -621,7 +621,7 @@ static void keyboard_handler(uint8_t code)
         render_dirents(); update_cursor(cursor_idx);
       }
       render_footer();
-      ui_swap_buffers();
+      ui_redraw_rect(0, 0, window_w, window_h);
     }
     thread_unlock(&ui_lock);
     return;
@@ -668,7 +668,7 @@ static void keyboard_handler(uint8_t code)
         render_dirents(); update_cursor(cursor_idx);
       }
       render_footer();
-      ui_swap_buffers();
+      ui_redraw_rect(0, 0, window_w, window_h);
     }
     thread_unlock(&ui_lock);
     return;
@@ -719,7 +719,7 @@ static void keyboard_handler(uint8_t code)
         update_footer_text();
       }
       render_footer();
-      ui_swap_buffers();
+      ui_redraw_rect(0, 0, window_w, window_h);
     }
     thread_unlock(&ui_lock);
     return;
@@ -752,7 +752,7 @@ static void resize_handler(ui_event_t ev)
   render_dirents();
   update_cursor(cursor_idx);
 
-  ui_swap_buffers();
+  ui_redraw_rect(0, 0, window_w, window_h);
 
   // FIXME this needs to be removed / reworked
   if (file_path) {
