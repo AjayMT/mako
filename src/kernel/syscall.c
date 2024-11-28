@@ -582,10 +582,10 @@ static void syscall_yield()
   process_switch_next();
 }
 
-static void syscall_ui_make_responder(uint32_t buf)
+static void syscall_ui_make_responder(uint32_t buf, const char *name)
 {
   process_t *current = process_current();
-  current->uregs.eax = -ui_make_responder(current, buf);
+  current->uregs.eax = -ui_make_responder(current, buf, name);
 }
 
 static void syscall_ui_swap_buffers()

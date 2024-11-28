@@ -18,15 +18,15 @@ struct font_char_info {
   unsigned data_offset;
 };
 
-#include "ui_font_data.h"
+#include "../common/ui_font_data.h"
 
-int32_t ui_acquire_window()
+int32_t ui_acquire_window(const char *name)
 {
   // ((SCREENWIDTH / 2) * (SCREENHEIGHT / 2) * 4) / 0x1000
   uint32_t buf = pagealloc(((SCREENWIDTH >> 1) * (SCREENHEIGHT >> 1)) >> 10);
   if (buf == 0) return -1;
 
-  int32_t res = _syscall1(SYSCALL_UI_MAKE_RESPONDER, buf);
+  int32_t res = _syscall2(SYSCALL_UI_MAKE_RESPONDER, buf, (uint32_t)name);
   if (res < 0) { errno = -res; return -1; }
   return buf;
 }

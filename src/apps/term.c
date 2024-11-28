@@ -31,7 +31,7 @@ int main(int argc, char *argv[])
 {
   priority(1);
 
-  int32_t res = ui_acquire_window();
+  int32_t res = ui_acquire_window("term");
   if (res < 0) return 1;
   ui_buf = (uint32_t *)res;
 

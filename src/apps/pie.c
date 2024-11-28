@@ -586,7 +586,7 @@ int main(int argc, char *argv[])
 
   update_footer_text();
 
-  int32_t res = ui_acquire_window();
+  int32_t res = ui_acquire_window("pie");
   if (res < 0) return 1;
   ui_buf = (uint32_t *)res;
 

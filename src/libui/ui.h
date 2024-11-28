@@ -12,7 +12,7 @@
 #include "../common/stdint.h"
 #include "../common/ui.h"
 
-int32_t ui_acquire_window();
+int32_t ui_acquire_window(const char *);
 int32_t ui_swap_buffers();
 int32_t ui_next_event(ui_event_t *);
 int32_t ui_yield();

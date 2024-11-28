@@ -21,6 +21,13 @@
 #include "ui_cursor.h"
 #include "ui_title_bar.h"
 
+struct font_char_info {
+  unsigned width;
+  unsigned data_offset;
+};
+
+#include "../common/ui_font_data.h"
+
 #define CHECK(err, msg, code)                                                  \
   if ((err)) {                                                                 \
     log_error("ui", msg "\n");                                                 \
@@ -59,6 +66,7 @@ struct pixel_buffer {
 
 typedef struct ui_responder_s {
   process_t *process;
+  char window_title[20];
   ui_window_t window;
   uint8_t window_opacity;
   uint8_t window_is_moving;
@@ -119,6 +127,45 @@ static void copy_rect(
   }
 }
 
+static void render_char(struct pixel_buffer buf, struct point dst, struct font_char_info c,
+                        const uint8_t *font_data, unsigned font_height, uint8_t window_opacity)
+{
+  uint32_t *p = buf.buf + dst.y * buf.stride + dst.x;
+  for (size_t y = 0; y < font_height; ++y) {
+    for (size_t x = 0; x < c.width; ++x) {
+      uint8_t opacity = font_data[c.data_offset + y * c.width + x];
+      p[y * buf.stride + x] = blend_alpha(p[y * buf.stride + x], 0, min(opacity, window_opacity));
+    }
+  }
+}
+
+static void render_text(struct pixel_buffer buf, struct point dst, const char *str, uint8_t opacity)
+{
+  const struct font_char_info *font_char_info = lucida_grande_char_info;
+  const uint8_t *font_data = lucida_grande_data;
+  const unsigned font_height = LUCIDA_GRANDE_HEIGHT;
+
+  int32_t x = dst.x;
+  int32_t y = dst.y;
+  for (size_t i = 0; str[i]; ++i) {
+    if (x >= (int32_t)buf.stride) break;
+
+    char c = 0;
+    switch (str[i]) {
+    case '\n': y += font_height; x = 0; break;
+    case '\t': x += 4 * font_char_info[' ' - 32].width; break;
+    default: c = str[i];
+    }
+
+    if (c < 32 || c > 126) continue;
+
+    struct point char_dst = { x, y };
+    const struct font_char_info char_info = font_char_info[c - 32];
+    render_char(buf, char_dst, char_info, font_data, font_height, opacity);
+    x += char_info.width;
+  }
+}
+
 // Blit a single window to a buffer.
 static void ui_blit_window(ui_responder_t *r, struct pixel_buffer buffer)
 {
@@ -142,6 +189,9 @@ static void ui_blit_window(ui_responder_t *r, struct pixel_buffer buffer)
 
   const struct pixel_buffer title_bar_buf = { (uint32_t *)TITLE_BAR_PIXELS, TITLE_BAR_WIDTH };
   copy_rect(buffer, title_bar_dst, title_bar_buf, title_bar_src, title_bar_dim, r->window_opacity);
+
+  struct point window_title_dst = { title_bar_dst.x + TITLE_BAR_BUTTON_WIDTH + 4, title_bar_dst.y + 2 };
+  render_text(buffer, window_title_dst, r->window_title, r->window_opacity);
 
   const struct point window_dst = {
     .x = max(r->window.x, 0),
@@ -497,7 +547,7 @@ uint32_t ui_handle_mouse_event(int32_t dx, int32_t dy, uint8_t left_button, uint
   return 0;
 }
 
-uint32_t ui_make_responder(process_t *p, uint32_t buf)
+uint32_t ui_make_responder(process_t *p, uint32_t buf, const char *name)
 {
   if (responders_by_gid[p->gid]) return 1;
   ui_responder_t *r = kmalloc(sizeof(ui_responder_t)); CHECK(r == NULL, "No memory.", ENOMEM);
@@ -509,6 +559,8 @@ uint32_t ui_make_responder(process_t *p, uint32_t buf)
   r->window.w = SCREENWIDTH >> 1;
   r->window.h = SCREENHEIGHT >> 1;
   r->window_opacity = 0xff;
+  size_t name_len = u_strlen(name);
+  u_memcpy(r->window_title, name, min(name_len, sizeof(r->window_title)));
 
   klock(&responders_lock);
   r->window.x = SCREENWIDTH >> 2;

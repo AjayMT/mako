@@ -16,7 +16,7 @@
 uint32_t ui_init(uint32_t);
 uint32_t ui_handle_keyboard_event(uint8_t);
 uint32_t ui_handle_mouse_event(int32_t dx, int32_t dy, uint8_t left_button, uint8_t right_button);
-uint32_t ui_make_responder(process_t *, uint32_t);
+uint32_t ui_make_responder(process_t *, uint32_t, const char *);
 uint32_t ui_kill(process_t *);
 uint32_t ui_swap_buffers(process_t *);
 uint32_t ui_yield(process_t *);

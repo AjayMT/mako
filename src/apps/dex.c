@@ -821,7 +821,7 @@ int main(int argc, char *argv[])
   cs = CS_DEFAULT;
   update_footer_text();
 
-  res = ui_acquire_window();
+  res = ui_acquire_window("dex");
   if (res < 0) return 1;
   ui_buf = (uint32_t *)res;
 
