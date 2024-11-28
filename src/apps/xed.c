@@ -17,8 +17,11 @@
 #include <sys/stat.h>
 #include <ui.h>
 #include <mako.h>
-#include "text_render.h"
 #include "scancode.h"
+
+// FIXME remove thes
+#define FONTWIDTH 7
+#define FONTHEIGHT 14
 
 #define FOOTER_LEN    (SCREENWIDTH / FONTWIDTH)
 #define MAX_NUM_LINES (SCREENHEIGHT / (FONTHEIGHT))
@@ -96,23 +99,8 @@ static char *rstrchr(char *a, char *b, char c)
 static void render_text(const char *text, uint32_t x, uint32_t y)
 {
   size_t len = strlen(text);
-  size_t w, h;
-  text_dimensions(text, len, &w, &h);
-  if (w * h == 0) return;
-
-  uint8_t *pixels = malloc(w * h);
-  memset(pixels, 0, w * h);
-  text_render(text, len, w, h, pixels);
-
   uint32_t *p = ui_buf + (y * window_w) + x;
-  for (uint32_t j = 0; j < h && y + j < window_h; ++j) {
-    for (uint32_t i = 0; i < w && x + i < window_w; ++i) {
-      uint8_t color = 0xff - pixels[(j * w) + i];
-      if (color != 0xff) p[i] = (color << 16) | (color << 8) | color;
-    }
-    p += window_w;
-  }
-  free(pixels);
+  ui_render_text(p, window_w, text, len, UI_FONT_MONACO);
 }
 
 // render the path bar at the top of the window

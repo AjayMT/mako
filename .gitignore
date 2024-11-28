@@ -6,6 +6,7 @@
 *.a
 /hda.tar
 /ustar_image
+/font_compiler
 /png2wp
 /png2bitmap
 /dex
@@ -16,9 +17,11 @@
 /read
 /xed
 /pie
+/term
 /lua
 /c4
 /doomgeneric
 /nanoc
 /img
 /mnt/*
+.DS_Store

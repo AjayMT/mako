@@ -18,7 +18,7 @@ LIBC_OBJECTS := $(notdir $(patsubst %.c,%.o,$(wildcard src/libc/*.c)))
 CRT_OBJECTS := crt0.o crti.o crtn.o
 
 PORTS := nanoc lua doomgeneric
-APPS := dex xed pie img wallpaper
+APPS := $(notdir $(patsubst %.c,%,$(wildcard src/apps/*.c)))
 BIN := $(notdir $(patsubst %.c,%,$(wildcard src/bin/*.c)))
 
 GRUB_MKRESCUE := grub-mkrescue
@@ -65,13 +65,8 @@ doomgeneric: $(shell find ports/doomgeneric -type f) libui.a libc.a $(CRT_OBJECT
 	$(MAKE) -C ports/doomgeneric/doomgeneric
 	cp ports/doomgeneric/doomgeneric/doomgeneric .
 
-# Need two rules for $(APPS) since they have different dependencies
-dex xed pie: $(wildcard src/apps/*) libc.a libui.a $(CRT_OBJECTS)
-	$(CC) $(CFLAGS) -Isrc/libc/ -Isrc/libui/ src/apps/$@.c src/apps/font_lucida_mono_ef.c \
-	src/apps/text_render.c src/apps/scancode.c $(CRT_OBJECTS) libc.a libui.a -lgcc -o $@
-img: src/apps/img.c src/apps/lodepng.c src/apps/lodepng.h src/apps/scancode.h libc.a libui.a $(CRT_OBJECTS)
-	$(CC) $(CFLAGS) -Isrc/libc/ -Isrc/libui/ src/apps/img.c src/apps/lodepng.c \
-	$(CRT_OBJECTS) libc.a libui.a -lgcc -o $@
+$(APPS): $(wildcard src/apps/*) libc.a libui.a $(CRT_OBJECTS)
+	$(CC) $(CFLAGS) -Isrc/libc/ -Isrc/libui/ src/apps/$@.c $(CRT_OBJECTS) libc.a libui.a -lgcc -o $@
 
 # wallpaper depends on libui.a
 $(filter-out wallpaper,$(BIN)): $(wildcard src/bin/*.c) libc.a $(CRT_OBJECTS)
@@ -111,4 +106,5 @@ qemu: mako.iso hda.img
 clean:
 	rm -rf *.elf *.o *.a iso/boot/kernel.elf mako.iso com1.out                 \
 	       sysroot/lib/* sysroot/bin/* sysroot/apps/* lua c4 doomgeneric nanoc \
-	       $(APPS) $(BIN) $(PORTS) hda.img hda.tar ustar_image png2wp png2bitmap
+	       $(APPS) $(BIN) $(PORTS) hda.img hda.tar ustar_image png2wp \
+	       png2bitmap font_compiler
