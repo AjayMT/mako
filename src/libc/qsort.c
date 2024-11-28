@@ -6,9 +6,9 @@
 // Author: Ajay Tatachar <ajaymt2@illinois.edu>
 
 #include "stdint.h"
-#include <stddef.h>
-#include "string.h"
 #include "stdlib.h"
+#include "string.h"
+#include <stddef.h>
 
 static void swap(void *a, void *b, size_t w)
 {
@@ -19,12 +19,7 @@ static void swap(void *a, void *b, size_t w)
 }
 
 // Always uses the first element as the pivot.
-static size_t partition(
-  void *base,
-  size_t n,
-  size_t width,
-  int (*cmp)(const void *, const void *)
-  )
+static size_t partition(void *base, size_t n, size_t width, int (*cmp)(const void *, const void *))
 {
   char *cbase = base;
   size_t pivot_idx = 0;
@@ -33,7 +28,8 @@ static size_t partition(
     char *i_elem = cbase + (i * width);
     if (cmp(i_elem, pivot_elem) < 0) {
       swap(pivot_elem, pivot_elem + width, width);
-      if (i - pivot_idx > 1) swap(pivot_elem, i_elem, width);
+      if (i - pivot_idx > 1)
+        swap(pivot_elem, i_elem, width);
       ++pivot_idx;
     }
   }
@@ -41,14 +37,10 @@ static size_t partition(
   return pivot_idx;
 }
 
-void qsort(
-  void *base,
-  size_t n,
-  size_t width,
-  int (*cmp)(const void *, const void *)
-  )
+void qsort(void *base, size_t n, size_t width, int (*cmp)(const void *, const void *))
 {
-  if (n == 0 || width == 0) return;
+  if (n == 0 || width == 0)
+    return;
   char *cbase = base;
   size_t pivot_idx = partition(base, n, width, cmp);
   qsort(base, pivot_idx, width, cmp);

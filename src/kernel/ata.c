@@ -5,48 +5,52 @@
 //
 // Author: Ajay Tatachar <ajaymt2@illinois.edu>
 
+#include "ata.h"
+#include "../common/errno.h"
 #include "../common/stdint.h"
-#include "pci.h"
+#include "constants.h"
+#include "fs.h"
+#include "interrupt.h"
 #include "io.h"
 #include "kheap.h"
 #include "klock.h"
-#include "pmm.h"
-#include "paging.h"
-#include "interrupt.h"
-#include "fs.h"
-#include "constants.h"
-#include "../common/errno.h"
-#include "util.h"
 #include "log.h"
-#include "ata.h"
+#include "paging.h"
+#include "pci.h"
+#include "pmm.h"
+#include "util.h"
 
-#define CHECK(err, msg, code) if ((err)) {      \
-    log_error("ata", msg "\n"); return (code);  \
+#define CHECK(err, msg, code)                                                                      \
+  if ((err)) {                                                                                     \
+    log_error("ata", msg "\n");                                                                    \
+    return (code);                                                                                 \
   }
-#define CHECK_UNLOCK(err, msg, code) if ((err)) {       \
-    log_error("ata", msg "\n"); kunlock(&ata_lock);     \
-    return (code);                                      \
+#define CHECK_UNLOCK(err, msg, code)                                                               \
+  if ((err)) {                                                                                     \
+    log_error("ata", msg "\n");                                                                    \
+    kunlock(&ata_lock);                                                                            \
+    return (code);                                                                                 \
   }
 
 // PCI info.
-static const uint16_t ATA_VENDOR_ID    = 0x8086;
-static const uint16_t ATA_DEVICE_ID    = 0x7010;
+static const uint16_t ATA_VENDOR_ID = 0x8086;
+static const uint16_t ATA_DEVICE_ID = 0x7010;
 
 // PRDT.
-static const uint16_t SECTOR_SIZE      = 0x200;
-static const uint16_t PRDT_END         = 0x8000;
+static const uint16_t SECTOR_SIZE = 0x200;
+static const uint16_t PRDT_END = 0x8000;
 
 // Control/Alt-status register.
-static const uint8_t CONTROL_RESET     = 4;
+static const uint8_t CONTROL_RESET = 4;
 
 // Command/status register.
-static const uint8_t COMMAND_IDENTIFY  = 0xEC;
-static const uint8_t COMMAND_DMA_READ  = 0x25;
+static const uint8_t COMMAND_IDENTIFY = 0xEC;
+static const uint8_t COMMAND_DMA_READ = 0x25;
 static const uint8_t COMMAND_DMA_WRITE = 0x35;
-static const uint8_t STATUS_ERR        = 1;
-static const uint8_t STATUS_DRQ        = 8;
-static const uint8_t STATUS_BSY        = 0x80;
-static const uint8_t STATUS_DRDY       = 0x40;
+static const uint8_t STATUS_ERR = 1;
+static const uint8_t STATUS_DRQ = 8;
+static const uint8_t STATUS_BSY = 0x80;
+static const uint8_t STATUS_DRDY = 0x40;
 
 static pci_dev_t ata_pci_device;
 static ata_dev_t primary_master;
@@ -59,9 +63,7 @@ static volatile uint32_t ata_lock = 0;
 static void wait_io(ata_dev_t *);
 static uint8_t wait_status(ata_dev_t *, int32_t);
 
-static uint8_t ata_read_sector(
-  ata_dev_t *dev, uint32_t block, uint8_t *buf
-  )
+static uint8_t ata_read_sector(ata_dev_t *dev, uint32_t block, uint8_t *buf)
 {
   klock(&ata_lock);
 
@@ -114,12 +116,9 @@ static uint8_t ata_read_sector(
   // Wait for DMA write to complete.
   busmaster_status = inb(dev->ports.busmaster_status);
   uint8_t status = inb(dev->ports.command_status);
-  for (
+  for (; (!(busmaster_status & 4)) || (status & STATUS_BSY);
+       busmaster_status = inb(dev->ports.busmaster_status), status = inb(dev->ports.command_status))
     ;
-    (!(busmaster_status & 4)) || (status & STATUS_BSY);
-    busmaster_status = inb(dev->ports.busmaster_status),
-      status = inb(dev->ports.command_status)
-    );
 
   interrupt_restore(eflags);
 
@@ -134,13 +133,12 @@ static uint8_t ata_read_sector(
   return 0;
 }
 
-static uint32_t ata_read(
-  fs_node_t *node, uint32_t offset, uint32_t size, uint8_t *buf
-  )
+static uint32_t ata_read(fs_node_t *node, uint32_t offset, uint32_t size, uint8_t *buf)
 {
   ata_dev_t *dev = (ata_dev_t *)node->device;
   uint32_t max_offset = dev->identity.sectors_28 * SECTOR_SIZE;
-  if (offset > max_offset) return 0;
+  if (offset > max_offset)
+    return 0;
   if (offset + size > max_offset)
     size = max_offset - offset;
 
@@ -178,9 +176,7 @@ static uint32_t ata_read(
   return read_size;
 }
 
-static uint8_t ata_write_sector(
-  ata_dev_t *dev, uint32_t block, uint8_t *buf
-  )
+static uint8_t ata_write_sector(ata_dev_t *dev, uint32_t block, uint8_t *buf)
 {
   klock(&ata_lock);
 
@@ -229,12 +225,9 @@ static uint8_t ata_write_sector(
   // Wait for DMA write to complete.
   busmaster_status = inb(dev->ports.busmaster_status);
   uint8_t status = inb(dev->ports.command_status);
-  for (
+  for (; (!(busmaster_status & 4)) || (status & STATUS_BSY);
+       busmaster_status = inb(dev->ports.busmaster_status), status = inb(dev->ports.command_status))
     ;
-    (!(busmaster_status & 4)) || (status & STATUS_BSY);
-    busmaster_status = inb(dev->ports.busmaster_status),
-      status = inb(dev->ports.command_status)
-    );
 
   interrupt_restore(eflags);
 
@@ -246,13 +239,12 @@ static uint8_t ata_write_sector(
   return 0;
 }
 
-static uint32_t ata_write(
-  fs_node_t *node, uint32_t offset, uint32_t size, uint8_t *buf
-  )
+static uint32_t ata_write(fs_node_t *node, uint32_t offset, uint32_t size, uint8_t *buf)
 {
   ata_dev_t *dev = (ata_dev_t *)node->device;
   uint32_t max_offset = dev->identity.sectors_28 * SECTOR_SIZE;
-  if (offset > max_offset) return 0;
+  if (offset > max_offset)
+    return 0;
   if (offset + size > max_offset)
     size = max_offset - offset;
 
@@ -299,7 +291,8 @@ static uint8_t ata_dev_init(ata_dev_t *dev, uint8_t is_primary)
   static uint32_t prdt_page_vaddr = 0;
   static uint32_t prdt_offset = 0;
 
-  page_table_entry_t flags; u_memset(&flags, 0, sizeof(flags));
+  page_table_entry_t flags;
+  u_memset(&flags, 0, sizeof(flags));
   flags.rw = 1;
   paging_result_t res;
 
@@ -335,9 +328,7 @@ static uint8_t ata_dev_init(ata_dev_t *dev, uint8_t is_primary)
   dev->ports.command_status = dev->ports.data + 7;
   dev->ports.control_alt_status = dev->ports.data + 0xC;
 
-  dev->ports.busmaster_command = pci_config_read(
-    ata_pci_device, PCI_BAR4, 4
-    );
+  dev->ports.busmaster_command = pci_config_read(ata_pci_device, PCI_BAR4, 4);
   CHECK(dev->ports.busmaster_command == PCI_NONE, "Failed to read BAR4.", 1);
   if (dev->ports.busmaster_command & 1)
     dev->ports.busmaster_command &= 0xFFFFFFFC;
@@ -357,11 +348,11 @@ static uint8_t wait_status(ata_dev_t *dev, int32_t timeout)
 {
   uint8_t status = inb(dev->ports.command_status);
   if (timeout > 0)
-    for (
-      int32_t i = 0; (status & STATUS_BSY) && i < timeout; ++i
-      ) status = inb(dev->ports.command_status);
-  else for (; (status & STATUS_BSY);)
-         status = inb(dev->ports.command_status);
+    for (int32_t i = 0; (status & STATUS_BSY) && i < timeout; ++i)
+      status = inb(dev->ports.command_status);
+  else
+    for (; (status & STATUS_BSY);)
+      status = inb(dev->ports.command_status);
   return status;
 }
 
@@ -396,7 +387,8 @@ static uint8_t ata_dev_setup(ata_dev_t *dev, uint8_t is_primary)
   CHECK(!inb(dev->ports.command_status), "Drive does not exist.", 1);
 
   uint16_t *buf = (uint16_t *)(&dev->identity);
-  for (uint32_t i = 0; i < 256; ++i) buf[i] = inw(dev->ports.data);
+  for (uint32_t i = 0; i < 256; ++i)
+    buf[i] = inw(dev->ports.data);
 
   uint32_t command_reg = pci_config_read(ata_pci_device, PCI_COMMAND, 2);
   if ((command_reg & 4) == 0) {
@@ -450,11 +442,7 @@ uint8_t ata_init()
   secondary_master.is_slave = 0;
   secondary_slave.is_slave = 1;
 
-  CHECK(
-    ata_dev_setup(&primary_master, 1),
-    "Failed to setup primary master drive.",
-    1
-    );
+  CHECK(ata_dev_setup(&primary_master, 1), "Failed to setup primary master drive.", 1);
   /* log_info("ata", "Attempting to set up primary slave.\n"); */
   /* if (ata_dev_setup(&primary_slave, 1)) */
   /*   log_info("ata", "Could not set up primary slave.\n"); */

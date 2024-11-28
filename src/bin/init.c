@@ -5,10 +5,10 @@
 //
 // Author: Ajay Tatachar <ajaymt2@illinois.edu>
 
-#include <unistd.h>
-#include <stdlib.h>
 #include <fcntl.h>
 #include <mako.h>
+#include <stdlib.h>
+#include <unistd.h>
 
 int main(int argc, char *argv[])
 {
@@ -25,6 +25,7 @@ int main(int argc, char *argv[])
     execve("/apps/pie", args, environ);
   }
 
-  while (1);
+  while (1)
+    ;
   return 0;
 }

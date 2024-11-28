@@ -6,12 +6,13 @@
 //   sysroot/    -> /
 //   sysroot/bin -> /bin
 
-#include <stdlib.h>
-#include <stdio.h>
 #include <stdint.h>
+#include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
-struct ustar_metadata_s {
+struct ustar_metadata_s
+{
   char name[100];
   char mode[8];
   char uid[8];
@@ -61,9 +62,11 @@ int main(int argc, char *argv[])
   ustar_metadata_t data;
   while (1) {
     long off = ftell(f);
-    if (off == len) break;
+    if (off == len)
+      break;
     size_t r = fread(&data, 1, sizeof(data), f);
-    if (r != sizeof(data)) break;
+    if (r != sizeof(data))
+      break;
     uint32_t file_size = block_align_up(parse_oct(data.size, sizeof(data.size)));
     char *split_pos = strchr(data.name, '/');
     char *new_name = strdup(split_pos);

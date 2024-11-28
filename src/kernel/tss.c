@@ -5,9 +5,9 @@
 //
 // Author: Ajay Tatachar <ajaymt2@illinois.edu>
 
+#include "tss.h"
 #include "../common/stdint.h"
 #include "util.h"
-#include "tss.h"
 
 // Global TSS struct.
 static tss_t tss;
@@ -27,7 +27,9 @@ void tss_init()
 
 // Get the address of the TSS struct.
 uint32_t tss_get_vaddr()
-{ return (uint32_t)&tss; }
+{
+  return (uint32_t)&tss;
+}
 
 void tss_set_kernel_stack(uint16_t ss0, uint32_t esp0)
 {

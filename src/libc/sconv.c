@@ -5,25 +5,30 @@
 //
 // Taken from ToAruOS <http://github.com/klange/toaruos>.
 
-#include "stdint.h"
-#include "string.h"
-#include "errno.h"
 #include "ctype.h"
-#include "math.h"
+#include "errno.h"
 #include "limits.h"
+#include "math.h"
+#include "stdint.h"
 #include "stdlib.h"
+#include "string.h"
 
 static uint8_t is_valid(int32_t base, char c)
 {
-  if (c < '0') return 0;
+  if (c < '0')
+    return 0;
   if (base <= 10) {
     return c < ('0' + base - 1);
   }
 
-  if (c > '9' && c < 'a') return 0;
-  if (c > 'a' + (base - 10) && c < 'A') return 1;
-  if (c > 'A' + (base - 10)) return 1;
-  if (c >= '0' && c <= '9') return 1;
+  if (c > '9' && c < 'a')
+    return 0;
+  if (c > 'a' + (base - 10) && c < 'A')
+    return 1;
+  if (c > 'A' + (base - 10))
+    return 1;
+  if (c >= '0' && c <= '9')
+    return 1;
   return 0;
 }
 
@@ -41,52 +46,53 @@ static int32_t convert_digit(char c)
   return 0;
 }
 
-#define strtox(max, type)                       \
-  if (base < 0 || base == 1 || base > 36) {     \
-    errno = EINVAL;                             \
-    return max;                                 \
-  }                                             \
-  while (*nptr && isspace(*nptr)) nptr++;       \
-  int sign = 1;                                 \
-  if (*nptr == '-') {                           \
-    sign = -1;                                  \
-    nptr++;                                     \
-  } else if (*nptr == '+') {                    \
-    nptr++;                                     \
-  }                                             \
-  if (base == 16) {                             \
-    if (*nptr == '0') {                         \
-      nptr++;                                   \
-      if (*nptr == 'x') {                       \
-        nptr++;                                 \
-      }                                         \
-    }                                           \
-  }                                             \
-  if (base == 0) {                              \
-    if (*nptr == '0') {                         \
-      base = 8;                                 \
-      nptr++;                                   \
-      if (*nptr == 'x') {                       \
-        base = 16;                              \
-        nptr++;                                 \
-      }                                         \
-    } else {                                    \
-      base = 10;                                \
-    }                                           \
-  }                                             \
-  type val = 0;                                 \
-  while (is_valid(base, *nptr)) {               \
-    val *= base;                                \
-    val += convert_digit(*nptr);                \
-    nptr++;                                     \
-  }                                             \
-  if (endptr) {                                 \
-    *endptr = (char *)nptr;                     \
-  }                                             \
-  if (sign == -1) {                             \
-    return -val;                                \
-  } else {                                      \
-    return val;                                 \
+#define strtox(max, type)                                                                          \
+  if (base < 0 || base == 1 || base > 36) {                                                        \
+    errno = EINVAL;                                                                                \
+    return max;                                                                                    \
+  }                                                                                                \
+  while (*nptr && isspace(*nptr))                                                                  \
+    nptr++;                                                                                        \
+  int sign = 1;                                                                                    \
+  if (*nptr == '-') {                                                                              \
+    sign = -1;                                                                                     \
+    nptr++;                                                                                        \
+  } else if (*nptr == '+') {                                                                       \
+    nptr++;                                                                                        \
+  }                                                                                                \
+  if (base == 16) {                                                                                \
+    if (*nptr == '0') {                                                                            \
+      nptr++;                                                                                      \
+      if (*nptr == 'x') {                                                                          \
+        nptr++;                                                                                    \
+      }                                                                                            \
+    }                                                                                              \
+  }                                                                                                \
+  if (base == 0) {                                                                                 \
+    if (*nptr == '0') {                                                                            \
+      base = 8;                                                                                    \
+      nptr++;                                                                                      \
+      if (*nptr == 'x') {                                                                          \
+        base = 16;                                                                                 \
+        nptr++;                                                                                    \
+      }                                                                                            \
+    } else {                                                                                       \
+      base = 10;                                                                                   \
+    }                                                                                              \
+  }                                                                                                \
+  type val = 0;                                                                                    \
+  while (is_valid(base, *nptr)) {                                                                  \
+    val *= base;                                                                                   \
+    val += convert_digit(*nptr);                                                                   \
+    nptr++;                                                                                        \
+  }                                                                                                \
+  if (endptr) {                                                                                    \
+    *endptr = (char *)nptr;                                                                        \
+  }                                                                                                \
+  if (sign == -1) {                                                                                \
+    return -val;                                                                                   \
+  } else {                                                                                         \
+    return val;                                                                                    \
   }
 
 uint64_t strtoul(const char *nptr, char **endptr, int32_t base)
@@ -170,7 +176,7 @@ double strtod(const char *nptr, char **endptr)
       nptr++;
     }
 
-    expn = pow(10.0,(double)(exponent * exponent_sign));
+    expn = pow(10.0, (double)(exponent * exponent_sign));
   }
 
   if (endptr) {
@@ -182,10 +188,10 @@ double strtod(const char *nptr, char **endptr)
 
 float strtof(const char *nptr, char **endptr)
 {
-  return strtod(nptr,endptr);
+  return strtod(nptr, endptr);
 }
 
-int64_t atol(const char * s)
+int64_t atol(const char *s)
 {
   int n = 0;
   int neg = 0;
@@ -193,17 +199,17 @@ int64_t atol(const char * s)
     s++;
   }
   switch (*s) {
-  case '-':
-    neg = 1;
-    /* Fallthrough is intentional here */
-  case '+':
-    s++;
+    case '-':
+      neg = 1;
+      /* Fallthrough is intentional here */
+    case '+':
+      s++;
   }
   while (isdigit(*s)) {
-    n = 10*n - (*s++ - '0');
+    n = 10 * n - (*s++ - '0');
   }
-  /* The sign order may look incorrect here but this is correct as n is calculated
-   * as a negative number to avoid overflow on INT_MAX.
+  /* The sign order may look incorrect here but this is correct as n is
+   * calculated as a negative number to avoid overflow on INT_MAX.
    */
   return (int64_t)(neg ? n : -n);
 }
@@ -216,20 +222,22 @@ int32_t atoi(const char *s)
     s++;
   }
   switch (*s) {
-  case '-':
-    neg = 1;
-    /* Fallthrough is intentional here */
-  case '+':
-    s++;
+    case '-':
+      neg = 1;
+      /* Fallthrough is intentional here */
+    case '+':
+      s++;
   }
   while (isdigit(*s)) {
-    n = 10*n - (*s++ - '0');
+    n = 10 * n - (*s++ - '0');
   }
-  /* The sign order may look incorrect here but this is correct as n is calculated
-   * as a negative number to avoid overflow on INT_MAX.
+  /* The sign order may look incorrect here but this is correct as n is
+   * calculated as a negative number to avoid overflow on INT_MAX.
    */
   return (int32_t)(neg ? n : -n);
 }
 
 double atof(const char *str)
-{ return strtod(str, NULL); }
+{
+  return strtod(str, NULL);
+}

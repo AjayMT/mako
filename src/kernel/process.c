@@ -5,34 +5,36 @@
 //
 // Author: Ajay Tatachar <ajaymt2@illinois.edu>
 
-#include <stddef.h>
+#include "process.h"
+#include "../common/errno.h"
+#include "../common/signal.h"
 #include "../common/stdint.h"
-#include "interrupt.h"
-#include "pit.h"
-#include "tss.h"
+#include "constants.h"
 #include "ds.h"
+#include "fpu.h"
+#include "fs.h"
+#include "interrupt.h"
 #include "kheap.h"
 #include "klock.h"
-#include "fs.h"
-#include "pipe.h"
-#include "pmm.h"
+#include "log.h"
 #include "paging.h"
-#include "fpu.h"
+#include "pipe.h"
+#include "pit.h"
+#include "pmm.h"
+#include "tss.h"
 #include "ui.h"
 #include "util.h"
-#include "log.h"
-#include "constants.h"
-#include "../common/signal.h"
-#include "../common/errno.h"
-#include "process.h"
+#include <stddef.h>
 
-#define CHECK(err, msg, code) if ((err)) {              \
-    log_error("process", msg "\n"); return (code);      \
+#define CHECK(err, msg, code)                                                                      \
+  if ((err)) {                                                                                     \
+    log_error("process", msg "\n");                                                                \
+    return (code);                                                                                 \
   }
 
 static const uint32_t USER_MODE_CS = 0x18;
 static const uint32_t USER_MODE_DS = 0x20;
-static const uint32_t ENV_VADDR    = KERNEL_START_VADDR - PAGE_SIZE;
+static const uint32_t ENV_VADDR = KERNEL_START_VADDR - PAGE_SIZE;
 
 // Process tree and process status state.
 static process_t *init_process = NULL;
@@ -50,9 +52,7 @@ static list_t kernel_stack_pages;
 void resume_kernel(process_registers_t *);
 
 // Save the registers of the current process.
-void update_current_process_registers(
-  cpu_state_t cstate, stack_state_t sstate
-  )
+void update_current_process_registers(cpu_state_t cstate, stack_state_t sstate)
 {
   process_registers_t *regs;
   if (sstate.cs == (USER_MODE_CS | 3)) {
@@ -82,15 +82,16 @@ void update_current_process_registers(
 // Resume a running process.
 static void process_resume(process_t *process)
 {
-  if (current_process) fpu_save(current_process);
+  if (current_process)
+    fpu_save(current_process);
   fpu_restore(process);
   current_process = process;
-  tss_set_kernel_stack(
-    SEGMENT_SELECTOR_KERNEL_DS, process->mmap.kernel_stack_top
-    );
+  tss_set_kernel_stack(SEGMENT_SELECTOR_KERNEL_DS, process->mmap.kernel_stack_top);
   paging_set_cr3(process->cr3);
-  if (process->in_kernel) resume_kernel(&(process->kregs));
-  else resume_user(&(process->uregs));
+  if (process->in_kernel)
+    resume_kernel(&(process->kregs));
+  else
+    resume_user(&(process->uregs));
 }
 
 // Switch to next scheduled process.
@@ -100,9 +101,13 @@ uint32_t process_switch_next()
   list_t *running_list;
   for (int32_t i = MAX_PROCESS_PRIORITY; i >= 0; --i) {
     running_list = &running_lists[i];
-    if (running_list->size) break;
+    if (running_list->size)
+      break;
   }
-  if (running_list->size == 0) { interrupt_restore(eflags); return 1; }
+  if (running_list->size == 0) {
+    interrupt_restore(eflags);
+    return 1;
+  }
 
   process_t *next = running_list->head->value;
   uint32_t res = paging_copy_kernel_space(next->cr3);
@@ -116,9 +121,11 @@ uint32_t process_switch_next()
   list_remove(running_list, next->list_node, 0);
   next->list_node->prev = running_list->tail;
   next->list_node->next = NULL;
-  if (running_list->tail) running_list->tail->next = next->list_node;
+  if (running_list->tail)
+    running_list->tail->next = next->list_node;
   running_list->tail = next->list_node;
-  if (running_list->head == NULL) running_list->head = next->list_node;
+  if (running_list->head == NULL)
+    running_list->head = next->list_node;
   running_list->size++;
 
   if (next->in_kernel) {
@@ -154,21 +161,28 @@ static void page_fault_handler(cpu_state_t cs, idt_info_t info, stack_state_t ss
 {
   uint32_t vaddr;
   asm("movl %%cr2, %0" : "=r"(vaddr));
-  log_error(
-    "process", "eip %x: page fault %x vaddr %x esp %x pid %u\n",
-    ss.eip, info.error_code, vaddr, ss.user_esp, current_process->pid
-    );
+  log_error("process",
+            "eip %x: page fault %x vaddr %x esp %x pid %u\n",
+            ss.eip,
+            info.error_code,
+            vaddr,
+            ss.user_esp,
+            current_process->pid);
 
   if (ss.cs == (USER_MODE_CS | 3)) {
     uint32_t stb = current_process->mmap.stack_bottom;
     if (vaddr < stb && stb - vaddr < PAGE_SIZE) {
       uint32_t paddr = pmm_alloc(1);
-      if (paddr == 0) goto die;
+      if (paddr == 0)
+        goto die;
       uint32_t vaddr = stb - PAGE_SIZE;
-      page_table_entry_t flags; u_memset(&flags, 0, sizeof(flags));
-      flags.rw = 1; flags.user = 1;
+      page_table_entry_t flags;
+      u_memset(&flags, 0, sizeof(flags));
+      flags.rw = 1;
+      flags.user = 1;
       paging_result_t res = paging_map(vaddr, paddr, flags);
-      if (res != PAGING_OK) goto die;
+      if (res != PAGING_OK)
+        goto die;
       current_process->mmap.stack_bottom = vaddr;
       log_info("process", "grew the stack to %x for process %u\n", vaddr, current_process->pid);
       return;
@@ -191,12 +205,14 @@ static void scheduler_interrupt_handler(cpu_state_t cstate, idt_info_t info, sta
 {
   uint32_t eflags = interrupt_save_disable();
 
-  if (current_process) update_current_process_registers(cstate, sstate);
+  if (current_process)
+    update_current_process_registers(cstate, sstate);
 
   uint64_t current_time = pit_get_time();
   while (sleep_queue.size && current_time >= heap_peek(&sleep_queue)->key) {
     uint32_t pid = (uint32_t)heap_pop(&sleep_queue).value;
-    if (pids[pid].process) process_schedule(pids[pid].process);
+    if (pids[pid].process)
+      process_schedule(pids[pid].process);
   }
 
   process_switch_next();
@@ -232,10 +248,12 @@ uint32_t process_sleep(process_t *p, uint64_t wake_time)
 // Wait for a process to exit.
 uint8_t process_wait_pid(process_t *p, uint32_t pid)
 {
-  if (pid >= MAX_PROCESS_COUNT) return 1;
+  if (pid >= MAX_PROCESS_COUNT)
+    return 1;
   klock(&pids[pid].lock);
   if (pids[pid].process == NULL) {
-    kunlock(&pids[pid].lock); return 1;
+    kunlock(&pids[pid].lock);
+    return 1;
   }
   list_push_back(&pids[pid].waiters, (void *)p->pid);
   kunlock(&pids[pid].lock);
@@ -245,11 +263,14 @@ uint8_t process_wait_pid(process_t *p, uint32_t pid)
 // Send a signal to a process.
 uint8_t process_signal_pid(uint32_t pid, uint32_t signum)
 {
-  if (signum == 0) return 1;
-  if (pid >= MAX_PROCESS_COUNT) return 1;
+  if (signum == 0)
+    return 1;
+  if (pid >= MAX_PROCESS_COUNT)
+    return 1;
   klock(&pids[pid].lock);
   if (pids[pid].process == NULL) {
-    kunlock(&pids[pid].lock); return 1;
+    kunlock(&pids[pid].lock);
+    return 1;
   }
   pids[pid].process->next_signal = signum;
   if (pids[pid].process->signal_eip == 0 || signum == SIGKILL)
@@ -260,13 +281,15 @@ uint8_t process_signal_pid(uint32_t pid, uint32_t signum)
 
 // Get current process.
 process_t *process_current()
-{ return current_process; }
+{
+  return current_process;
+}
 
-#define CHECK_RESTORE_EFLAGS(err, msg, code)                                   \
-  if ((err)) {                                                                 \
-    log_error("process", msg "\n");                                            \
-    interrupt_restore(eflags);                                                 \
-    return (code);                                                             \
+#define CHECK_RESTORE_EFLAGS(err, msg, code)                                                       \
+  if ((err)) {                                                                                     \
+    log_error("process", msg "\n");                                                                \
+    interrupt_restore(eflags);                                                                     \
+    return (code);                                                                                 \
   }
 
 uint32_t kernel_stack_page_alloc()
@@ -286,7 +309,8 @@ uint32_t kernel_stack_page_alloc()
   CHECK_RESTORE_EFLAGS(kstack_vaddr == 0, "No memory.", ENOMEM);
   uint32_t kstack_paddr = pmm_alloc(1);
   CHECK_RESTORE_EFLAGS(kstack_paddr == 0, "No memory.", ENOMEM);
-  page_table_entry_t flags; u_memset(&flags, 0, sizeof(flags));
+  page_table_entry_t flags;
+  u_memset(&flags, 0, sizeof(flags));
   flags.rw = 1;
   paging_result_t res = paging_map(kstack_vaddr, kstack_paddr, flags);
   CHECK_RESTORE_EFLAGS(res != PAGING_OK, "Failed to map kernel stack.", res);
@@ -305,13 +329,16 @@ void kernel_stack_page_free(uint32_t addr)
 // Create the `init` process.
 uint32_t process_create_schedule_init(process_image_t img)
 {
-  process_t *init = kmalloc(sizeof(process_t)); CHECK(init == NULL, "No memory.", ENOMEM);
+  process_t *init = kmalloc(sizeof(process_t));
+  CHECK(init == NULL, "No memory.", ENOMEM);
   pids[0].process = init;
   u_memset(init, 0, sizeof(process_t));
-  init->wd = kmalloc(2); CHECK(init->wd == NULL, "No memory.", ENOMEM);
+  init->wd = kmalloc(2);
+  CHECK(init->wd == NULL, "No memory.", ENOMEM);
   u_memcpy(init->wd, "/", u_strlen("/") + 1);
 
-  page_directory_t kernel_pd; uint32_t kernel_cr3;
+  page_directory_t kernel_pd;
+  uint32_t kernel_cr3;
   paging_get_kernel_pd(&kernel_pd, &kernel_cr3);
   uint32_t err = paging_clone_process_directory(&(init->cr3), kernel_cr3);
   CHECK(err, "Failed to clone page directory.", err);
@@ -347,24 +374,23 @@ static uint32_t alloc_pid()
   return 0;
 }
 
-#define CHECK_RESTORE_EFLAGS_CR3(err, msg, code)                               \
-  if ((err)) {                                                                 \
-    log_error("process", msg "\n");                                            \
-    paging_set_cr3(cr3);                                                       \
-    interrupt_restore(eflags);                                                 \
-    return (code);                                                             \
+#define CHECK_RESTORE_EFLAGS_CR3(err, msg, code)                                                   \
+  if ((err)) {                                                                                     \
+    log_error("process", msg "\n");                                                                \
+    paging_set_cr3(cr3);                                                                           \
+    interrupt_restore(eflags);                                                                     \
+    return (code);                                                                                 \
   }
 
 // Fork a process.
-uint32_t process_fork(
-  process_t *child, process_t *process, uint8_t is_thread
-  )
+uint32_t process_fork(process_t *child, process_t *process, uint8_t is_thread)
 {
   u_memcpy(child, process, sizeof(process_t));
   kunlock(&child->fd_lock);
   child->in_kernel = 0;
   child->is_thread = is_thread;
-  child->wd = kmalloc(u_strlen(process->wd) + 1); CHECK(child->wd == NULL, "No memory.", ENOMEM);
+  child->wd = kmalloc(u_strlen(process->wd) + 1);
+  CHECK(child->wd == NULL, "No memory.", ENOMEM);
   u_memcpy(child->wd, process->wd, u_strlen(process->wd) + 1);
   child->pid = alloc_pid();
   CHECK(child->pid == 0, "Too many processes.", ENOMEM);
@@ -383,12 +409,16 @@ uint32_t process_fork(
     paging_set_cr3(process->cr3);
 
     uint32_t stack_vaddr = paging_prev_vaddr(1, process->mmap.text);
-    CHECK_RESTORE_EFLAGS_CR3(stack_vaddr == 0, "Failed to allocate thread stack virtual page.", ENOMEM);
+    CHECK_RESTORE_EFLAGS_CR3(
+      stack_vaddr == 0, "Failed to allocate thread stack virtual page.", ENOMEM);
     uint32_t stack_paddr = pmm_alloc(1);
-    CHECK_RESTORE_EFLAGS_CR3(stack_paddr == 0, "Failed to allocate thread stack physical page.", ENOMEM);
+    CHECK_RESTORE_EFLAGS_CR3(
+      stack_paddr == 0, "Failed to allocate thread stack physical page.", ENOMEM);
 
-    page_table_entry_t flags; u_memset(&flags, 0, sizeof(flags));
-    flags.rw = 1; flags.user = 1;
+    page_table_entry_t flags;
+    u_memset(&flags, 0, sizeof(flags));
+    flags.rw = 1;
+    flags.user = 1;
     paging_result_t res = paging_map(stack_vaddr, stack_paddr, flags);
     CHECK_RESTORE_EFLAGS_CR3(res != PAGING_OK, "Failed to map thread stack page.", res);
 
@@ -403,7 +433,8 @@ uint32_t process_fork(
   }
 
   for (uint32_t i = 0; i < MAX_PROCESS_FDS; ++i)
-    if (child->fds[i]) child->fds[i]->refcount++;
+    if (child->fds[i])
+      child->fds[i]->refcount++;
 
   uint32_t kstack_vaddr = kernel_stack_page_alloc();
   child->mmap.kernel_stack_bottom = kstack_vaddr;
@@ -425,15 +456,15 @@ uint32_t process_load(process_t *process, process_image_t img)
   CHECK_RESTORE_EFLAGS_CR3(err, "Failed to clear user address space.", err);
 
   uint32_t npages = u_page_align_up(img.text_len) >> PHYS_ADDR_OFFSET;
-  page_table_entry_t flags; u_memset(&flags, 0, sizeof(flags));
+  page_table_entry_t flags;
+  u_memset(&flags, 0, sizeof(flags));
   flags.user = 1;
   flags.rw = 1;
   for (uint32_t i = 0; i < npages; ++i) {
     uint32_t paddr = pmm_alloc(1);
     CHECK_RESTORE_EFLAGS_CR3(paddr == 0, "No memory.", ENOMEM);
-    paging_result_t res = paging_map(
-      (uint32_t)img.text_vaddr + (i << PHYS_ADDR_OFFSET), paddr, flags
-      );
+    paging_result_t res =
+      paging_map((uint32_t)img.text_vaddr + (i << PHYS_ADDR_OFFSET), paddr, flags);
     CHECK_RESTORE_EFLAGS_CR3(res != PAGING_OK, "Failed to map text pages.", res);
   }
 
@@ -443,9 +474,8 @@ uint32_t process_load(process_t *process, process_image_t img)
   for (uint32_t i = 0; i < npages; ++i) {
     uint32_t paddr = pmm_alloc(1);
     CHECK_RESTORE_EFLAGS_CR3(paddr == 0, "No memory.", ENOMEM);
-    paging_result_t res = paging_map(
-      (uint32_t)img.data_vaddr + (i << PHYS_ADDR_OFFSET), paddr, flags
-      );
+    paging_result_t res =
+      paging_map((uint32_t)img.data_vaddr + (i << PHYS_ADDR_OFFSET), paddr, flags);
     CHECK_RESTORE_EFLAGS_CR3(res != PAGING_OK, "Failed to map data pages.", res);
   }
 
@@ -486,7 +516,10 @@ uint32_t process_load(process_t *process, process_image_t img)
 void process_schedule(process_t *process)
 {
   uint32_t eflags = interrupt_save_disable();
-  if (process->list_node) { interrupt_restore(eflags); return; }
+  if (process->list_node) {
+    interrupt_restore(eflags);
+    return;
+  }
   list_push_front(&running_lists[process->priority], process);
   process->list_node = running_lists[process->priority].head;
   interrupt_restore(eflags);
@@ -496,7 +529,10 @@ void process_schedule(process_t *process)
 void process_unschedule(process_t *process)
 {
   uint32_t eflags = interrupt_save_disable();
-  if (process->list_node == NULL) { interrupt_restore(eflags); return; }
+  if (process->list_node == NULL) {
+    interrupt_restore(eflags);
+    return;
+  }
   list_remove(&running_lists[process->priority], process->list_node, 0);
   kfree(process->list_node);
   process->list_node = NULL;
@@ -506,8 +542,10 @@ void process_unschedule(process_t *process)
 // Kill a process.
 void process_kill(process_t *process)
 {
-  if (process == NULL || process == init_process) return;
-  if (process->has_ui) ui_kill(process);
+  if (process == NULL || process == init_process)
+    return;
+  if (process->has_ui)
+    ui_kill(process);
 
   // Disable interrupts here to avoid contesting FD/PID locks.
   uint32_t eflags = interrupt_save_disable();
@@ -515,7 +553,8 @@ void process_kill(process_t *process)
   // Close all FDs
   for (uint32_t i = 0; i < MAX_PROCESS_FDS; ++i) {
     process_fd_t *fd = process->fds[i];
-    if (fd == NULL) continue;
+    if (fd == NULL)
+      continue;
     fd->refcount--;
     if (fd->refcount == 0) {
       fs_close(&(fd->node));
@@ -529,8 +568,9 @@ void process_kill(process_t *process)
     list_node_t *head = pids[process->pid].waiters.head;
     uint32_t waiter_pid = (uint32_t)head->value;
     if (pids[waiter_pid].process) {
-      pids[waiter_pid].process->uregs.eax =
-        (process->exited & 1) | ((process->exit_status & 0x7fff) << 1) | ((process->next_signal & 0xFFFF) << 16);
+      pids[waiter_pid].process->uregs.eax = (process->exited & 1) |
+                                            ((process->exit_status & 0x7fff) << 1) |
+                                            ((process->next_signal & 0xFFFF) << 16);
       process_schedule(pids[waiter_pid].process);
     }
     list_remove(&pids[process->pid].waiters, head, 0);
@@ -561,7 +601,8 @@ void process_kill(process_t *process)
   } else {
     for (uint32_t va = process->mmap.stack_bottom; va < process->mmap.stack_top; va += PAGE_SIZE) {
       uint32_t pa = paging_get_paddr(va);
-      if (pa) pmm_free(pa, 1);
+      if (pa)
+        pmm_free(pa, 1);
       paging_unmap(va);
     }
   }
@@ -587,6 +628,8 @@ void process_kill(process_t *process)
 
   // If we just killed the current process, switch to the next process
   // instead of restoring interrupt state.
-  if (process == current_process) process_switch_next();
-  else interrupt_restore(eflags);
+  if (process == current_process)
+    process_switch_next();
+  else
+    interrupt_restore(eflags);
 }

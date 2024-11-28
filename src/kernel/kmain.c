@@ -5,47 +5,46 @@
 //
 // Author: Ajay Tatachar <ajaymt2@illinois.edu>
 
-#include "serial.h"
-#include "ps2.h"
-#include "tss.h"
+#include "ata.h"
+#include "constants.h"
+#include "elf.h"
+#include "fpu.h"
+#include "fs.h"
 #include "gdt.h"
 #include "idt.h"
+#include "interrupt.h"
+#include "kheap.h"
+#include "klock.h"
+#include "log.h"
+#include "multiboot.h"
+#include "paging.h"
 #include "pic.h"
 #include "pit.h"
-#include "interrupt.h"
-#include "paging.h"
 #include "pmm.h"
-#include "kheap.h"
-#include "fs.h"
 #include "process.h"
+#include "ps2.h"
+#include "serial.h"
 #include "syscall.h"
-#include "klock.h"
-#include "elf.h"
-#include "ata.h"
-#include "ustar.h"
-#include "fpu.h"
+#include "tss.h"
 #include "ui.h"
-#include "multiboot.h"
-#include "constants.h"
-#include "log.h"
+#include "ustar.h"
 #include "util.h"
 
 #define STACK_CHK_GUARD 0xe2dee396
 
 uintptr_t __stack_chk_guard = STACK_CHK_GUARD;
 void __attribute__((noreturn)) __stack_chk_fail(void)
-{ asm volatile ("xchg %bx, %bx"); while (1); }
+{
+  asm volatile("xchg %bx, %bx");
+  while (1)
+    ;
+}
 
-void page_fault_handler(
-  cpu_state_t cs, idt_info_t info, stack_state_t ss
-  )
+void page_fault_handler(cpu_state_t cs, idt_info_t info, stack_state_t ss)
 {
   uint32_t cr2;
-  asm volatile ("movl %%cr2, %0" : "=r"(cr2));
-  log_error(
-    "kmain", "eip %x: page fault %x vaddr %x\n",
-    ss.eip, info.error_code, cr2
-    );
+  asm volatile("movl %%cr2, %0" : "=r"(cr2));
+  log_error("kmain", "eip %x: page fault %x vaddr %x\n", ss.eip, info.error_code, cr2);
 }
 
 uint32_t debug_write(fs_node_t *n, uint32_t offset, uint32_t size, uint8_t *buf)
@@ -54,17 +53,16 @@ uint32_t debug_write(fs_node_t *n, uint32_t offset, uint32_t size, uint8_t *buf)
   return size;
 }
 
-#define CHECK(err, name) if ((err)) {                           \
-    log_error("kmain", "Failed to initialize " name "\n");      \
-  }                                                             \
+#define CHECK(err, name)                                                                           \
+  if ((err)) {                                                                                     \
+    log_error("kmain", "Failed to initialize " name "\n");                                         \
+  }
 
-void kmain(
-  uint32_t mb_info_addr,
-  uint32_t mb_magic_number,
-  page_directory_t kernel_pd,
-  uint32_t kvirt_start,
-  uint32_t kvirt_end
-  )
+void kmain(uint32_t mb_info_addr,
+           uint32_t mb_magic_number,
+           page_directory_t kernel_pd,
+           uint32_t kvirt_start,
+           uint32_t kvirt_end)
 {
   // Convert phyical addresses in the multiboot info structure
   // into virtual addresses.
@@ -115,7 +113,8 @@ void kmain(
 
   const uint32_t num_video_pages = (SCREENWIDTH * SCREENHEIGHT * sizeof(uint32_t)) >> 12;
   uint32_t video_vaddr = paging_next_vaddr(num_video_pages, KERNEL_START_VADDR);
-  page_table_entry_t flags; u_memset(&flags, 0, sizeof(flags));
+  page_table_entry_t flags;
+  u_memset(&flags, 0, sizeof(flags));
   flags.rw = 1;
   paging_result_t r;
   for (uint32_t i = 0; i < num_video_pages; ++i) {

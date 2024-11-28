@@ -9,8 +9,8 @@
 #define _MAKO_H_
 
 #include "stdint.h"
-#include <stddef.h>
 #include "sys/types.h"
+#include <stddef.h>
 
 typedef void (*thread_t)(void *);
 typedef volatile uint32_t *thread_lock_t;

@@ -8,33 +8,38 @@
 #ifndef _DS_H_
 #define _DS_H_
 
-#include <stddef.h>
 #include "../common/stdint.h"
+#include <stddef.h>
 
-typedef struct list_node_s {
+typedef struct list_node_s
+{
   void *value;
   struct list_node_s *next;
   struct list_node_s *prev;
 } list_node_t;
 
-typedef struct list_s {
+typedef struct list_s
+{
   list_node_t *head;
   list_node_t *tail;
   size_t size;
 } list_t;
 
-typedef struct tree_node_s {
+typedef struct tree_node_s
+{
   void *value;
   list_t *children;
   struct tree_node_s *parent;
 } tree_node_t;
 
-typedef struct heap_node_s {
+typedef struct heap_node_s
+{
   uint64_t key;
   void *value;
 } heap_node_t;
 
-typedef struct heap_s {
+typedef struct heap_s
+{
   heap_node_t *nodes;
   size_t capacity;
   size_t size;
@@ -58,7 +63,6 @@ heap_node_t heap_pop(heap_t *);
 void heap_push(heap_t *, uint64_t, void *);
 void heap_destroy(heap_t *);
 
-#define list_foreach(i, l)                                  \
-  for (list_node_t *i = (l)->head; i != NULL; i = i->next)
+#define list_foreach(i, l) for (list_node_t *i = (l)->head; i != NULL; i = i->next)
 
 #endif /* _DS_H_ */

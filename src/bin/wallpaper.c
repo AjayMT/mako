@@ -5,8 +5,8 @@
 //
 // Author: Ajay Tatachar <ajay.tatachar@gmail.com>
 
-#include <stdio.h>
 #include <errno.h>
+#include <stdio.h>
 #include <ui.h>
 
 int main(int argc, char *argv[])

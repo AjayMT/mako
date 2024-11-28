@@ -8,8 +8,8 @@
 #ifndef _UTIL_H_
 #define _UTIL_H_
 
-#include <stddef.h>
 #include "../common/stdint.h"
+#include <stddef.h>
 
 void *u_memset(void *, int32_t, size_t);
 void *u_memcpy(void *, const void *, size_t);

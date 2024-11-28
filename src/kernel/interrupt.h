@@ -12,14 +12,16 @@
 #include "idt.h"
 
 // IDT info struct.
-struct idt_info_s {
+struct idt_info_s
+{
   uint32_t idt_index;
   uint32_t error_code;
 } __attribute__((packed));
 typedef struct idt_info_s idt_info_t;
 
 // CPU state struct.
-struct cpu_state_s {
+struct cpu_state_s
+{
   uint32_t ds;
   uint32_t edi;
   uint32_t esi;
@@ -33,7 +35,8 @@ struct cpu_state_s {
 typedef struct cpu_state_s cpu_state_t;
 
 // Stack state struct.
-struct stack_state_s {
+struct stack_state_s
+{
   uint32_t eip;
   uint32_t cs;
   uint32_t eflags;

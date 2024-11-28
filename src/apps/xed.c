@@ -5,34 +5,34 @@
 //
 // Author: Ajay Tatachar <ajaymt2@illinois.edu>
 
-#include <stdint.h>
+#include "scancode.h"
+#include <errno.h>
+#include <fcntl.h>
+#include <mako.h>
+#include <math.h>
 #include <stddef.h>
+#include <stdint.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <stdio.h>
-#include <unistd.h>
-#include <fcntl.h>
-#include <errno.h>
-#include <math.h>
 #include <sys/stat.h>
 #include <ui.h>
-#include <mako.h>
-#include "scancode.h"
+#include <unistd.h>
 
 // FIXME remove thes
 #define FONTWIDTH 7
 #define FONTHEIGHT 14
 
-#define FOOTER_LEN    (SCREENWIDTH / FONTWIDTH)
+#define FOOTER_LEN (SCREENWIDTH / FONTWIDTH)
 #define MAX_NUM_LINES (SCREENHEIGHT / (FONTHEIGHT))
 
-static const uint32_t BG_COLOR          = 0xffffff;
-static const uint32_t DIVIDER_COLOR     = 0xb0b0b0;
-static const uint32_t CURSOR_COLOR      = 0x190081;
-static const uint32_t SELECTION_COLOR   = 0xb0d5ff;
-static const uint32_t PATH_HEIGHT       = 24;
-static const uint32_t FOOTER_HEIGHT     = 24;
-static const uint32_t TOTAL_PADDING     = 16;
+static const uint32_t BG_COLOR = 0xffffff;
+static const uint32_t DIVIDER_COLOR = 0xb0b0b0;
+static const uint32_t CURSOR_COLOR = 0x190081;
+static const uint32_t SELECTION_COLOR = 0xb0d5ff;
+static const uint32_t PATH_HEIGHT = 24;
+static const uint32_t FOOTER_HEIGHT = 24;
+static const uint32_t TOTAL_PADDING = 16;
 
 static const uint32_t DEFAULT_BUFFER_CAPACITY = 512;
 
@@ -52,12 +52,14 @@ static char *paste_buffer = NULL;
 static uint32_t paste_buffer_len = 0;
 
 // line array and position in the file
-typedef struct line_s {
+typedef struct line_s
+{
   uint32_t buffer_idx; // buffer index at the start of the line
-  int32_t len; // length of the line
+  int32_t len;         // length of the line
 } line_t;
 static line_t lines[MAX_NUM_LINES];
-typedef struct position_s {
+typedef struct position_s
+{
   uint32_t top_idx;
   uint32_t cursor_idx;
   uint32_t buffer_idx;
@@ -71,7 +73,8 @@ static uint8_t buffer_dirty = 0;
 static position_t SP = { 0, 0, 0 };
 
 // 'Command' (footer) state
-typedef enum {
+typedef enum
+{
   CS_NORMAL,
   CS_EDIT,
   CS_SELECT,
@@ -84,14 +87,17 @@ static char footer_text[FOOTER_LEN];
 static char footer_field[FOOTER_LEN];
 
 // set `n` pixels of the buffer to `b` starting at `p`
-__attribute__((always_inline))
-static inline void fill_color(uint32_t *p, uint32_t b, size_t n)
-{ for (uint32_t i = 0; i < n; ++i) p[i] = b; }
+__attribute__((always_inline)) static inline void fill_color(uint32_t *p, uint32_t b, size_t n)
+{
+  for (uint32_t i = 0; i < n; ++i)
+    p[i] = b;
+}
 
 // search a string for `c` backwards from `b` to `a`
 static char *rstrchr(char *a, char *b, char c)
 {
-  for (; b > a && *b != c; --b);
+  for (; b > a && *b != c; --b)
+    ;
   return b;
 }
 
@@ -136,19 +142,15 @@ static void render_footer()
 // Render all the text in the buffer, starting at line `line_idx`
 static void render_buffer(uint32_t line_idx)
 {
-  if (file_buffer == NULL) return;
-  uint32_t num_lines =
-    (window_h - PATH_HEIGHT - FOOTER_HEIGHT - TOTAL_PADDING) / FONTHEIGHT;
+  if (file_buffer == NULL)
+    return;
+  uint32_t num_lines = (window_h - PATH_HEIGHT - FOOTER_HEIGHT - TOTAL_PADDING) / FONTHEIGHT;
 
   // filling the buffer area with the background color {
   uint32_t *top_row =
-    ui_buf
-    + (window_w * (PATH_HEIGHT + (TOTAL_PADDING / 2) + line_idx * FONTHEIGHT));
-  uint32_t fill_size =
-    window_w * (
-      window_h - PATH_HEIGHT - FOOTER_HEIGHT -
-      (TOTAL_PADDING / 2) - (line_idx * FONTHEIGHT)
-      );
+    ui_buf + (window_w * (PATH_HEIGHT + (TOTAL_PADDING / 2) + line_idx * FONTHEIGHT));
+  uint32_t fill_size = window_w * (window_h - PATH_HEIGHT - FOOTER_HEIGHT - (TOTAL_PADDING / 2) -
+                                   (line_idx * FONTHEIGHT));
   if (line_idx == 0) {
     // exclude padding
     top_row = ui_buf + (window_w * (PATH_HEIGHT + 1));
@@ -160,7 +162,8 @@ static void render_buffer(uint32_t line_idx)
   // rendering the lines {
   uint32_t top = PATH_HEIGHT + (TOTAL_PADDING / 2);
   for (uint32_t i = line_idx; i < num_lines && lines[i].len >= 0; ++i) {
-    if (lines[i].len == 0) continue;
+    if (lines[i].len == 0)
+      continue;
     uint32_t y = top + i * FONTHEIGHT;
     char *line = strndup(file_buffer + lines[i].buffer_idx, lines[i].len);
     render_text(line, TOTAL_PADDING / 2, y);
@@ -179,17 +182,18 @@ static void render_selection()
     lower = P.buffer_idx;
     higher = SP.buffer_idx;
   }
-  if (higher == lower || higher < P.top_idx) return;
+  if (higher == lower || higher < P.top_idx)
+    return;
 
-  uint32_t num_lines =
-    (window_h - PATH_HEIGHT - FOOTER_HEIGHT - TOTAL_PADDING) / FONTHEIGHT;
+  uint32_t num_lines = (window_h - PATH_HEIGHT - FOOTER_HEIGHT - TOTAL_PADDING) / FONTHEIGHT;
   uint32_t line_len = (window_w - TOTAL_PADDING) / FONTWIDTH;
 
   // lower and upper bounds on screen
   uint32_t screen_start = 0;
   uint32_t screen_end = num_lines * line_len;
   for (uint32_t i = 0; i < num_lines && lines[i].len >= 0; ++i) {
-    if (lines[i].buffer_idx > higher) break;
+    if (lines[i].buffer_idx > higher)
+      break;
 
     if (lines[i].buffer_idx <= lower && lines[i].buffer_idx + lines[i].len > lower)
       screen_start = (i * line_len) + lower - lines[i].buffer_idx;
@@ -205,14 +209,16 @@ static void render_selection()
     uint32_t y = i / line_len;
     // next = end of current line or end of selected region
     next = i + line_len - x;
-    if (next > screen_end) next = screen_end;
+    if (next > screen_end)
+      next = screen_end;
     uint32_t next_x = next % line_len;
 
     // pixel x, y coordinates
     uint32_t screen_y = (TOTAL_PADDING / 2) + PATH_HEIGHT + (y * FONTHEIGHT);
     uint32_t screen_x = (TOTAL_PADDING / 2) + (x * FONTWIDTH);
     uint32_t x_limit = window_w - (TOTAL_PADDING / 2);
-    if (next_x) x_limit = (TOTAL_PADDING / 2) + (next_x * FONTWIDTH);
+    if (next_x)
+      x_limit = (TOTAL_PADDING / 2) + (next_x * FONTWIDTH);
 
     for (uint32_t draw_y = screen_y; draw_y < screen_y + FONTHEIGHT; ++draw_y) {
       uint32_t *line = ui_buf + (draw_y * window_w);
@@ -235,10 +241,10 @@ static void clear_selection()
 // `buf_idx` of the buffer.
 static void update_lines(uint32_t line_idx, uint32_t buf_idx)
 {
-  if (file_buffer == NULL) return;
+  if (file_buffer == NULL)
+    return;
 
-  uint32_t num_lines =
-    (window_h - PATH_HEIGHT - FOOTER_HEIGHT - TOTAL_PADDING) / FONTHEIGHT;
+  uint32_t num_lines = (window_h - PATH_HEIGHT - FOOTER_HEIGHT - TOTAL_PADDING) / FONTHEIGHT;
   uint32_t line_len = (window_w - TOTAL_PADDING) / FONTWIDTH;
 
   char *p = file_buffer + buf_idx;
@@ -250,7 +256,8 @@ static void update_lines(uint32_t line_idx, uint32_t buf_idx)
     if (next_nl == NULL && file_buffer_len - lines[i].buffer_idx < line_len) {
       // end of buffer is on this line
       lines[i].len = file_buffer_len - lines[i].buffer_idx;
-      ++i; break;
+      ++i;
+      break;
     } else if (next_nl == NULL || next_nl - p >= (int32_t)line_len) {
       // wrap text around without newline
       lines[i].len = line_len;
@@ -261,15 +268,15 @@ static void update_lines(uint32_t line_idx, uint32_t buf_idx)
     lines[i].len = next_nl - p + 1;
     p = next_nl + 1;
   }
-  for (; i <= num_lines; ++i) lines[i].len = -1;
+  for (; i <= num_lines; ++i)
+    lines[i].len = -1;
 }
 
 // redraw the cursor at position `P.cursor_idx`.
 // if `erase`, erase it from the old position `old_idx`
 static void update_cursor(uint32_t old_idx, uint8_t erase)
 {
-  uint32_t num_lines =
-    (window_h - PATH_HEIGHT - FOOTER_HEIGHT - TOTAL_PADDING) / FONTHEIGHT;
+  uint32_t num_lines = (window_h - PATH_HEIGHT - FOOTER_HEIGHT - TOTAL_PADDING) / FONTHEIGHT;
   uint32_t line_len = (window_w - TOTAL_PADDING) / FONTWIDTH;
 
   if (erase && old_idx / line_len < num_lines) {
@@ -284,11 +291,14 @@ static void update_cursor(uint32_t old_idx, uint8_t erase)
     for (uint32_t i = 0; i < FONTHEIGHT; ++i) {
       if (i == 0 || i == FONTHEIGHT - 1) {
         for (uint32_t j = x; j < x + FONTWIDTH; ++j) {
-          if (pos[j] == CURSOR_COLOR) pos[j] = BG_COLOR;
+          if (pos[j] == CURSOR_COLOR)
+            pos[j] = BG_COLOR;
         }
       } else {
-        if (pos[x] == CURSOR_COLOR) pos[x] = BG_COLOR;
-        if (pos[x + FONTWIDTH - 1] == CURSOR_COLOR) pos[x + FONTWIDTH - 1] = BG_COLOR;
+        if (pos[x] == CURSOR_COLOR)
+          pos[x] = BG_COLOR;
+        if (pos[x + FONTWIDTH - 1] == CURSOR_COLOR)
+          pos[x + FONTWIDTH - 1] = BG_COLOR;
       }
       pos += window_w;
     }
@@ -303,11 +313,14 @@ static void update_cursor(uint32_t old_idx, uint8_t erase)
   for (uint32_t i = 0; i < FONTHEIGHT; ++i) {
     if (i == 0 || i == FONTHEIGHT - 1) {
       for (uint32_t j = x; j < x + FONTWIDTH; ++j) {
-        if (pos[j] == BG_COLOR) pos[j] = CURSOR_COLOR;
+        if (pos[j] == BG_COLOR)
+          pos[j] = CURSOR_COLOR;
       }
     } else {
-      if (pos[x] == BG_COLOR) pos[x] = CURSOR_COLOR;
-      if (pos[x + FONTWIDTH - 1] == BG_COLOR) pos[x + FONTWIDTH - 1] = CURSOR_COLOR;
+      if (pos[x] == BG_COLOR)
+        pos[x] = CURSOR_COLOR;
+      if (pos[x + FONTWIDTH - 1] == BG_COLOR)
+        pos[x + FONTWIDTH - 1] = CURSOR_COLOR;
     }
     pos += window_w;
   }
@@ -320,11 +333,15 @@ static size_t save_file()
   if (fd == -1 && errno == ENOENT)
     fd = open(file_path, O_RDWR | O_CREAT, 0666);
 
-  if (fd == -1) return 0;
+  if (fd == -1)
+    return 0;
 
   struct stat st;
   int32_t res = fstat(fd, &st);
-  if (res || (st.st_dev & 1) == 0) { close(fd); return 0; }
+  if (res || (st.st_dev & 1) == 0) {
+    close(fd);
+    return 0;
+  }
 
   size_t w = write(fd, file_buffer, file_buffer_len);
   close(fd);
@@ -338,8 +355,10 @@ static uint8_t check_path(const char *path)
 {
   struct stat st;
   int32_t res = stat(path, &st);
-  if (res) return 0;
-  if (st.st_dev & 2) return 2;
+  if (res)
+    return 0;
+  if (st.st_dev & 2)
+    return 2;
   return 1;
 }
 
@@ -356,11 +375,15 @@ static void load_file()
   }
 
   FILE *f = fopen(file_path, "rw+");
-  if (f == NULL) goto fail;
+  if (f == NULL)
+    goto fail;
 
   struct stat st;
   int32_t res = fstat(f->fd, &st);
-  if (res || (st.st_dev & 1) == 0) { fclose(f); goto fail; }
+  if (res || (st.st_dev & 1) == 0) {
+    fclose(f);
+    goto fail;
+  }
 
   free(file_buffer);
   file_buffer = malloc(st.st_size + 1);
@@ -376,24 +399,25 @@ static void load_file()
 
 // Scroll up when deleting characters at the top of the buffer.
 // Updates `P.top_idx`.
-__attribute__((always_inline))
-static inline void backspace_scroll_up()
+__attribute__((always_inline)) static inline void backspace_scroll_up()
 {
-  if (P.top_idx <= 1) return;
+  if (P.top_idx <= 1)
+    return;
   char *p = rstrchr(file_buffer, file_buffer + P.top_idx - 2, '\n');
-  if (*p == '\n') ++p;
+  if (*p == '\n')
+    ++p;
   uint32_t pi = p - file_buffer;
   P.top_idx = pi;
 }
 
 // Scroll down to the next newline. Updates `P.top_idx`, returns
 // new cursor index.
-__attribute__((always_inline))
-static inline uint32_t newline_scroll_down()
+__attribute__((always_inline)) static inline uint32_t newline_scroll_down()
 {
   uint32_t line_len = (window_w - TOTAL_PADDING) / FONTWIDTH;
   char *n = strchr(file_buffer + P.top_idx, '\n');
-  if (n == NULL || n[1] == 0) return P.cursor_idx;
+  if (n == NULL || n[1] == 0)
+    return P.cursor_idx;
   uint32_t ni = n - file_buffer + 1;
   uint32_t num_lines_moved = ((ni - P.top_idx) / line_len) + 1;
   P.top_idx = ni;
@@ -403,14 +427,13 @@ static inline uint32_t newline_scroll_down()
 // Scroll up. Updates `lines`, `P`
 static void scroll_up()
 {
-  if (P.top_idx == 0) return;
+  if (P.top_idx == 0)
+    return;
   uint32_t line_len = (window_w - TOTAL_PADDING) / FONTWIDTH;
 
   // Scrolling {
   uint32_t previous_newline = P.top_idx - 1;
-  char *previous_previous_newline = rstrchr(
-    file_buffer, file_buffer + previous_newline - 1, '\n'
-    );
+  char *previous_previous_newline = rstrchr(file_buffer, file_buffer + previous_newline - 1, '\n');
   if (*previous_previous_newline == '\n') // we found a newline
     P.top_idx = previous_previous_newline - file_buffer + 1;
   else // we didn't find a newline, move to the beginning of the buffer
@@ -433,8 +456,10 @@ static void scroll_down()
 
   // Scrolling {
   char *next_newline = strchr(file_buffer + P.top_idx, '\n');
-  if (next_newline == NULL) return;
-  if (next_newline[1] == 0) return; // next newline is the last character
+  if (next_newline == NULL)
+    return;
+  if (next_newline[1] == 0)
+    return; // next newline is the last character
   uint32_t new_top_idx = next_newline - file_buffer + 1;
   uint32_t num_lines_moved = ((new_top_idx - P.top_idx) / line_len) + 1;
   P.top_idx = new_top_idx;
@@ -451,20 +476,22 @@ static void update_footer_text()
 {
   char *str = NULL;
   switch (cs) {
-  case CS_NORMAL:
-    str = "- :: [e]* | [v]+ | [p] | [s] | [o] | [q]";
-    break;
-  case CS_EDIT:
-    str = "* :: [ESC]-";
-    break;
-  case CS_SELECT:
-    str = "+ :: [ESC]- | [c] | [k]";
-    break;
-  case CS_CONFIRM_SAVE:
-    str = "Save? ([ESC]cancel) [y/n]"; break;
-  case CS_SAVE_PATH:
-  case CS_OPEN_PATH:
-    str = "Path: ([ESC]cancel)"; break;
+    case CS_NORMAL:
+      str = "- :: [e]* | [v]+ | [p] | [s] | [o] | [q]";
+      break;
+    case CS_EDIT:
+      str = "* :: [ESC]-";
+      break;
+    case CS_SELECT:
+      str = "+ :: [ESC]- | [c] | [k]";
+      break;
+    case CS_CONFIRM_SAVE:
+      str = "Save? ([ESC]cancel) [y/n]";
+      break;
+    case CS_SAVE_PATH:
+    case CS_OPEN_PATH:
+      str = "Path: ([ESC]cancel)";
+      break;
   }
   strncpy(footer_text, str, FOOTER_LEN);
 }
@@ -477,7 +504,8 @@ static void move_up()
   uint32_t cy = P.cursor_idx / line_len;
   uint32_t cx = P.cursor_idx % line_len;
 
-  if (cy == 0) return;
+  if (cy == 0)
+    return;
 
   P.cursor_idx -= line_len;
   --cy;
@@ -492,14 +520,15 @@ static void move_up()
 static void move_down()
 {
   uint32_t line_len = (window_w - TOTAL_PADDING) / FONTWIDTH;
-  uint32_t num_lines =
-    (window_h - PATH_HEIGHT - FOOTER_HEIGHT - TOTAL_PADDING) / FONTHEIGHT;
+  uint32_t num_lines = (window_h - PATH_HEIGHT - FOOTER_HEIGHT - TOTAL_PADDING) / FONTHEIGHT;
 
   uint32_t cy = P.cursor_idx / line_len;
   uint32_t cx = P.cursor_idx % line_len;
 
-  if (cy == num_lines - 1) return;
-  if (lines[cy + 1].len < 0) return;
+  if (cy == num_lines - 1)
+    return;
+  if (lines[cy + 1].len < 0)
+    return;
 
   P.cursor_idx += line_len;
   ++cy;
@@ -520,20 +549,29 @@ static void keyboard_handler(uint8_t code)
   if (code & 0x80) {
     code &= 0x7F;
     switch (code) {
-    case KB_SC_LSHIFT: lshift = 0; break;
-    case KB_SC_RSHIFT: rshift = 0; break;
+      case KB_SC_LSHIFT:
+        lshift = 0;
+        break;
+      case KB_SC_RSHIFT:
+        rshift = 0;
+        break;
     }
     return;
   }
 
   switch (code) {
-  case KB_SC_LSHIFT:   lshift = 1; return;
-  case KB_SC_RSHIFT:   rshift = 1; return;
-  case KB_SC_CAPSLOCK: capslock = !capslock; return;
+    case KB_SC_LSHIFT:
+      lshift = 1;
+      return;
+    case KB_SC_RSHIFT:
+      rshift = 1;
+      return;
+    case KB_SC_CAPSLOCK:
+      capslock = !capslock;
+      return;
   }
 
-  uint32_t num_lines =
-    (window_h - PATH_HEIGHT - FOOTER_HEIGHT - TOTAL_PADDING) / FONTHEIGHT;
+  uint32_t num_lines = (window_h - PATH_HEIGHT - FOOTER_HEIGHT - TOTAL_PADDING) / FONTHEIGHT;
   uint32_t line_len = (window_w - TOTAL_PADDING) / FONTWIDTH;
   uint32_t cursor_x = P.cursor_idx % line_len;
   uint32_t cursor_y = P.cursor_idx / line_len;
@@ -541,264 +579,287 @@ static void keyboard_handler(uint8_t code)
   uint8_t update = 1;
   uint8_t moved = 1;
 
-#define MOVEMENT                                                        \
-  switch (code) {                                                       \
-  case KB_SC_LEFT:                                                      \
-    if (file_buffer == NULL || P.buffer_idx == 0) { update = 0; break; } \
-    if (file_buffer[P.buffer_idx - 1] == '\n') { update = 0; break; }   \
-    --P.cursor_idx;                                                     \
-    --P.buffer_idx;                                                     \
-    update_cursor(old_cursor_idx, 1);                                   \
-    break;                                                              \
-  case KB_SC_RIGHT:                                                     \
-    if (file_buffer == NULL || P.buffer_idx == file_buffer_len) {       \
-      update = 0; break;                                                \
-    }                                                                   \
-    if (file_buffer[P.buffer_idx] == '\n') { update = 0; break; }       \
-    if (cursor_y == num_lines - 1 && cursor_x == line_len - 1) {        \
-      update = 0; break;                                                \
-    }                                                                   \
-    ++P.cursor_idx;                                                     \
-    ++P.buffer_idx;                                                     \
-    update_cursor(old_cursor_idx, 1);                                   \
-    break;                                                              \
-  case KB_SC_UP:                                                        \
-    if (file_buffer == NULL || P.buffer_idx == 0) { update = 0; break; } \
-    if (cursor_y == 0) {                                                \
-      scroll_up();                                                      \
-      render_buffer(0);                                                 \
-      update_cursor(old_cursor_idx, 0);                                 \
-      break;                                                            \
-    }                                                                   \
-    move_up();                                                          \
-    if (P.cursor_idx != old_cursor_idx)                                 \
-      update_cursor(old_cursor_idx, 1);                                 \
-    break;                                                              \
-  case KB_SC_DOWN:                                                      \
-    if (file_buffer == NULL) { update = 0; break; }                     \
-    if (cursor_y == num_lines - 1) {                                    \
-      scroll_down();                                                    \
-      render_buffer(0);                                                 \
-      update_cursor(old_cursor_idx, 0);                                 \
-      break;                                                            \
-    }                                                                   \
-    move_down();                                                        \
-    if (P.cursor_idx != old_cursor_idx)                                 \
-      update_cursor(old_cursor_idx, 1);                                 \
-    break;                                                              \
-  default: moved = 0;                                                   \
-  }                                                                     \
+#define MOVEMENT                                                                                   \
+  switch (code) {                                                                                  \
+    case KB_SC_LEFT:                                                                               \
+      if (file_buffer == NULL || P.buffer_idx == 0) {                                              \
+        update = 0;                                                                                \
+        break;                                                                                     \
+      }                                                                                            \
+      if (file_buffer[P.buffer_idx - 1] == '\n') {                                                 \
+        update = 0;                                                                                \
+        break;                                                                                     \
+      }                                                                                            \
+      --P.cursor_idx;                                                                              \
+      --P.buffer_idx;                                                                              \
+      update_cursor(old_cursor_idx, 1);                                                            \
+      break;                                                                                       \
+    case KB_SC_RIGHT:                                                                              \
+      if (file_buffer == NULL || P.buffer_idx == file_buffer_len) {                                \
+        update = 0;                                                                                \
+        break;                                                                                     \
+      }                                                                                            \
+      if (file_buffer[P.buffer_idx] == '\n') {                                                     \
+        update = 0;                                                                                \
+        break;                                                                                     \
+      }                                                                                            \
+      if (cursor_y == num_lines - 1 && cursor_x == line_len - 1) {                                 \
+        update = 0;                                                                                \
+        break;                                                                                     \
+      }                                                                                            \
+      ++P.cursor_idx;                                                                              \
+      ++P.buffer_idx;                                                                              \
+      update_cursor(old_cursor_idx, 1);                                                            \
+      break;                                                                                       \
+    case KB_SC_UP:                                                                                 \
+      if (file_buffer == NULL || P.buffer_idx == 0) {                                              \
+        update = 0;                                                                                \
+        break;                                                                                     \
+      }                                                                                            \
+      if (cursor_y == 0) {                                                                         \
+        scroll_up();                                                                               \
+        render_buffer(0);                                                                          \
+        update_cursor(old_cursor_idx, 0);                                                          \
+        break;                                                                                     \
+      }                                                                                            \
+      move_up();                                                                                   \
+      if (P.cursor_idx != old_cursor_idx)                                                          \
+        update_cursor(old_cursor_idx, 1);                                                          \
+      break;                                                                                       \
+    case KB_SC_DOWN:                                                                               \
+      if (file_buffer == NULL) {                                                                   \
+        update = 0;                                                                                \
+        break;                                                                                     \
+      }                                                                                            \
+      if (cursor_y == num_lines - 1) {                                                             \
+        scroll_down();                                                                             \
+        render_buffer(0);                                                                          \
+        update_cursor(old_cursor_idx, 0);                                                          \
+        break;                                                                                     \
+      }                                                                                            \
+      move_down();                                                                                 \
+      if (P.cursor_idx != old_cursor_idx)                                                          \
+        update_cursor(old_cursor_idx, 1);                                                          \
+      break;                                                                                       \
+    default:                                                                                       \
+      moved = 0;                                                                                   \
+  }
 
   if (cs == CS_NORMAL) {
     MOVEMENT;
     if (moved) {
-      if (update) ui_redraw_rect(0, 0, window_w, window_h);
+      if (update)
+        ui_redraw_rect(0, 0, window_w, window_h);
       return;
     }
     switch (code) {
-    case KB_SC_E:
-      cs = CS_EDIT;
-      update_footer_text();
-      render_footer();
-      break;
-    case KB_SC_V:
-      cs = CS_SELECT;
-      SP = P;
-      update_footer_text();
-      render_footer();
-      break;
-    case KB_SC_P:
-      if (paste_buffer == NULL) { update = 0; break; }
-      if (file_buffer == NULL || file_buffer_len >= file_buffer_capacity) {
-        file_buffer_capacity *= 2;
-        if (file_buffer_capacity == 0)
-          file_buffer_capacity = DEFAULT_BUFFER_CAPACITY;
-        file_buffer = realloc(file_buffer, file_buffer_capacity);
-      }
-      memmove(
-        file_buffer + P.buffer_idx + paste_buffer_len,
-        file_buffer + P.buffer_idx,
-        file_buffer_len - P.buffer_idx
-        );
-      file_buffer_len += paste_buffer_len;
-      file_buffer[file_buffer_len] = '\0';
-      memcpy(file_buffer + P.buffer_idx, paste_buffer, paste_buffer_len);
-      update_lines(cursor_y, lines[cursor_y].buffer_idx);
-      render_buffer(cursor_y);
-      update_cursor(old_cursor_idx, 0);
-      break;
-    case KB_SC_O:
-      if (buffer_dirty) {
-        cs = CS_CONFIRM_SAVE;
+      case KB_SC_E:
+        cs = CS_EDIT;
         update_footer_text();
         render_footer();
         break;
-      }
-      cs = CS_OPEN_PATH;
-      update_footer_text();
-      render_footer();
-      break;
-    case KB_SC_S:
-      if (file_path == NULL) {
-        cs = CS_SAVE_PATH;
+      case KB_SC_V:
+        cs = CS_SELECT;
+        SP = P;
         update_footer_text();
         render_footer();
         break;
-      }
-      if (save_file()) {
-        buffer_dirty = 0;
-        render_path();
-      }
-      break;
-    case KB_SC_Q:
-      if (buffer_dirty) {
-        cs = CS_CONFIRM_SAVE;
+      case KB_SC_P:
+        if (paste_buffer == NULL) {
+          update = 0;
+          break;
+        }
+        if (file_buffer == NULL || file_buffer_len >= file_buffer_capacity) {
+          file_buffer_capacity *= 2;
+          if (file_buffer_capacity == 0)
+            file_buffer_capacity = DEFAULT_BUFFER_CAPACITY;
+          file_buffer = realloc(file_buffer, file_buffer_capacity);
+        }
+        memmove(file_buffer + P.buffer_idx + paste_buffer_len,
+                file_buffer + P.buffer_idx,
+                file_buffer_len - P.buffer_idx);
+        file_buffer_len += paste_buffer_len;
+        file_buffer[file_buffer_len] = '\0';
+        memcpy(file_buffer + P.buffer_idx, paste_buffer, paste_buffer_len);
+        update_lines(cursor_y, lines[cursor_y].buffer_idx);
+        render_buffer(cursor_y);
+        update_cursor(old_cursor_idx, 0);
+        break;
+      case KB_SC_O:
+        if (buffer_dirty) {
+          cs = CS_CONFIRM_SAVE;
+          update_footer_text();
+          render_footer();
+          break;
+        }
+        cs = CS_OPEN_PATH;
         update_footer_text();
         render_footer();
         break;
-      }
-      if (window_w != SCREENWIDTH || window_h != SCREENHEIGHT)
-        exit(0);
-    default: update = 0;
+      case KB_SC_S:
+        if (file_path == NULL) {
+          cs = CS_SAVE_PATH;
+          update_footer_text();
+          render_footer();
+          break;
+        }
+        if (save_file()) {
+          buffer_dirty = 0;
+          render_path();
+        }
+        break;
+      case KB_SC_Q:
+        if (buffer_dirty) {
+          cs = CS_CONFIRM_SAVE;
+          update_footer_text();
+          render_footer();
+          break;
+        }
+        if (window_w != SCREENWIDTH || window_h != SCREENHEIGHT)
+          exit(0);
+      default:
+        update = 0;
     }
-    if (update) ui_redraw_rect(0, 0, window_w, window_h);
+    if (update)
+      ui_redraw_rect(0, 0, window_w, window_h);
     return;
   }
 
   if (cs == CS_EDIT) {
     MOVEMENT;
     if (moved) {
-      if (update) ui_redraw_rect(0, 0, window_w, window_h);
+      if (update)
+        ui_redraw_rect(0, 0, window_w, window_h);
       return;
     }
     char deleted = 0;
     char inserted = 0;
     uint32_t old_line_len = 0;
     switch (code) {
-    case KB_SC_ESC:
-      cs = CS_NORMAL;
-      update_footer_text();
-      render_footer();
-      break;
-    case KB_SC_BS:
-      if (file_buffer == NULL || P.buffer_idx == 0) { update = 0; break; }
-      deleted = file_buffer[P.buffer_idx - 1];
-      memmove(
-        file_buffer + P.buffer_idx - 1,
-        file_buffer + P.buffer_idx,
-        file_buffer_len - P.buffer_idx
-        );
-      --file_buffer_len;
-      --P.buffer_idx;
-      file_buffer[file_buffer_len] = '\0';
-      if (buffer_dirty == 0) {
-        buffer_dirty = 1;
-        render_path();
-      }
-      if (deleted == '\n') {
-        if (cursor_y == 0) {
-          backspace_scroll_up();
-          update_lines(0, P.top_idx);
-          render_buffer(0);
-          P.cursor_idx = P.buffer_idx - P.top_idx;
+      case KB_SC_ESC:
+        cs = CS_NORMAL;
+        update_footer_text();
+        render_footer();
+        break;
+      case KB_SC_BS:
+        if (file_buffer == NULL || P.buffer_idx == 0) {
+          update = 0;
+          break;
+        }
+        deleted = file_buffer[P.buffer_idx - 1];
+        memmove(file_buffer + P.buffer_idx - 1,
+                file_buffer + P.buffer_idx,
+                file_buffer_len - P.buffer_idx);
+        --file_buffer_len;
+        --P.buffer_idx;
+        file_buffer[file_buffer_len] = '\0';
+        if (buffer_dirty == 0) {
+          buffer_dirty = 1;
+          render_path();
+        }
+        if (deleted == '\n') {
+          if (cursor_y == 0) {
+            backspace_scroll_up();
+            update_lines(0, P.top_idx);
+            render_buffer(0);
+            P.cursor_idx = P.buffer_idx - P.top_idx;
+            update_cursor(old_cursor_idx, 0);
+            break;
+          }
+          old_line_len = lines[cursor_y - 1].len;
+          update_lines(cursor_y - 1, lines[cursor_y - 1].buffer_idx);
+          render_buffer(cursor_y - 1);
+          P.cursor_idx = ((cursor_y - 1) * line_len) + old_line_len - 1;
           update_cursor(old_cursor_idx, 0);
           break;
         }
-        old_line_len = lines[cursor_y - 1].len;
-        update_lines(cursor_y - 1, lines[cursor_y - 1].buffer_idx);
-        render_buffer(cursor_y - 1);
-        P.cursor_idx = ((cursor_y - 1) * line_len) + old_line_len - 1;
+        --P.cursor_idx;
+        cursor_y = P.cursor_idx / line_len;
+        update_lines(cursor_y, lines[cursor_y].buffer_idx);
+        render_buffer(cursor_y);
         update_cursor(old_cursor_idx, 0);
         break;
-      }
-      --P.cursor_idx;
-      cursor_y = P.cursor_idx / line_len;
-      update_lines(cursor_y, lines[cursor_y].buffer_idx);
-      render_buffer(cursor_y);
-      update_cursor(old_cursor_idx, 0);
-      break;
-    case KB_SC_TAB:
-      if (file_buffer == NULL || file_buffer_len >= file_buffer_capacity) {
-        file_buffer_capacity *= 2;
-        if (file_buffer_capacity == 0)
-          file_buffer_capacity = DEFAULT_BUFFER_CAPACITY;
-        file_buffer = realloc(file_buffer, file_buffer_capacity);
-      }
-      if (buffer_dirty == 0) {
-        buffer_dirty = 1;
-        render_path();
-      }
-      memmove(
-        file_buffer + P.buffer_idx + 2,
-        file_buffer + P.buffer_idx,
-        file_buffer_len - P.buffer_idx
-        );
-      file_buffer[P.buffer_idx] = ' ';
-      file_buffer[P.buffer_idx + 1] = ' ';
-      P.buffer_idx += 2;
-      file_buffer_len += 2;
-      file_buffer[file_buffer_len] = '\0';
-      if (cursor_y == num_lines - 1 && cursor_x >= line_len - 2) {
-        P.cursor_idx = newline_scroll_down();
-        P.cursor_idx += cursor_x == line_len - 1;
-        update_lines(0, P.top_idx);
-        render_buffer(0);
+      case KB_SC_TAB:
+        if (file_buffer == NULL || file_buffer_len >= file_buffer_capacity) {
+          file_buffer_capacity *= 2;
+          if (file_buffer_capacity == 0)
+            file_buffer_capacity = DEFAULT_BUFFER_CAPACITY;
+          file_buffer = realloc(file_buffer, file_buffer_capacity);
+        }
+        if (buffer_dirty == 0) {
+          buffer_dirty = 1;
+          render_path();
+        }
+        memmove(file_buffer + P.buffer_idx + 2,
+                file_buffer + P.buffer_idx,
+                file_buffer_len - P.buffer_idx);
+        file_buffer[P.buffer_idx] = ' ';
+        file_buffer[P.buffer_idx + 1] = ' ';
+        P.buffer_idx += 2;
+        file_buffer_len += 2;
+        file_buffer[file_buffer_len] = '\0';
+        if (cursor_y == num_lines - 1 && cursor_x >= line_len - 2) {
+          P.cursor_idx = newline_scroll_down();
+          P.cursor_idx += cursor_x == line_len - 1;
+          update_lines(0, P.top_idx);
+          render_buffer(0);
+          update_cursor(old_cursor_idx, 0);
+          break;
+        }
+        update_lines(cursor_y, lines[cursor_y].buffer_idx);
+        render_buffer(cursor_y);
+        P.cursor_idx += 2;
         update_cursor(old_cursor_idx, 0);
         break;
-      }
-      update_lines(cursor_y, lines[cursor_y].buffer_idx);
-      render_buffer(cursor_y);
-      P.cursor_idx += 2;
-      update_cursor(old_cursor_idx, 0);
-      break;
-    default:
-      if (file_buffer == NULL || file_buffer_len >= file_buffer_capacity) {
-        file_buffer_capacity *= 2;
-        if (file_buffer_capacity == 0)
-          file_buffer_capacity = DEFAULT_BUFFER_CAPACITY;
-        file_buffer = realloc(file_buffer, file_buffer_capacity);
-      }
-      inserted = scancode_to_ascii(code, lshift || rshift || capslock);
-      if (inserted == 0) { update = 0; break; }
-      memmove(
-        file_buffer + P.buffer_idx + 1,
-        file_buffer + P.buffer_idx,
-        file_buffer_len - P.buffer_idx
-        );
-      file_buffer[P.buffer_idx] = inserted;
-      ++P.buffer_idx;
-      ++file_buffer_len;
-      file_buffer[file_buffer_len] = '\0';
-      if (buffer_dirty == 0) {
-        buffer_dirty = 1;
-        render_path();
-      }
-      if (
-        cursor_y == num_lines - 1
-        && (cursor_x == line_len - 1 || inserted == '\n')
-        )
-      {
-        P.cursor_idx = newline_scroll_down();
-        update_lines(0, P.top_idx);
-        render_buffer(0);
+      default:
+        if (file_buffer == NULL || file_buffer_len >= file_buffer_capacity) {
+          file_buffer_capacity *= 2;
+          if (file_buffer_capacity == 0)
+            file_buffer_capacity = DEFAULT_BUFFER_CAPACITY;
+          file_buffer = realloc(file_buffer, file_buffer_capacity);
+        }
+        inserted = scancode_to_ascii(code, lshift || rshift || capslock);
+        if (inserted == 0) {
+          update = 0;
+          break;
+        }
+        memmove(file_buffer + P.buffer_idx + 1,
+                file_buffer + P.buffer_idx,
+                file_buffer_len - P.buffer_idx);
+        file_buffer[P.buffer_idx] = inserted;
+        ++P.buffer_idx;
+        ++file_buffer_len;
+        file_buffer[file_buffer_len] = '\0';
+        if (buffer_dirty == 0) {
+          buffer_dirty = 1;
+          render_path();
+        }
+        if (cursor_y == num_lines - 1 && (cursor_x == line_len - 1 || inserted == '\n')) {
+          P.cursor_idx = newline_scroll_down();
+          update_lines(0, P.top_idx);
+          render_buffer(0);
+          update_cursor(old_cursor_idx, 0);
+          break;
+        }
+        update_lines(cursor_y, lines[cursor_y].buffer_idx);
+        render_buffer(cursor_y);
+        if (inserted == '\n')
+          P.cursor_idx = (cursor_y + 1) * line_len;
+        else
+          ++P.cursor_idx;
         update_cursor(old_cursor_idx, 0);
         break;
-      }
-      update_lines(cursor_y, lines[cursor_y].buffer_idx);
-      render_buffer(cursor_y);
-      if (inserted == '\n') P.cursor_idx = (cursor_y + 1) * line_len;
-      else ++P.cursor_idx;
-      update_cursor(old_cursor_idx, 0);
-      break;
     }
-    if (update) ui_redraw_rect(0, 0, window_w, window_h);
+    if (update)
+      ui_redraw_rect(0, 0, window_w, window_h);
     return;
   }
 
   if (cs == CS_SELECT) {
     MOVEMENT;
     if (moved) {
-      if (!update) return;
+      if (!update)
+        return;
 
       clear_selection();
       render_selection();
@@ -813,188 +874,76 @@ static void keyboard_handler(uint8_t code)
       lower = P.buffer_idx;
       higher = SP.buffer_idx;
     }
-    uint32_t lower_cursor_idx =
-      P.cursor_idx < SP.cursor_idx
-      ? P.cursor_idx : SP.cursor_idx;
+    uint32_t lower_cursor_idx = P.cursor_idx < SP.cursor_idx ? P.cursor_idx : SP.cursor_idx;
     uint32_t lower_cursor_y = lower_cursor_idx / line_len;
     uint32_t selection_len = higher - lower;
 
-#define CLEAR                                   \
-    cs = CS_NORMAL;                             \
-    clear_selection();                          \
-    update_footer_text();                       \
-    render_footer();
+#define CLEAR                                                                                      \
+  cs = CS_NORMAL;                                                                                  \
+  clear_selection();                                                                               \
+  update_footer_text();                                                                            \
+  render_footer();
 
-#define COPY                                                    \
-    if (selection_len == 0) break;                              \
-    free(paste_buffer);                                         \
-    paste_buffer_len = selection_len;                           \
-    paste_buffer = malloc(selection_len + 1);                   \
-    memcpy(paste_buffer, file_buffer + lower, selection_len);   \
-    paste_buffer[selection_len] = '\0';
+#define COPY                                                                                       \
+  if (selection_len == 0)                                                                          \
+    break;                                                                                         \
+  free(paste_buffer);                                                                              \
+  paste_buffer_len = selection_len;                                                                \
+  paste_buffer = malloc(selection_len + 1);                                                        \
+  memcpy(paste_buffer, file_buffer + lower, selection_len);                                        \
+  paste_buffer[selection_len] = '\0';
 
     switch (code) {
-    case KB_SC_C:
-      COPY;
-      CLEAR;
-      break;
-    case KB_SC_K:
-      COPY;
-      memmove(
-        file_buffer + lower,
-        file_buffer + lower + selection_len,
-        file_buffer_len - lower - selection_len
-        );
-      file_buffer_len -= selection_len;
-      file_buffer[file_buffer_len] = '\0';
-      if (buffer_dirty == 0) {
-        buffer_dirty = 1;
-        render_path();
-      }
-      if (lower < P.top_idx) {
-        P = SP;
-        update_lines(0, P.top_idx);
-        render_buffer(0);
-        update_cursor(old_cursor_idx, 0);
-      } else {
-        P.buffer_idx = lower;
-        update_lines(lower_cursor_y, lines[lower_cursor_y].buffer_idx);
-        render_buffer(lower_cursor_y);
-        P.cursor_idx = lower_cursor_idx;
-        update_cursor(old_cursor_idx, 0);
-      }
-      CLEAR;
-      break;
-    case KB_SC_ESC: CLEAR; break;
-    default: update = 0;
+      case KB_SC_C:
+        COPY;
+        CLEAR;
+        break;
+      case KB_SC_K:
+        COPY;
+        memmove(file_buffer + lower,
+                file_buffer + lower + selection_len,
+                file_buffer_len - lower - selection_len);
+        file_buffer_len -= selection_len;
+        file_buffer[file_buffer_len] = '\0';
+        if (buffer_dirty == 0) {
+          buffer_dirty = 1;
+          render_path();
+        }
+        if (lower < P.top_idx) {
+          P = SP;
+          update_lines(0, P.top_idx);
+          render_buffer(0);
+          update_cursor(old_cursor_idx, 0);
+        } else {
+          P.buffer_idx = lower;
+          update_lines(lower_cursor_y, lines[lower_cursor_y].buffer_idx);
+          render_buffer(lower_cursor_y);
+          P.cursor_idx = lower_cursor_idx;
+          update_cursor(old_cursor_idx, 0);
+        }
+        CLEAR;
+        break;
+      case KB_SC_ESC:
+        CLEAR;
+        break;
+      default:
+        update = 0;
     }
 
-    if (update) ui_redraw_rect(0, 0, window_w, window_h);
+    if (update)
+      ui_redraw_rect(0, 0, window_w, window_h);
     return;
   }
 
   if (cs == CS_CONFIRM_SAVE) {
     switch (code) {
-    case KB_SC_Y:
-      if (file_path == NULL) {
-        cs = CS_SAVE_PATH;
-        update_footer_text();
-        render_footer();
-        break;
-      }
-      if (save_file()) {
-        buffer_dirty = 0;
-        render_path();
-        cs = CS_NORMAL;
-        update_footer_text();
-        render_footer();
-      }
-      break;
-    case KB_SC_N:
-      load_file();
-      buffer_dirty = 0;
-      P.buffer_idx = P.top_idx;
-      render_path();
-      update_lines(0, 0);
-      render_buffer(0);
-      P.cursor_idx = 0;
-      update_cursor(0, 0);
-      cs = CS_NORMAL;
-      update_footer_text();
-      render_footer();
-      break;
-    case KB_SC_ESC:
-      cs = CS_NORMAL;
-      update_footer_text();
-      render_footer();
-      break;
-    default: update = 0;
-    }
-    if (update) ui_redraw_rect(0, 0, window_w, window_h);
-    return;
-  }
-
-  size_t field_len = strlen(footer_field);
-  char field_char = 0;
-
-#define FIELD_INPUT(action) {                                           \
-    switch (code) {                                                     \
-    case KB_SC_ESC:                                                     \
-      memset(footer_field, 0, sizeof(footer_field));                    \
-      cs = CS_NORMAL;                                                   \
-      update_footer_text();                                             \
-      render_footer();                                                  \
-      break;                                                            \
-    case KB_SC_BS:                                                      \
-      if (field_len == 0) { update = 0; break; }                        \
-      footer_field[field_len - 1] = 0;                                  \
-      update_footer_text();                                             \
-      strcat(footer_text, footer_field);                                \
-      render_footer();                                                  \
-      break;                                                            \
-    case KB_SC_ENTER:                                                   \
-      action;                                                           \
-      break;                                                            \
-    default:                                                            \
-      field_char = scancode_to_ascii(code, lshift || rshift || capslock); \
-      if (field_char == 0 || field_len == FOOTER_LEN) {                 \
-        update = 0; break;                                              \
-      }                                                                 \
-      footer_field[field_len] = field_char;                             \
-      footer_field[field_len + 1] = 0;                                  \
-      update_footer_text();                                             \
-      strcat(footer_text, footer_field);                                \
-      render_footer();                                                  \
-      break;                                                            \
-    }                                                                   \
-  }
-
-  if (cs == CS_OPEN_PATH) {
-    FIELD_INPUT({
-        if (field_len == 0) { update = 0; break; }
-        uint8_t type = check_path(footer_field);
-        if (errno == ENOENT) {
-          FILE *f = fopen(footer_field, "rw+");
-          if (f == NULL) { update = 0; break; }
-          fclose(f);
-          type = check_path(footer_field);
+      case KB_SC_Y:
+        if (file_path == NULL) {
+          cs = CS_SAVE_PATH;
+          update_footer_text();
+          render_footer();
+          break;
         }
-        if (type == 0) { update = 0; break; }
-        if (type == 1) {
-          free(file_path);
-          char buf[1024];
-          resolve(buf, footer_field, 1024);
-          file_path = strdup(buf);
-        } else {
-          if (fork() == 0) {
-            char *args[2]; args[0] = footer_field; args[1] = NULL;
-            execve("/apps/dex", args, environ);
-            exit(1);
-          }
-          update = 0; break;
-        }
-        cs = CS_NORMAL;
-        update_footer_text();
-        render_footer();
-        memset(footer_field, 0, sizeof(footer_field));
-        load_file(); buffer_dirty = 0; P.buffer_idx = P.top_idx;
-        render_path();
-        update_lines(0, P.top_idx);
-        render_buffer(0);
-        P.cursor_idx = 0;
-        update_cursor(0, 0);
-      });
-    if (update) ui_redraw_rect(0, 0, window_w, window_h);
-    return;
-  }
-
-  if (cs == CS_SAVE_PATH) {
-    FIELD_INPUT({
-        if (field_len == 0) { update = 0; break; }
-        free(file_path);
-        char buf[1024];
-        resolve(buf, footer_field, 1024);
-        file_path = strdup(buf);
         if (save_file()) {
           buffer_dirty = 0;
           render_path();
@@ -1002,15 +951,155 @@ static void keyboard_handler(uint8_t code)
           update_footer_text();
           render_footer();
         }
-      });
-    if (update) ui_redraw_rect(0, 0, window_w, window_h);
+        break;
+      case KB_SC_N:
+        load_file();
+        buffer_dirty = 0;
+        P.buffer_idx = P.top_idx;
+        render_path();
+        update_lines(0, 0);
+        render_buffer(0);
+        P.cursor_idx = 0;
+        update_cursor(0, 0);
+        cs = CS_NORMAL;
+        update_footer_text();
+        render_footer();
+        break;
+      case KB_SC_ESC:
+        cs = CS_NORMAL;
+        update_footer_text();
+        render_footer();
+        break;
+      default:
+        update = 0;
+    }
+    if (update)
+      ui_redraw_rect(0, 0, window_w, window_h);
+    return;
+  }
+
+  size_t field_len = strlen(footer_field);
+  char field_char = 0;
+
+#define FIELD_INPUT(action)                                                                        \
+  {                                                                                                \
+    switch (code) {                                                                                \
+      case KB_SC_ESC:                                                                              \
+        memset(footer_field, 0, sizeof(footer_field));                                             \
+        cs = CS_NORMAL;                                                                            \
+        update_footer_text();                                                                      \
+        render_footer();                                                                           \
+        break;                                                                                     \
+      case KB_SC_BS:                                                                               \
+        if (field_len == 0) {                                                                      \
+          update = 0;                                                                              \
+          break;                                                                                   \
+        }                                                                                          \
+        footer_field[field_len - 1] = 0;                                                           \
+        update_footer_text();                                                                      \
+        strcat(footer_text, footer_field);                                                         \
+        render_footer();                                                                           \
+        break;                                                                                     \
+      case KB_SC_ENTER:                                                                            \
+        action;                                                                                    \
+        break;                                                                                     \
+      default:                                                                                     \
+        field_char = scancode_to_ascii(code, lshift || rshift || capslock);                        \
+        if (field_char == 0 || field_len == FOOTER_LEN) {                                          \
+          update = 0;                                                                              \
+          break;                                                                                   \
+        }                                                                                          \
+        footer_field[field_len] = field_char;                                                      \
+        footer_field[field_len + 1] = 0;                                                           \
+        update_footer_text();                                                                      \
+        strcat(footer_text, footer_field);                                                         \
+        render_footer();                                                                           \
+        break;                                                                                     \
+    }                                                                                              \
+  }
+
+  if (cs == CS_OPEN_PATH) {
+    FIELD_INPUT({
+      if (field_len == 0) {
+        update = 0;
+        break;
+      }
+      uint8_t type = check_path(footer_field);
+      if (errno == ENOENT) {
+        FILE *f = fopen(footer_field, "rw+");
+        if (f == NULL) {
+          update = 0;
+          break;
+        }
+        fclose(f);
+        type = check_path(footer_field);
+      }
+      if (type == 0) {
+        update = 0;
+        break;
+      }
+      if (type == 1) {
+        free(file_path);
+        char buf[1024];
+        resolve(buf, footer_field, 1024);
+        file_path = strdup(buf);
+      } else {
+        if (fork() == 0) {
+          char *args[2];
+          args[0] = footer_field;
+          args[1] = NULL;
+          execve("/apps/dex", args, environ);
+          exit(1);
+        }
+        update = 0;
+        break;
+      }
+      cs = CS_NORMAL;
+      update_footer_text();
+      render_footer();
+      memset(footer_field, 0, sizeof(footer_field));
+      load_file();
+      buffer_dirty = 0;
+      P.buffer_idx = P.top_idx;
+      render_path();
+      update_lines(0, P.top_idx);
+      render_buffer(0);
+      P.cursor_idx = 0;
+      update_cursor(0, 0);
+    });
+    if (update)
+      ui_redraw_rect(0, 0, window_w, window_h);
+    return;
+  }
+
+  if (cs == CS_SAVE_PATH) {
+    FIELD_INPUT({
+      if (field_len == 0) {
+        update = 0;
+        break;
+      }
+      free(file_path);
+      char buf[1024];
+      resolve(buf, footer_field, 1024);
+      file_path = strdup(buf);
+      if (save_file()) {
+        buffer_dirty = 0;
+        render_path();
+        cs = CS_NORMAL;
+        update_footer_text();
+        render_footer();
+      }
+    });
+    if (update)
+      ui_redraw_rect(0, 0, window_w, window_h);
     return;
   }
 }
 
 static void resize_handler(ui_event_t ev)
 {
-  if (ev.width == window_w && ev.height == window_h) return;
+  if (ev.width == window_w && ev.height == window_h)
+    return;
 
   window_w = ev.width;
   window_h = ev.height;
@@ -1018,7 +1107,8 @@ static void resize_handler(ui_event_t ev)
   memset(lines, 0, sizeof(lines));
 
   fill_color(ui_buf, BG_COLOR, window_w * window_h);
-  if (cs == CS_SELECT) cs = CS_NORMAL;
+  if (cs == CS_SELECT)
+    cs = CS_NORMAL;
   load_file();
   buffer_dirty = 0;
   update_lines(0, P.top_idx);
@@ -1040,17 +1130,20 @@ int main(int argc, char *argv[])
   if (argc > 1) {
     char buf[1024];
     int32_t res = resolve(buf, argv[1], 1024);
-    if (res == 0) file_path = strdup(buf);
+    if (res == 0)
+      file_path = strdup(buf);
   }
 
   memset(footer_text, 0, sizeof(footer_text));
   memset(footer_field, 0, sizeof(footer_field));
-  load_file(); buffer_dirty = 0;
+  load_file();
+  buffer_dirty = 0;
   cs = CS_NORMAL;
   update_footer_text();
 
   int32_t res = ui_acquire_window("xed");
-  if (res < 0) return 1;
+  if (res < 0)
+    return 1;
   ui_buf = (uint32_t *)res;
 
   ui_event_t ev;
@@ -1063,15 +1156,16 @@ int main(int argc, char *argv[])
 
   while (1) {
     res = ui_next_event(&ev);
-    if (res < 0) return 1;
+    if (res < 0)
+      return 1;
     switch (ev.type) {
-    case UI_EVENT_KEYBOARD:
-      keyboard_handler(ev.code);
-      break;
-    case UI_EVENT_RESIZE:
-      resize_handler(ev);
-      break;
-    default:;
+      case UI_EVENT_KEYBOARD:
+        keyboard_handler(ev.code);
+        break;
+      case UI_EVENT_RESIZE:
+        resize_handler(ev);
+        break;
+      default:;
     }
   }
 

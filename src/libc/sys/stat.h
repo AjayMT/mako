@@ -10,7 +10,8 @@
 
 #include "../stdint.h"
 
-struct stat {
+struct stat
+{
   uint16_t st_dev;
   uint16_t st_ino;
   uint32_t st_mode;

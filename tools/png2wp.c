@@ -1,10 +1,10 @@
 
 // PNG -> ".wp" wallpaper image converter using lodepng.
 
-#include <stdlib.h>
+#include "lodepng.h"
 #include <stdint.h>
 #include <stdio.h>
-#include "lodepng.h"
+#include <stdlib.h>
 
 int main(int argc, char *argv[])
 {
@@ -16,7 +16,8 @@ int main(int argc, char *argv[])
   char *input_path = argv[1];
   char *output_path = argv[2];
   FILE *output = fopen(output_path, "w");
-  if (output == NULL) return 1;
+  if (output == NULL)
+    return 1;
 
   uint8_t *image = NULL;
   unsigned w = 0;
@@ -40,7 +41,7 @@ int main(int argc, char *argv[])
     const uint8_t g = image[pixel_offset + 1];
     const uint8_t b = image[pixel_offset + 2];
     const uint32_t output_pixel =
-        (uint32_t)b | ((uint32_t)g << 8) | ((uint32_t)r << 16) | 0xff000000;
+      (uint32_t)b | ((uint32_t)g << 8) | ((uint32_t)r << 16) | 0xff000000;
     size_t n = fwrite(&output_pixel, sizeof(uint32_t), 1, output);
     if (n != 1) {
       printf("Failed to write output at pixel %u\n", i);

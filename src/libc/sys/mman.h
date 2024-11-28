@@ -8,8 +8,8 @@
 #ifndef _MMAN_H_
 #define _MMAN_H_
 
-#include <stddef.h>
 #include "types.h"
+#include <stddef.h>
 
 void *mmap(void *, size_t, int, int, int, off_t);
 

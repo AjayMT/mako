@@ -5,18 +5,18 @@
 //
 // Author: Ajay Tatachar <ajaymt2@illinois.edu>
 
-#include <stddef.h>
+#include "pit.h"
 #include "../common/stdint.h"
 #include "interrupt.h"
 #include "io.h"
-#include "pit.h"
 #include "log.h"
+#include <stddef.h>
 
 static const uint16_t PIT_CHANNEL_0_DATA = 0x40;
 static const uint16_t PIT_CHANNEL_1_DATA = 0x41;
 static const uint16_t PIT_CHANNEL_2_DATA = 0x42;
-static const uint16_t PIT_COMMAND        = 0x43;
-static const uint32_t PIT_FREQUENCY      = 0x1234de;
+static const uint16_t PIT_COMMAND = 0x43;
+static const uint32_t PIT_FREQUENCY = 0x1234de;
 
 static interrupt_handler_t handler = NULL;
 static uint32_t interval = 10;
@@ -25,7 +25,8 @@ static uint64_t ticks = 0;
 static void tick(cpu_state_t cs, idt_info_t info, stack_state_t ss)
 {
   ++ticks;
-  if (handler) handler(cs, info, ss);
+  if (handler)
+    handler(cs, info, ss);
 }
 
 // Initialize the PIT.
@@ -41,7 +42,9 @@ void pit_init()
 
 // Get and set interval (in milliseconds).
 uint32_t pit_get_interval()
-{ return interval; }
+{
+  return interval;
+}
 void pit_set_interval(uint32_t i)
 {
   interval = i;
@@ -52,8 +55,12 @@ void pit_set_interval(uint32_t i)
 }
 
 uint64_t pit_get_time()
-{ return ticks * interval; }
+{
+  return ticks * interval;
+}
 
 // Set interrupt handler.
 void pit_set_handler(interrupt_handler_t h)
-{ handler = h; }
+{
+  handler = h;
+}

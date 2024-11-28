@@ -5,59 +5,80 @@
 //
 // Author: Ajay Tatachar <ajaymt2@illinois.edu>
 
-#include <stddef.h>
-#include "../common/stdint.h"
-#include "../libc/stdlib.h"
-#include "../libc/mako.h"
-#include "../libc/errno.h"
-#include "../libc/_syscall.h"
 #include "ui.h"
+#include "../common/stdint.h"
 #include "../common/ui_font_data.h"
+#include "../libc/_syscall.h"
+#include "../libc/errno.h"
+#include "../libc/mako.h"
+#include "../libc/stdlib.h"
+#include <stddef.h>
 
 int32_t ui_acquire_window(const char *name)
 {
   // ((SCREENWIDTH / 2) * (SCREENHEIGHT / 2) * 4) / 0x1000
   uint32_t buf = pagealloc(((SCREENWIDTH >> 1) * (SCREENHEIGHT >> 1)) >> 10);
-  if (buf == 0) return -1;
+  if (buf == 0)
+    return -1;
 
   int32_t res = _syscall2(SYSCALL_UI_MAKE_RESPONDER, buf, (uint32_t)name);
-  if (res < 0) { errno = -res; return -1; }
+  if (res < 0) {
+    errno = -res;
+    return -1;
+  }
   return buf;
 }
 
 int32_t ui_redraw_rect(uint32_t x, uint32_t y, uint32_t w, uint32_t h)
 {
   int32_t res = _syscall4(SYSCALL_UI_REDRAW_RECT, x, y, w, h);
-  if (res < 0) { errno = -res; res = -1; }
+  if (res < 0) {
+    errno = -res;
+    res = -1;
+  }
   return res;
 }
 
 int32_t ui_next_event(ui_event_t *buf)
 {
   int32_t res = _syscall1(SYSCALL_UI_NEXT_EVENT, (uint32_t)buf);
-  if (res < 0) { errno = -res; res = -1; }
+  if (res < 0) {
+    errno = -res;
+    res = -1;
+  }
   return res;
 }
 
 int32_t ui_yield()
 {
   int32_t res = _syscall0(SYSCALL_UI_YIELD);
-  if (res < 0) { errno = -res; res = -1; }
+  if (res < 0) {
+    errno = -res;
+    res = -1;
+  }
   return res;
 }
 
 uint32_t ui_poll_events()
-{ return _syscall0(SYSCALL_UI_POLL_EVENTS); }
+{
+  return _syscall0(SYSCALL_UI_POLL_EVENTS);
+}
 
 int32_t ui_set_wallpaper(const char *path)
 {
   int32_t res = _syscall1(SYSCALL_UI_SET_WALLPAPER, (uint32_t)path);
-  if (res < 0) { errno = -res; res = -1; }
+  if (res < 0) {
+    errno = -res;
+    res = -1;
+  }
   return res;
 }
 
-static void render_char(uint32_t *buf, size_t buf_stride,
-                        struct font_char_info c, const uint8_t *font_data, unsigned font_height)
+static void render_char(uint32_t *buf,
+                        size_t buf_stride,
+                        struct font_char_info c,
+                        const uint8_t *font_data,
+                        unsigned font_height)
 {
   for (size_t y = 0; y < font_height; ++y) {
     for (size_t x = 0; x < c.width; ++x) {
@@ -67,7 +88,10 @@ static void render_char(uint32_t *buf, size_t buf_stride,
   }
 }
 
-static void select_font(struct font_char_info **char_info, uint8_t **data, unsigned *height, enum ui_font font)
+static void select_font(struct font_char_info **char_info,
+                        uint8_t **data,
+                        unsigned *height,
+                        enum ui_font font)
 {
   switch (font) {
     case UI_FONT_LUCIDA_GRANDE:
@@ -88,7 +112,11 @@ static void select_font(struct font_char_info **char_info, uint8_t **data, unsig
   }
 }
 
-void ui_render_text(uint32_t *buf, size_t buf_stride, const char *str, size_t len, enum ui_font font)
+void ui_render_text(uint32_t *buf,
+                    size_t buf_stride,
+                    const char *str,
+                    size_t len,
+                    enum ui_font font)
 {
   struct font_char_info *font_char_info;
   uint8_t *font_data;
@@ -98,16 +126,24 @@ void ui_render_text(uint32_t *buf, size_t buf_stride, const char *str, size_t le
   size_t x = 0;
   size_t y = 0;
   for (size_t i = 0; i < len; ++i) {
-    if (x >= buf_stride) break;
+    if (x >= buf_stride)
+      break;
 
     char c = 0;
     switch (str[i]) {
-    case '\n': y += font_height; x = 0; break;
-    case '\t': x += 4 * font_char_info[' ' - 32].width; break;
-    default: c = str[i];
+      case '\n':
+        y += font_height;
+        x = 0;
+        break;
+      case '\t':
+        x += 4 * font_char_info[' ' - 32].width;
+        break;
+      default:
+        c = str[i];
     }
 
-    if (c < 32 || c > 126) continue;
+    if (c < 32 || c > 126)
+      continue;
 
     uint32_t *p = buf + (y * buf_stride) + x;
     const struct font_char_info char_info = font_char_info[c - 32];

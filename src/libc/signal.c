@@ -5,24 +5,26 @@
 //
 // Author: Ajay Tatachar <ajaymt2@illinois.edu>
 
-#include "stdint.h"
-#include "string.h"
-#include "sys/types.h"
+#include "signal.h"
 #include "_syscall.h"
 #include "errno.h"
+#include "stdint.h"
 #include "stdlib.h"
-#include "signal.h"
+#include "string.h"
+#include "sys/types.h"
 
 static sig_t signal_handler_table[NUM_SIGNALS + 1];
 
 static void handle_sig()
 {
   uint32_t edi;
-  asm volatile ("movl %%edi, %0" : "=r"(edi));
-  if (edi == SIGKILL || edi == SIGSTOP) exit(0);
+  asm volatile("movl %%edi, %0" : "=r"(edi));
+  if (edi == SIGKILL || edi == SIGSTOP)
+    exit(0);
   if (signal_handler_table[edi])
     signal_handler_table[edi](edi);
-  else exit(1);
+  else
+    exit(1);
   _syscall0(SYSCALL_SIGNAL_RESUME);
 }
 
@@ -45,16 +47,21 @@ sig_t signal(int32_t num, sig_t handler)
 
 int32_t raise(int32_t num)
 {
-  if (signal_handler_table[num]) signal_handler_table[num](num);
+  if (signal_handler_table[num])
+    signal_handler_table[num](num);
   return 0;
 }
 
 int32_t signal_send(pid_t pid, int32_t num)
 {
   if (num == 0 || num > NUM_SIGNALS) {
-    errno = EINVAL; return -1;
+    errno = EINVAL;
+    return -1;
   }
   int32_t res = _syscall2(SYSCALL_SIGNAL_SEND, pid, (uint32_t)num);
-  if (res < 0) { errno = -res; res = -1; }
+  if (res < 0) {
+    errno = -res;
+    res = -1;
+  }
   return res;
 }

@@ -10,7 +10,8 @@
 
 #include "../common/stdint.h"
 
-struct tss_s {
+struct tss_s
+{
   uint16_t link;
   uint16_t reserved;
 

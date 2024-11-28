@@ -1,0 +1,5 @@
+---
+BasedOnStyle: Mozilla
+PointerAlignment: Right
+BreakAfterReturnType: Automatic
+ColumnLimit: 100

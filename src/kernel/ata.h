@@ -12,7 +12,8 @@
 #include "pci.h"
 
 // This is always the last PRDT entry.
-struct prd_s {
+struct prd_s
+{
   uint32_t buf_paddr;
   uint16_t transfer_size;
   uint16_t end;
@@ -20,13 +21,14 @@ struct prd_s {
 typedef struct prd_s prd_t;
 
 // ATA identification format.
-struct ata_identify_s {
+struct ata_identify_s
+{
   uint16_t flags;
   uint16_t unused1[9];
-  uint8_t  serial[20];
+  uint8_t serial[20];
   uint16_t unused2[3];
-  uint8_t  firmware[8];
-  uint8_t  model[40];
+  uint8_t firmware[8];
+  uint8_t model[40];
   uint16_t sectors_per_int;
   uint16_t unused3;
   uint16_t capabilities[2];
@@ -41,8 +43,10 @@ struct ata_identify_s {
 } __attribute__((packed));
 typedef struct ata_identify_s ata_identify_t;
 
-typedef struct {
-  struct {
+typedef struct
+{
+  struct
+  {
     uint16_t data;
     uint16_t error;
     uint16_t sector_count;

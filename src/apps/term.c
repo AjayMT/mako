@@ -6,8 +6,8 @@
 // Author: Ajay Tatachar <ajay.tatachar@gmail.com>
 
 #include <mako.h>
-#include <ui.h>
 #include <string.h>
+#include <ui.h>
 
 static uint32_t *ui_buf = NULL;
 
@@ -32,22 +32,24 @@ int main(int argc, char *argv[])
   priority(1);
 
   int32_t res = ui_acquire_window("term");
-  if (res < 0) return 1;
+  if (res < 0)
+    return 1;
   ui_buf = (uint32_t *)res;
 
   while (1) {
     ui_event_t ev;
     res = ui_next_event(&ev);
-    if (res < 0) return 1;
+    if (res < 0)
+      return 1;
     switch (ev.type) {
-    case UI_EVENT_KEYBOARD:
-      keyboard_handler(ev.code);
-      break;
-    case UI_EVENT_WAKE:
-    case UI_EVENT_RESIZE:
-      resize_handler(ev);
-      break;
-    default:;
+      case UI_EVENT_KEYBOARD:
+        keyboard_handler(ev.code);
+        break;
+      case UI_EVENT_WAKE:
+      case UI_EVENT_RESIZE:
+        resize_handler(ev);
+        break;
+      default:;
     }
   }
 

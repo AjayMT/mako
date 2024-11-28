@@ -8,7 +8,9 @@
 #include "locale.h"
 
 char *setlocale(int stub1, const char *stub2)
-{ return "en_US"; }
+{
+  return "en_US";
+}
 
 static struct lconv _en_US = {
   .decimal_point = ".",
@@ -32,4 +34,6 @@ static struct lconv _en_US = {
 };
 
 struct lconv *localeconv()
-{ return &_en_US; }
+{
+  return &_en_US;
+}

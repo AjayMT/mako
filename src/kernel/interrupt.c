@@ -5,10 +5,10 @@
 //
 // Author: Ajay Tatachar <ajaymt2@illinois.edu>
 
-#include "../common/stdint.h"
-#include "pic.h"
-#include "log.h"
 #include "interrupt.h"
+#include "../common/stdint.h"
+#include "log.h"
+#include "pic.h"
 
 // All registered interrupt handlers.
 static interrupt_handler_t registered_handlers[IDT_NUM_ENTRIES];
@@ -21,9 +21,7 @@ void interrupt_init()
 }
 
 // Register an interrupt handler.
-uint32_t register_interrupt_handler(
-  uint32_t index, interrupt_handler_t handler
-  )
+uint32_t register_interrupt_handler(uint32_t index, interrupt_handler_t handler)
 {
   if (index >= IDT_NUM_ENTRIES || registered_handlers[index])
     return 1;
@@ -35,15 +33,14 @@ uint32_t register_interrupt_handler(
 // Unregister an interrupt handler.
 uint8_t unregister_interrupt_handler(uint32_t index)
 {
-  if (index >= IDT_NUM_ENTRIES) return 1;
+  if (index >= IDT_NUM_ENTRIES)
+    return 1;
   registered_handlers[index] = 0;
   return 0;
 }
 
 // Forward interrupts to registered handler.
-void forward_interrupt(
-  cpu_state_t c_state, idt_info_t info, stack_state_t s_state
-  )
+void forward_interrupt(cpu_state_t c_state, idt_info_t info, stack_state_t s_state)
 {
   // Send acknowledgement to PIC for IRQs.
   if (info.idt_index >= 32)

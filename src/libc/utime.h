@@ -11,7 +11,8 @@
 #include "stdint.h"
 #include "sys/types.h"
 
-struct utimbuf {
+struct utimbuf
+{
   time_t actime;
   time_t modtime;
 };

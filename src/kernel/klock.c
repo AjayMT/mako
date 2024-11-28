@@ -5,13 +5,13 @@
 //
 // Author: Ajay Tatachar <ajaymt2@illinois.edu>
 
-#include "../common/stdint.h"
-#include "interrupt.h"
-#include "process.h"
-#include "constants.h"
-#include "util.h"
-#include "log.h"
 #include "klock.h"
+#include "../common/stdint.h"
+#include "constants.h"
+#include "interrupt.h"
+#include "log.h"
+#include "process.h"
+#include "util.h"
 
 void klock_wait(process_registers_t regs)
 {
@@ -23,4 +23,6 @@ void klock_wait(process_registers_t regs)
 }
 
 void kunlock(klock_t lock)
-{ *lock = 0; }
+{
+  *lock = 0;
+}

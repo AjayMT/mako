@@ -9,9 +9,9 @@
 #define _PROCESS_H_
 
 #include "../common/stdint.h"
-#include "interrupt.h"
-#include "fs.h"
 #include "ds.h"
+#include "fs.h"
+#include "interrupt.h"
 
 #define MAX_PROCESS_COUNT 64
 #define MAX_PROCESS_PRIORITY 2
@@ -20,7 +20,8 @@
 
 // Registers struct to save the state of a process.
 // The order of fields is important -- see process.s.
-struct process_registers_s {
+struct process_registers_s
+{
   uint32_t eax;
   uint32_t ebx;
   uint32_t ecx;
@@ -37,7 +38,8 @@ struct process_registers_s {
 typedef struct process_registers_s process_registers_t;
 
 // Mapped memory regions associated with each process.
-typedef struct process_mmap_s {
+typedef struct process_mmap_s
+{
   uint32_t text;
   uint32_t data;
   uint32_t heap;
@@ -48,7 +50,8 @@ typedef struct process_mmap_s {
 } process_mmap_t;
 
 // Process image structs used to load binaries.
-typedef struct process_image_s {
+typedef struct process_image_s
+{
   uint32_t entry;
   uint8_t *text;
   uint32_t text_len;
@@ -59,7 +62,8 @@ typedef struct process_image_s {
 } process_image_t;
 
 // File descriptor.
-typedef struct process_fd_s {
+typedef struct process_fd_s
+{
   // TODO protect offset and refcount with a lock
   fs_node_t node;
   uint32_t offset;
@@ -67,7 +71,8 @@ typedef struct process_fd_s {
 } process_fd_t;
 
 // Process structure.
-typedef struct process_s {
+typedef struct process_s
+{
   uint32_t pid;
   uint32_t gid;
   uint8_t is_thread;
@@ -99,7 +104,8 @@ typedef struct process_s {
 } process_t;
 
 // Process status structs used by waitpid
-typedef struct {
+typedef struct
+{
   uint32_t parent_pid;
   list_t waiters; // list of pids
   process_t *process;

@@ -1,10 +1,10 @@
 
 // PNG -> C array bitmap converter using lodepng.
 
-#include <stdlib.h>
+#include "lodepng.h"
 #include <stdint.h>
 #include <stdio.h>
-#include "lodepng.h"
+#include <stdlib.h>
 
 int main(int argc, char *argv[])
 {
@@ -35,7 +35,7 @@ int main(int argc, char *argv[])
     const uint8_t b = image[pixel_offset + 2];
     const uint8_t a = image[pixel_offset + 3];
     const uint32_t output_pixel =
-        (uint32_t)b | ((uint32_t)g << 8) | ((uint32_t)r << 16) | ((uint32_t)a << 24);
+      (uint32_t)b | ((uint32_t)g << 8) | ((uint32_t)r << 16) | ((uint32_t)a << 24);
     printf("  0x%x,\n", output_pixel);
   }
 

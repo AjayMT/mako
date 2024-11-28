@@ -5,22 +5,24 @@
 //
 // Author: Ajay Tatachar <ajaymt2@illinois.edu>
 
-#include <stdio.h>
-#include <sys/stat.h>
 #include <stdint.h>
+#include <stdio.h>
 #include <stdlib.h>
+#include <sys/stat.h>
 
 int main(int argc, char *argv[])
 {
-  if (argc <= 1) return 1;
+  if (argc <= 1)
+    return 1;
 
   char *path = argv[1];
   struct stat buf;
   int32_t res = stat(path, &buf);
-  if (res) return 1;
+  if (res)
+    return 1;
 
   char *text = malloc(buf.st_size + 1);
-  FILE* f = fopen(path, "r");
+  FILE *f = fopen(path, "r");
   fread(text, buf.st_size, 1, f);
   text[buf.st_size] = 0;
 

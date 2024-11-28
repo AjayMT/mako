@@ -5,24 +5,23 @@
 //
 // Author: Ajay Tatachar <ajaymt2@illinois.edu>
 
-#include "../common/stdint.h"
-#include "process.h"
-#include "kheap.h"
-#include "../common/errno.h"
-#include "util.h"
-#include "log.h"
 #include "elf.h"
+#include "../common/errno.h"
+#include "../common/stdint.h"
+#include "kheap.h"
+#include "log.h"
+#include "process.h"
+#include "util.h"
 
-#define CHECK(err, msg, code) if ((err)) {      \
-    log_error("elf", msg "\n"); return (code);  \
+#define CHECK(err, msg, code)                                                                      \
+  if ((err)) {                                                                                     \
+    log_error("elf", msg "\n");                                                                    \
+    return (code);                                                                                 \
   }
 
 uint8_t elf_is_valid(uint8_t *buf)
 {
-  return buf[0] == ELFMAG0
-    && buf[1] == ELFMAG1
-    && buf[2] == ELFMAG2
-    && buf[3] == ELFMAG3;
+  return buf[0] == ELFMAG0 && buf[1] == ELFMAG1 && buf[2] == ELFMAG2 && buf[3] == ELFMAG3;
 }
 
 uint8_t elf_load(process_image_t *img, uint8_t *buf)
@@ -41,9 +40,9 @@ uint8_t elf_load(process_image_t *img, uint8_t *buf)
 
   img->entry = ehdr->e_entry;
   for (uint32_t idx = 0; idx < ehdr->e_phnum; idx++) {
-    Elf32_Phdr *phdr = (Elf32_Phdr *)(buf + ehdr->e_phoff
-                                      + (idx * ehdr->e_phentsize));
-    if (phdr->p_type != PT_LOAD) continue;
+    Elf32_Phdr *phdr = (Elf32_Phdr *)(buf + ehdr->e_phoff + (idx * ehdr->e_phentsize));
+    if (phdr->p_type != PT_LOAD)
+      continue;
 
     if (phdr->p_flags & PF_X) { // Text section.
       img->text_vaddr = phdr->p_vaddr;
@@ -52,9 +51,7 @@ uint8_t elf_load(process_image_t *img, uint8_t *buf)
       CHECK(img->text == NULL, "No memory.", ENOMEM);
       u_memcpy(img->text, buf + phdr->p_offset, phdr->p_filesz);
       if (phdr->p_memsz > phdr->p_filesz)
-        u_memset(
-          img->text + phdr->p_filesz, 0, phdr->p_memsz - phdr->p_filesz
-          );
+        u_memset(img->text + phdr->p_filesz, 0, phdr->p_memsz - phdr->p_filesz);
       continue;
     }
 
@@ -65,9 +62,7 @@ uint8_t elf_load(process_image_t *img, uint8_t *buf)
     CHECK(img->data == NULL, "No memory.", ENOMEM);
     u_memcpy(img->data, buf + phdr->p_offset, phdr->p_filesz);
     if (phdr->p_memsz > phdr->p_filesz)
-      u_memset(
-        img->data + phdr->p_filesz, 0, phdr->p_memsz - phdr->p_filesz
-        );
+      u_memset(img->data + phdr->p_filesz, 0, phdr->p_memsz - phdr->p_filesz);
   }
 
   return 0;

@@ -8,9 +8,9 @@
 #ifndef _SIGNAL_H_
 #define _SIGNAL_H_
 
+#include "../common/signal.h"
 #include "stdint.h"
 #include "sys/types.h"
-#include "../common/signal.h"
 
 #define SIG_DFL NULL
 

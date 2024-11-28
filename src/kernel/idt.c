@@ -5,34 +5,36 @@
 //
 // Author: Ajay Tatachar <ajaymt2@illinois.edu>
 
+#include "idt.h"
 #include "../common/stdint.h"
 #include "constants.h"
 #include "gdt.h"
-#include "idt.h"
 
 // TODO documentation.
 
 // IDT Entry struct.
-struct idt_gate_s {
-  uint16_t offset_1;  // Lower 16 bits of offset.
-  uint16_t selector;  // Code segment selector in the GDT.
-  uint8_t zero;       // Unused, set to 0.
-  uint8_t type_attr;  // Type and attributes.
-  uint16_t offset_2;  // Higher 16 bits of offset.
+struct idt_gate_s
+{
+  uint16_t offset_1; // Lower 16 bits of offset.
+  uint16_t selector; // Code segment selector in the GDT.
+  uint8_t zero;      // Unused, set to 0.
+  uint8_t type_attr; // Type and attributes.
+  uint16_t offset_2; // Higher 16 bits of offset.
 } __attribute__((packed));
 typedef struct idt_gate_s idt_gate_t;
 
 // Struct into which LIDT loads the IDT.
-struct idt_ptr_s {
-  uint16_t limit;  // Size of the IDT.
-  uint32_t base;   // Base address of the IDT.
+struct idt_ptr_s
+{
+  uint16_t limit; // Size of the IDT.
+  uint32_t base;  // Base address of the IDT.
 } __attribute__((packed));
 typedef struct idt_ptr_s idt_ptr_t;
 
 // Constants.
-static const uint8_t IDT_INTERRUPT_GATE_TYPE       = 0;
-static const uint8_t IDT_TRAP_GATE_TYPE            = 1;
-static const uint32_t IDT_TIMER_INTERRUPT_INDEX    = 0x20;
+static const uint8_t IDT_INTERRUPT_GATE_TYPE = 0;
+static const uint8_t IDT_TRAP_GATE_TYPE = 1;
+static const uint32_t IDT_TIMER_INTERRUPT_INDEX = 0x20;
 static const uint32_t IDT_KEYBOARD_INTERRUPT_INDEX = 0x21;
 
 // The IDT.
@@ -85,9 +87,7 @@ void interrupt_handler_47();
 void interrupt_handler_syscall();
 
 // Create an entry in the table.
-static void idt_create_gate(
-  uint32_t index, uint32_t offset, uint8_t type,uint8_t privilege_level
-  )
+static void idt_create_gate(uint32_t index, uint32_t offset, uint8_t type, uint8_t privilege_level)
 {
   idt_entries[index].offset_1 = offset & 0x0000FFFF;
   idt_entries[index].offset_2 = (offset >> 16) & 0x0000FFFF;
@@ -96,12 +96,7 @@ static void idt_create_gate(
 
   // TODO document this.
   idt_entries[index].type_attr =
-    (0x01 << 7)
-    | ((privilege_level & 0x03) << 5)
-    | (0x01 << 3)
-    | (0x01 << 2)
-    | (0x01 << 1)
-    | type;
+    (0x01 << 7) | ((privilege_level & 0x03) << 5) | (0x01 << 3) | (0x01 << 2) | (0x01 << 1) | type;
 }
 
 // Initialize the IDT.
@@ -111,10 +106,8 @@ void idt_init()
   table_ptr.limit = sizeof(idt_gate_t) * IDT_NUM_ENTRIES;
   table_ptr.base = (uint32_t)&idt_entries;
 
-#define IDT_CREATE_GATE(i)                                      \
-  idt_create_gate(                                              \
-    i, (uint32_t)interrupt_handler_##i, IDT_TRAP_GATE_TYPE, PL0 \
-    );
+#define IDT_CREATE_GATE(i)                                                                         \
+  idt_create_gate(i, (uint32_t)interrupt_handler_##i, IDT_TRAP_GATE_TYPE, PL0);
 
   // Create IDT gates for declared interrupts.
   // Protected mode exceptions.
@@ -158,12 +151,7 @@ void idt_init()
   IDT_CREATE_GATE(47);
 
   // Syscall.
-  idt_create_gate(
-    SYSCALL_INT_IDX,
-    (uint32_t)interrupt_handler_syscall,
-    IDT_TRAP_GATE_TYPE,
-    PL3
-    );
+  idt_create_gate(SYSCALL_INT_IDX, (uint32_t)interrupt_handler_syscall, IDT_TRAP_GATE_TYPE, PL3);
 
   idt_load((uint32_t)&table_ptr);
 }

@@ -5,12 +5,12 @@
 //
 // Author: Ajay Tatachar <ajaymt2@illinois.edu>
 
-#include <stddef.h>
+#include "ds.h"
 #include "../common/stdint.h"
 #include "kheap.h"
-#include "util.h"
 #include "log.h"
-#include "ds.h"
+#include "util.h"
+#include <stddef.h>
 
 // We assume everything has been allocated with kmalloc.
 
@@ -36,19 +36,24 @@ void list_push_back(list_t *list, void *value)
   u_memset(new_tail, 0, sizeof(list_node_t));
   new_tail->value = value;
   new_tail->prev = list->tail;
-  if (list->tail != NULL) list->tail->next = new_tail;
+  if (list->tail != NULL)
+    list->tail->next = new_tail;
   list->tail = new_tail;
-  if (list->head == NULL) list->head = new_tail;
+  if (list->head == NULL)
+    list->head = new_tail;
   ++(list->size);
 }
 
 void list_pop_back(list_t *list)
 {
-  if (list->tail == NULL) return;
+  if (list->tail == NULL)
+    return;
   list_node_t *old_tail = list->tail;
   list->tail = old_tail->prev;
-  if (list->tail) list->tail->next = NULL;
-  if (list->head == old_tail) list->head = old_tail->next;
+  if (list->tail)
+    list->tail->next = NULL;
+  if (list->head == old_tail)
+    list->head = old_tail->next;
   list_destroy_nodes(old_tail);
   --(list->size);
 }
@@ -59,20 +64,25 @@ void list_push_front(list_t *list, void *value)
   u_memset(new_head, 0, sizeof(list_node_t));
   new_head->value = value;
   new_head->next = list->head;
-  if (list->head != NULL) list->head->prev = new_head;
+  if (list->head != NULL)
+    list->head->prev = new_head;
   list->head = new_head;
-  if (list->tail == NULL) list->tail = new_head;
+  if (list->tail == NULL)
+    list->tail = new_head;
   ++(list->size);
 }
 
 void list_pop_front(list_t *list)
 {
-  if (list->head == NULL) return;
+  if (list->head == NULL)
+    return;
   list_node_t *old_head = list->head;
   list->head = old_head->next;
-  if (list->head) list->head->prev = NULL;
+  if (list->head)
+    list->head->prev = NULL;
   old_head->next = NULL;
-  if (list->tail == old_head) list->tail = old_head->prev;
+  if (list->tail == old_head)
+    list->tail = old_head->prev;
   list_destroy_nodes(old_head);
   --(list->size);
 }
@@ -85,8 +95,10 @@ void list_insert_after(list_t *list, list_node_t *node, void *value)
   new_node->next = node->next;
   new_node->value = value;
   node->next = new_node;
-  if (new_node->next) new_node->next->prev = new_node;
-  else list->tail = new_node;
+  if (new_node->next)
+    new_node->next->prev = new_node;
+  else
+    list->tail = new_node;
   ++(list->size);
 }
 
@@ -98,20 +110,27 @@ void list_insert_before(list_t *list, list_node_t *node, void *value)
   new_node->prev = node->prev;
   new_node->value = value;
   node->prev = new_node;
-  if (new_node->prev) new_node->prev->next = new_node;
-  else list->head = new_node;
+  if (new_node->prev)
+    new_node->prev->next = new_node;
+  else
+    list->head = new_node;
   ++(list->size);
 }
 
 void list_remove(list_t *list, list_node_t *node, uint8_t destroy)
 {
-  if (node->next) node->next->prev = node->prev;
-  else list->tail = node->prev;
-  if (node->prev) node->prev->next = node->next;
-  else list->head = node->next;
+  if (node->next)
+    node->next->prev = node->prev;
+  else
+    list->tail = node->prev;
+  if (node->prev)
+    node->prev->next = node->next;
+  else
+    list->head = node->next;
   node->next = NULL;
   node->prev = NULL;
-  if (destroy) list_destroy_nodes(node);
+  if (destroy)
+    list_destroy_nodes(node);
   --(list->size);
 }
 
@@ -134,12 +153,13 @@ void tree_insert(tree_node_t *parent, tree_node_t *child)
 
 void tree_destroy(tree_node_t *root)
 {
-  if (root == NULL) return;
-  list_foreach(child, root->children)
-    tree_destroy(child->value);
+  if (root == NULL)
+    return;
+  list_foreach(child, root->children) tree_destroy(child->value);
   list_destroy(root->children);
   kfree(root->value);
-  if (root->parent == NULL) kfree(root);
+  if (root->parent == NULL)
+    kfree(root);
 }
 
 static void heap_grow(heap_t *hp)
@@ -161,7 +181,8 @@ static void heap_swap_nodes(heap_t *hp, size_t a, size_t b)
 
 static void heap_heapify_up(heap_t *hp, size_t idx)
 {
-  if (idx == 0) return;
+  if (idx == 0)
+    return;
   size_t parent = (idx - 1) >> 1;
   if (hp->nodes[idx].key < hp->nodes[parent].key) {
     heap_swap_nodes(hp, parent, idx);
@@ -171,7 +192,8 @@ static void heap_heapify_up(heap_t *hp, size_t idx)
 
 static void heap_heapify_down(heap_t *hp, size_t idx)
 {
-  if (idx == hp->size - 1) return;
+  if (idx == hp->size - 1)
+    return;
   size_t left = (idx << 1) + 1;
   size_t right = left + 1;
   size_t min_child = right;
@@ -209,7 +231,11 @@ heap_node_t heap_pop(heap_t *hp)
 }
 
 heap_node_t *heap_peek(heap_t *hp)
-{ return hp->nodes; }
+{
+  return hp->nodes;
+}
 
 void heap_destroy(heap_t *hp)
-{ kfree(hp->nodes); }
+{
+  kfree(hp->nodes);
+}

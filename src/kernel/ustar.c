@@ -5,29 +5,35 @@
 //
 // Author: Ajay Tatachar <ajaymt2@illinois.edu>
 
+#include "ustar.h"
+#include "../common/errno.h"
 #include "../common/stdint.h"
+#include "fs.h"
 #include "kheap.h"
 #include "klock.h"
-#include "util.h"
-#include "../common/errno.h"
 #include "log.h"
-#include "fs.h"
-#include "ustar.h"
+#include "util.h"
 
-#define CHECK(err, msg, code) if ((err)) {          \
-    log_error("ustar", msg "\n"); return (code);    \
+#define CHECK(err, msg, code)                                                                      \
+  if ((err)) {                                                                                     \
+    log_error("ustar", msg "\n");                                                                  \
+    return (code);                                                                                 \
   }
-#define CHECK_UNLOCK(err, msg, code) if ((err)) {           \
-    log_error("ustar", msg "\n"); kunlock(&(self->lock));   \
-    return (code);                                          \
+#define CHECK_UNLOCK(err, msg, code)                                                               \
+  if ((err)) {                                                                                     \
+    log_error("ustar", msg "\n");                                                                  \
+    kunlock(&(self->lock));                                                                        \
+    return (code);                                                                                 \
   }
 
-typedef struct {
+typedef struct
+{
   fs_node_t *block_device;
   volatile uint32_t lock;
 } ustar_fs_t;
 
-struct ustar_metadata_s {
+struct ustar_metadata_s
+{
   char name[100];
   char mode[8];
   char uid[8];
@@ -48,15 +54,15 @@ struct ustar_metadata_s {
 } __attribute__((packed));
 typedef struct ustar_metadata_s ustar_metadata_t;
 
-#define NORMAL    0
-#define NORMAL_  '0'
+#define NORMAL 0
+#define NORMAL_ '0'
 #define HARDLINK '1'
-#define SYMLINK  '2'
-#define CHARDEV  '3'
+#define SYMLINK '2'
+#define CHARDEV '3'
 #define BLOCKDEV '4'
-#define DIR      '5'
-#define PIPE     '6'
-#define FREE     '~'
+#define DIR '5'
+#define PIPE '6'
+#define FREE '~'
 
 #define USTAR_MAGIC "ustar"
 #define BLOCK_SIZE 512
@@ -101,12 +107,12 @@ static uint32_t ustar_find(ustar_fs_t *self, char *name)
   uint32_t disk_offset = 0;
   while (1) {
     ustar_metadata_t data;
-    uint32_t read_size = fs_read(
-      self->block_device, disk_offset, BLOCK_SIZE, (uint8_t *)&data
-      );
+    uint32_t read_size = fs_read(self->block_device, disk_offset, BLOCK_SIZE, (uint8_t *)&data);
 
-    if (read_size != BLOCK_SIZE) return -1;
-    if (u_strcmp(data.ustar_magic, USTAR_MAGIC) != 0) return -1;
+    if (read_size != BLOCK_SIZE)
+      return -1;
+    if (u_strcmp(data.ustar_magic, USTAR_MAGIC) != 0)
+      return -1;
 
     if (ustar_name_match(data.name, name) == 0 && data.type != FREE)
       return disk_offset;
@@ -123,15 +129,16 @@ static uint32_t ustar_alloc(ustar_fs_t *self, uint32_t size)
   uint32_t disk_offset = 0;
   while (1) {
     ustar_metadata_t data;
-    uint32_t read_size = fs_read(
-      self->block_device, disk_offset, BLOCK_SIZE, (uint8_t *)&data
-      );
+    uint32_t read_size = fs_read(self->block_device, disk_offset, BLOCK_SIZE, (uint8_t *)&data);
 
-    if (read_size != BLOCK_SIZE) return 0;
-    if (u_strcmp(data.ustar_magic, USTAR_MAGIC) != 0) return disk_offset;
+    if (read_size != BLOCK_SIZE)
+      return 0;
+    if (u_strcmp(data.ustar_magic, USTAR_MAGIC) != 0)
+      return disk_offset;
 
     uint32_t block_size = block_align_up(parse_oct(data.size, sizeof(data.size)));
-    if (data.type == FREE && block_size >= size) return disk_offset;
+    if (data.type == FREE && block_size >= size)
+      return disk_offset;
 
     disk_offset += BLOCK_SIZE + block_size;
   }
@@ -140,43 +147,36 @@ static uint32_t ustar_alloc(ustar_fs_t *self, uint32_t size)
 
 void ustar_open(fs_node_t *node, uint32_t flags)
 {
-  if ((flags & O_TRUNC) == 0) return;
+  if ((flags & O_TRUNC) == 0)
+    return;
 
   ustar_fs_t *self = node->device;
   uint32_t disk_offset = node->inode;
   ustar_metadata_t data;
-  uint32_t read_size = fs_read(
-    self->block_device, disk_offset, BLOCK_SIZE, (uint8_t *)&data
-    );
+  uint32_t read_size = fs_read(self->block_device, disk_offset, BLOCK_SIZE, (uint8_t *)&data);
   if (read_size != BLOCK_SIZE || u_strcmp(data.ustar_magic, USTAR_MAGIC) != 0) {
     log_error("ustar", "Failed to read metadata.\n");
     return;
   }
-  if (
-    u_strcmp(data.ustar_magic, USTAR_MAGIC) != 0
-    || ustar_name_match(data.name, node->name) != 0
-    || data.type == FREE
-    ) {
+  if (u_strcmp(data.ustar_magic, USTAR_MAGIC) != 0 ||
+      ustar_name_match(data.name, node->name) != 0 || data.type == FREE) {
     disk_offset = ustar_find(self, node->name);
     if (disk_offset == (uint32_t)-1) {
       log_error("ustar", "Failed to read metadata.\n");
       return;
     }
-    read_size = fs_read(
-      self->block_device, disk_offset, BLOCK_SIZE, (uint8_t *)&data
-      );
+    read_size = fs_read(self->block_device, disk_offset, BLOCK_SIZE, (uint8_t *)&data);
   }
 
   uint32_t size = parse_oct(data.size, sizeof(data.size));
-  if (size == 0) return;
+  if (size == 0)
+    return;
 
   klock(&(self->lock));
 
   uint32_t new_size = block_align_up(size) - BLOCK_SIZE;
   write_oct(data.size, 0, sizeof(data.size));
-  uint32_t write_size = fs_write(
-    self->block_device, disk_offset, BLOCK_SIZE, (uint8_t *)&data
-    );
+  uint32_t write_size = fs_write(self->block_device, disk_offset, BLOCK_SIZE, (uint8_t *)&data);
   if (write_size != BLOCK_SIZE) {
     log_error("ustar", "Failed to update metadata.\n");
     kunlock(&(self->lock));
@@ -185,9 +185,8 @@ void ustar_open(fs_node_t *node, uint32_t flags)
   ustar_metadata_t new_data = data;
   write_oct(new_data.size, new_size, sizeof(new_data.size));
   new_data.type = FREE;
-  write_size = fs_write(
-    self->block_device, disk_offset + BLOCK_SIZE, BLOCK_SIZE, (uint8_t *)&new_data
-    );
+  write_size =
+    fs_write(self->block_device, disk_offset + BLOCK_SIZE, BLOCK_SIZE, (uint8_t *)&new_data);
 
   kunlock(&(self->lock));
 
@@ -197,61 +196,45 @@ void ustar_open(fs_node_t *node, uint32_t flags)
   }
 }
 
-uint32_t ustar_read(
-  fs_node_t *node, uint32_t offset, uint32_t size, uint8_t *buf
-  )
+uint32_t ustar_read(fs_node_t *node, uint32_t offset, uint32_t size, uint8_t *buf)
 {
   ustar_fs_t *self = node->device;
   uint32_t disk_offset = node->inode;
   ustar_metadata_t data;
-  uint32_t read_size = fs_read(
-    self->block_device, disk_offset, BLOCK_SIZE, (uint8_t *)&data
-    );
+  uint32_t read_size = fs_read(self->block_device, disk_offset, BLOCK_SIZE, (uint8_t *)&data);
   CHECK(read_size != BLOCK_SIZE, "File does not exist.", ENOENT);
 
-  if (
-    u_strcmp(data.ustar_magic, USTAR_MAGIC) != 0
-    || ustar_name_match(data.name, node->name) != 0
-    || data.type == FREE
-    ) {
+  if (u_strcmp(data.ustar_magic, USTAR_MAGIC) != 0 ||
+      ustar_name_match(data.name, node->name) != 0 || data.type == FREE) {
     disk_offset = ustar_find(self, node->name);
     CHECK(disk_offset == (uint32_t)-1, "File does not exist.", ENOENT);
-    read_size = fs_read(
-      self->block_device, disk_offset, BLOCK_SIZE, (uint8_t *)&data
-      );
+    read_size = fs_read(self->block_device, disk_offset, BLOCK_SIZE, (uint8_t *)&data);
     CHECK(read_size != BLOCK_SIZE, "File does not exist.", ENOENT);
   }
 
   uint32_t file_size = parse_oct(data.size, sizeof(data.size));
-  if (offset > file_size) return 0;
-  if (offset + size > file_size) size = file_size - offset;
+  if (offset > file_size)
+    return 0;
+  if (offset + size > file_size)
+    size = file_size - offset;
   return fs_read(self->block_device, disk_offset + BLOCK_SIZE + offset, size, buf);
 }
 
-uint32_t ustar_write(
-  fs_node_t *node, uint32_t offset, uint32_t size, uint8_t *buf
-  )
+uint32_t ustar_write(fs_node_t *node, uint32_t offset, uint32_t size, uint8_t *buf)
 {
   ustar_fs_t *self = node->device;
   klock(&(self->lock));
 
   uint32_t disk_offset = node->inode;
   ustar_metadata_t data;
-  uint32_t read_size = fs_read(
-    self->block_device, disk_offset, BLOCK_SIZE, (uint8_t *)&data
-    );
+  uint32_t read_size = fs_read(self->block_device, disk_offset, BLOCK_SIZE, (uint8_t *)&data);
   CHECK_UNLOCK(read_size != BLOCK_SIZE, "File does not exist.", ENOENT);
 
-  if (
-    u_strcmp(data.ustar_magic, USTAR_MAGIC) != 0
-    || ustar_name_match(data.name, node->name) != 0
-    || data.type == FREE
-    ) {
+  if (u_strcmp(data.ustar_magic, USTAR_MAGIC) != 0 ||
+      ustar_name_match(data.name, node->name) != 0 || data.type == FREE) {
     disk_offset = ustar_find(self, node->name);
     CHECK_UNLOCK(disk_offset == (uint32_t)-1, "File does not exist.", ENOENT);
-    read_size = fs_read(
-      self->block_device, disk_offset, BLOCK_SIZE, (uint8_t *)&data
-      );
+    read_size = fs_read(self->block_device, disk_offset, BLOCK_SIZE, (uint8_t *)&data);
     CHECK_UNLOCK(read_size != BLOCK_SIZE, "File does not exist.", ENOENT);
   }
 
@@ -261,19 +244,21 @@ uint32_t ustar_write(
   uint32_t tmp_offset = disk_offset + BLOCK_SIZE + file_size + space;
   while (1) {
     ustar_metadata_t tmp_data;
-    read_size = fs_read(
-      self->block_device, tmp_offset, BLOCK_SIZE, (uint8_t *)&tmp_data
-      );
-    if (read_size != BLOCK_SIZE) break;
-    if (u_strcmp(tmp_data.ustar_magic, USTAR_MAGIC) != 0) break;
-    if (tmp_data.type != FREE) break;
+    read_size = fs_read(self->block_device, tmp_offset, BLOCK_SIZE, (uint8_t *)&tmp_data);
+    if (read_size != BLOCK_SIZE)
+      break;
+    if (u_strcmp(tmp_data.ustar_magic, USTAR_MAGIC) != 0)
+      break;
+    if (tmp_data.type != FREE)
+      break;
 
     uint32_t tmp_size = block_align_up(parse_oct(tmp_data.size, sizeof(tmp_data.size)));
     space += BLOCK_SIZE + tmp_size;
     tmp_offset += BLOCK_SIZE + tmp_size;
   }
 
-  if (offset > file_size) offset = file_size;
+  if (offset > file_size)
+    offset = file_size;
 
   uint32_t current_end = file_size;
   uint32_t new_end = (offset + size) > file_size ? (offset + size) : file_size;
@@ -281,22 +266,17 @@ uint32_t ustar_write(
   if (new_end <= current_end + space) {
     file_size = new_end;
     write_oct(data.size, file_size, sizeof(data.size));
-    uint32_t write_size = fs_write(
-      self->block_device, disk_offset, BLOCK_SIZE, (uint8_t *)&data
-      );
+    uint32_t write_size = fs_write(self->block_device, disk_offset, BLOCK_SIZE, (uint8_t *)&data);
     CHECK_UNLOCK(write_size != BLOCK_SIZE, "Failed to update metadata.", 0);
 
-    write_size = fs_write(
-      self->block_device, disk_offset + BLOCK_SIZE + offset, size, buf
-      );
+    write_size = fs_write(self->block_device, disk_offset + BLOCK_SIZE + offset, size, buf);
 
     if (block_align_up(new_end) == block_align_up(current_end)) {
       kunlock(&(self->lock));
       return write_size;
     }
 
-    uint32_t remaining_space =
-      block_align_up(current_end + space) - block_align_up(new_end);
+    uint32_t remaining_space = block_align_up(current_end + space) - block_align_up(new_end);
 
     if (remaining_space >= BLOCK_SIZE) {
       uint32_t free_block_size = remaining_space - BLOCK_SIZE;
@@ -305,11 +285,10 @@ uint32_t ustar_write(
       free_block.type = FREE;
       write_oct(free_block.size, free_block_size, sizeof(free_block.size));
 
-      uint32_t ws = fs_write(
-        self->block_device,
-        disk_offset + BLOCK_SIZE + block_align_up(new_end), BLOCK_SIZE,
-        (uint8_t *)&free_block
-        );
+      uint32_t ws = fs_write(self->block_device,
+                             disk_offset + BLOCK_SIZE + block_align_up(new_end),
+                             BLOCK_SIZE,
+                             (uint8_t *)&free_block);
       CHECK_UNLOCK(ws != BLOCK_SIZE, "Failed to create free block", write_size);
     }
 
@@ -326,18 +305,14 @@ uint32_t ustar_write(
 
   ustar_metadata_t new_data = data;
   write_oct(new_data.size, new_end, sizeof(new_data.size));
-  uint32_t write_size = fs_write(
-    self->block_device, new_offset, BLOCK_SIZE, (uint8_t *)&new_data
-    );
+  uint32_t write_size = fs_write(self->block_device, new_offset, BLOCK_SIZE, (uint8_t *)&new_data);
   CHECK_UNLOCK(write_size != BLOCK_SIZE, "Failed to update metadata.", 0);
 
   u_memcpy(new_buf + offset, buf, size);
   write_size = fs_write(self->block_device, new_offset + BLOCK_SIZE, new_end, new_buf);
 
   data.type = FREE;
-  uint32_t ws = fs_write(
-    self->block_device, disk_offset, BLOCK_SIZE, (uint8_t *)&data
-    );
+  uint32_t ws = fs_write(self->block_device, disk_offset, BLOCK_SIZE, (uint8_t *)&data);
   CHECK_UNLOCK(ws != BLOCK_SIZE, "Failed to update metadata.", write_size);
 
   kunlock(&(self->lock));
@@ -366,34 +341,38 @@ struct dirent *ustar_readdir(fs_node_t *node, uint32_t idx)
   uint32_t disk_offset = 0;
   while (1) {
     ustar_metadata_t data;
-    uint32_t read_size = fs_read(
-      self->block_device, disk_offset, BLOCK_SIZE, (uint8_t *)&data
-      );
-    if (read_size != BLOCK_SIZE) return NULL;
-    if (u_strcmp(data.ustar_magic, USTAR_MAGIC) != 0) return NULL;
+    uint32_t read_size = fs_read(self->block_device, disk_offset, BLOCK_SIZE, (uint8_t *)&data);
+    if (read_size != BLOCK_SIZE)
+      return NULL;
+    if (u_strcmp(data.ustar_magic, USTAR_MAGIC) != 0)
+      return NULL;
 
     uint32_t ent_offset = disk_offset;
     disk_offset += BLOCK_SIZE + block_align_up(parse_oct(data.size, sizeof(data.size)));
 
-    if (data.type == FREE) continue;
+    if (data.type == FREE)
+      continue;
 
     uint32_t data_name_len = u_strlen(data.name);
-    if (data_name_len == 1) continue; // root dir
+    if (data_name_len == 1)
+      continue; // root dir
 
     uint32_t end_idx = data_name_len;
     uint32_t basename_idx = data_name_len - 1;
-    if (data.name[basename_idx] == FS_PATH_SEP) { --basename_idx; --end_idx; }
-    while (data.name[basename_idx] != FS_PATH_SEP) --basename_idx;
+    if (data.name[basename_idx] == FS_PATH_SEP) {
+      --basename_idx;
+      --end_idx;
+    }
+    while (data.name[basename_idx] != FS_PATH_SEP)
+      --basename_idx;
     ++basename_idx;
     uint32_t name_len = u_strlen(node->name);
 
-    if (
-      u_strncmp(data.name, node->name, basename_idx) == 0
-      && basename_idx == name_len
-      )
+    if (u_strncmp(data.name, node->name, basename_idx) == 0 && basename_idx == name_len)
       ++i;
 
-    if (i <= idx) continue;
+    if (i <= idx)
+      continue;
 
     u_memcpy(ent->name, data.name + basename_idx, end_idx - basename_idx);
     ent->ino = ent_offset;
@@ -421,11 +400,10 @@ fs_node_t *ustar_finddir(fs_node_t *node, char *name)
   u_memcpy(path + len, name, u_strlen(name));
 
   uint32_t disk_offset = ustar_find(self, path);
-  if (disk_offset == (uint32_t)-1) return NULL;
+  if (disk_offset == (uint32_t)-1)
+    return NULL;
   ustar_metadata_t data;
-  uint32_t read_size = fs_read(
-    self->block_device, disk_offset, BLOCK_SIZE, (uint8_t *)&data
-    );
+  uint32_t read_size = fs_read(self->block_device, disk_offset, BLOCK_SIZE, (uint8_t *)&data);
   CHECK(read_size != BLOCK_SIZE, "Failed to read metadata.", NULL);
 
   fs_node_t *out = kmalloc(sizeof(fs_node_t));
@@ -435,14 +413,13 @@ fs_node_t *ustar_finddir(fs_node_t *node, char *name)
   return out;
 }
 
-int32_t ustar_create_entry(
-  fs_node_t *node, char *name, uint16_t mask, char type, char *linked
-  )
+int32_t ustar_create_entry(fs_node_t *node, char *name, uint16_t mask, char type, char *linked)
 {
   ustar_fs_t *self = node->device;
   fs_node_t *existing = ustar_finddir(node, name);
   if (existing) {
-    kfree(existing); return -EEXIST;
+    kfree(existing);
+    return -EEXIST;
   }
 
   char path[100];
@@ -455,7 +432,8 @@ int32_t ustar_create_entry(
   }
   uint32_t name_len = u_strlen(name);
   u_memcpy(path + len, name, name_len);
-  if (type == DIR) path[len + name_len] = FS_PATH_SEP;
+  if (type == DIR)
+    path[len + name_len] = FS_PATH_SEP;
 
   ustar_metadata_t data;
   u_memset(&data, 0, sizeof(data));
@@ -470,9 +448,7 @@ int32_t ustar_create_entry(
   uint32_t disk_offset = ustar_alloc(self, 0);
   CHECK_UNLOCK(disk_offset == 0, "No space.", -ENOSPC);
 
-  uint32_t write_size = fs_write(
-    self->block_device, disk_offset, BLOCK_SIZE, (uint8_t *)&data
-    );
+  uint32_t write_size = fs_write(self->block_device, disk_offset, BLOCK_SIZE, (uint8_t *)&data);
   CHECK_UNLOCK(write_size != BLOCK_SIZE, "Failed to write metadata.", -ENOSPC);
 
   kunlock(&(self->lock));
@@ -480,17 +456,24 @@ int32_t ustar_create_entry(
 }
 
 int32_t ustar_mkdir(fs_node_t *node, char *name, uint16_t mask)
-{ return ustar_create_entry(node, name, mask, DIR, NULL); }
+{
+  return ustar_create_entry(node, name, mask, DIR, NULL);
+}
 int32_t ustar_create(fs_node_t *node, char *name, uint16_t mask)
-{ return ustar_create_entry(node, name, mask, NORMAL, NULL); }
+{
+  return ustar_create_entry(node, name, mask, NORMAL, NULL);
+}
 int32_t ustar_symlink(fs_node_t *node, char *src, char *dst)
-{ return ustar_create_entry(node, dst, 0, SYMLINK, src); }
+{
+  return ustar_create_entry(node, dst, 0, SYMLINK, src);
+}
 
 int32_t ustar_unlink(fs_node_t *node, char *name)
 {
   ustar_fs_t *self = node->device;
   fs_node_t *child = ustar_finddir(node, name);
-  if (child == NULL) return -ENOENT;
+  if (child == NULL)
+    return -ENOENT;
   uint32_t disk_offset = child->inode;
   kfree(child);
 
@@ -498,14 +481,10 @@ int32_t ustar_unlink(fs_node_t *node, char *name)
 
   klock(&(self->lock));
   ustar_metadata_t data;
-  uint32_t r = fs_read(
-    self->block_device, disk_offset, BLOCK_SIZE, (uint8_t *)&data
-    );
+  uint32_t r = fs_read(self->block_device, disk_offset, BLOCK_SIZE, (uint8_t *)&data);
   CHECK_UNLOCK(r != BLOCK_SIZE, "Failed to read metadata.", -ENOENT);
   data.type = FREE;
-  r = fs_write(
-    self->block_device, disk_offset, BLOCK_SIZE, (uint8_t *)&data
-    );
+  r = fs_write(self->block_device, disk_offset, BLOCK_SIZE, (uint8_t *)&data);
   CHECK_UNLOCK(r != BLOCK_SIZE, "Failed to write metadata.", -ENOENT);
 
   kunlock(&(self->lock));
@@ -517,21 +496,14 @@ int32_t ustar_readlink(fs_node_t *node, char *buf, size_t len)
   ustar_fs_t *self = node->device;
   uint32_t disk_offset = node->inode;
   ustar_metadata_t data;
-  uint32_t read_size = fs_read(
-    self->block_device, disk_offset, BLOCK_SIZE, (uint8_t *)&data
-    );
+  uint32_t read_size = fs_read(self->block_device, disk_offset, BLOCK_SIZE, (uint8_t *)&data);
   CHECK(read_size != BLOCK_SIZE, "File does not exist.", -ENOENT);
 
-  if (
-    u_strcmp(data.ustar_magic, USTAR_MAGIC) != 0
-    || ustar_name_match(data.name, node->name) != 0
-    || data.type == FREE
-    ) {
+  if (u_strcmp(data.ustar_magic, USTAR_MAGIC) != 0 ||
+      ustar_name_match(data.name, node->name) != 0 || data.type == FREE) {
     disk_offset = ustar_find(self, node->name);
     CHECK(disk_offset == (uint32_t)-1, "File does not exist.", -ENOENT);
-    read_size = fs_read(
-      self->block_device, disk_offset, BLOCK_SIZE, (uint8_t *)&data
-      );
+    read_size = fs_read(self->block_device, disk_offset, BLOCK_SIZE, (uint8_t *)&data);
     CHECK(read_size != BLOCK_SIZE, "File does not exist.", -ENOENT);
   }
 
@@ -546,9 +518,11 @@ int32_t ustar_rename(fs_node_t *node, char *from, char *to)
 {
   ustar_fs_t *self = node->device;
   fs_node_t *child = ustar_finddir(node, from);
-  if (child == NULL) return -ENOENT;
+  if (child == NULL)
+    return -ENOENT;
   fs_node_t *dst = ustar_finddir(node, to);
-  if (dst) return -EEXIST;
+  if (dst)
+    return -EEXIST;
 
   char path[100];
   u_memset(path, 0, sizeof(path));
@@ -565,23 +539,20 @@ int32_t ustar_rename(fs_node_t *node, char *from, char *to)
 
   klock(&(self->lock));
   ustar_metadata_t data;
-  uint32_t r = fs_read(
-    self->block_device, disk_offset, BLOCK_SIZE, (uint8_t *)&data
-    );
+  uint32_t r = fs_read(self->block_device, disk_offset, BLOCK_SIZE, (uint8_t *)&data);
   CHECK_UNLOCK(r != BLOCK_SIZE, "Failed to read metadata.", -ENOENT);
   u_memcpy(data.name, path, u_strlen(path) + 1);
-  r = fs_write(
-    self->block_device, disk_offset, BLOCK_SIZE, (uint8_t *)&data
-    );
+  r = fs_write(self->block_device, disk_offset, BLOCK_SIZE, (uint8_t *)&data);
   CHECK_UNLOCK(r != BLOCK_SIZE, "Failed to write metadata.", -ENOENT);
 
   kunlock(&(self->lock));
   return 0;
 }
 
-static void make_ustar_node(
-  ustar_fs_t *self, uint32_t disk_offset, ustar_metadata_t data, fs_node_t *out
-  )
+static void make_ustar_node(ustar_fs_t *self,
+                            uint32_t disk_offset,
+                            ustar_metadata_t data,
+                            fs_node_t *out)
 {
   uint32_t file_size = parse_oct(data.size, sizeof(data.size));
   u_memset(out, 0, sizeof(fs_node_t));

@@ -5,27 +5,29 @@
 //
 // Author: Ajay Tatachar <ajaymt2@illinois.edu>
 
+#include "pmm.h"
 #include "../common/stdint.h"
 #include "constants.h"
-#include "multiboot.h"
 #include "log.h"
+#include "multiboot.h"
 #include "util.h"
-#include "pmm.h"
 
 #define MAX_MEMORY_MAP_ENTRIES 100
-#define BITMAP_ARRAY_SIZE      0x8000
+#define BITMAP_ARRAY_SIZE 0x8000
 
 // A single memory map entry.
 // `addr` is the physical start address, `len` is the size
 // of the region in bytes.
-typedef struct memory_map_entry_s {
+typedef struct memory_map_entry_s
+{
   uint32_t addr;
   uint32_t len;
 } memory_map_entry_t;
 
 // A memory map with up to 100 entries.
 // Only regions marked 'available' are in the map.
-typedef struct memory_map_s {
+typedef struct memory_map_s
+{
   memory_map_entry_t entries[MAX_MEMORY_MAP_ENTRIES];
   uint32_t size;
 } memory_map_t;
@@ -38,9 +40,10 @@ static uint32_t free_page_count = 0;
 // Mark a physical page frame as free.
 static void mark_page_free(uint32_t page_number)
 {
-  uint32_t index = page_number >> 5; // Divide by 32.
+  uint32_t index = page_number >> 5;    // Divide by 32.
   uint32_t bit = page_number & 0b11111; // Mod 32.
-  if (index >= BITMAP_ARRAY_SIZE) return;
+  if (index >= BITMAP_ARRAY_SIZE)
+    return;
   if ((free_page_bitmap[index] & (1 << bit)) == 0)
     ++free_page_count; // Page was not free.
   free_page_bitmap[index] |= (1 << bit);
@@ -49,9 +52,10 @@ static void mark_page_free(uint32_t page_number)
 // Mark a physical page frame as used.
 static void mark_page_used(uint32_t page_number)
 {
-  uint32_t index = page_number >> 5; // Divide by 32.
+  uint32_t index = page_number >> 5;    // Divide by 32.
   uint32_t bit = page_number & 0b11111; // Mod 32.
-  if (index >= BITMAP_ARRAY_SIZE) return;
+  if (index >= BITMAP_ARRAY_SIZE)
+    return;
   if (free_page_bitmap[index] & (1 << bit))
     --free_page_count; // Page was free.
   free_page_bitmap[index] &= ~(1 << bit);
@@ -72,20 +76,18 @@ static void bitmap_init(memory_map_t mmap)
 }
 
 // Retrieve the memory map from GRUB multiboot info.
-static memory_map_t get_mmap(multiboot_info_t *mb_info, const uint32_t kphys_start, const uint32_t kphys_end)
+static memory_map_t get_mmap(multiboot_info_t *mb_info,
+                             const uint32_t kphys_start,
+                             const uint32_t kphys_end)
 {
   memory_map_t mmap;
   u_memset(&mmap, 0, sizeof(mmap));
   multiboot_memory_map_t *entry;
 
-  for (
-    entry = (multiboot_memory_map_t *)mb_info->mmap_addr;
-    (uint32_t)entry < mb_info->mmap_addr + mb_info->mmap_length
-      && mmap.size < MAX_MEMORY_MAP_ENTRIES;
-    entry = (multiboot_memory_map_t *)
-      ((uint32_t)entry + entry->size + sizeof(entry->size))
-    )
-  {
+  for (entry = (multiboot_memory_map_t *)mb_info->mmap_addr;
+       (uint32_t)entry < mb_info->mmap_addr + mb_info->mmap_length &&
+       mmap.size < MAX_MEMORY_MAP_ENTRIES;
+       entry = (multiboot_memory_map_t *)((uint32_t)entry + entry->size + sizeof(entry->size))) {
     if (entry->type != MULTIBOOT_MEMORY_AVAILABLE)
       continue;
 
@@ -105,7 +107,8 @@ static memory_map_t get_mmap(multiboot_info_t *mb_info, const uint32_t kphys_sta
     // If the address is below 1MB, exclude it.
     // GRUB's mmap doesn't include some stuff that's mapped to memory
     // below 1MB.
-    if (addr <= 0x100000) continue;
+    if (addr <= 0x100000)
+      continue;
 
     mmap.entries[mmap.size].addr = addr;
     mmap.entries[mmap.size].len = len;
@@ -140,7 +143,8 @@ uint32_t pmm_init(multiboot_info_t *mb_info, const uint32_t kphys_start, const u
 // Allocate multiple contiguous physical pages.
 uint32_t pmm_alloc(uint32_t size)
 {
-  if (free_page_count == 0 || size == 0) return 0;
+  if (free_page_count == 0 || size == 0)
+    return 0;
 
   uint32_t max_page_number = sizeof(free_page_bitmap);
   uint32_t current = 0, step = 0;

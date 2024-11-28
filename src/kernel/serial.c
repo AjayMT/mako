@@ -5,20 +5,28 @@
 //
 // Author: Ajay Tatachar <ajaymt2@illinois.edu>
 
-#include "io.h"
 #include "serial.h"
+#include "io.h"
 
 // I/O ports.
 // All I/O ports are calculated relative to the data port.
 const unsigned short SERIAL_COM1_BASE = 0x3F8; // COM1 base port.
 static inline unsigned short serial_fifo_command_port(const unsigned short base)
-{ return base + 2; }
+{
+  return base + 2;
+}
 static inline unsigned short serial_line_command_port(const unsigned short base)
-{ return base + 3; }
+{
+  return base + 3;
+}
 static inline unsigned short serial_modem_command_port(const unsigned short base)
-{ return base + 4; }
+{
+  return base + 4;
+}
 static inline unsigned short serial_line_status_port(const unsigned short base)
-{ return base + 5; }
+{
+  return base + 5;
+}
 
 // I/O port commands.
 // Tells the serial port to expect first the highest 8 bits on the data port,
@@ -28,9 +36,7 @@ static const unsigned short SERIAL_LINE_ENABLE_DLAB = 0x80;
 // Set the baud rate i.e the speed of the data being sent.
 // The default speed of a serial port is 115200 bits/s.
 // This function changes it to (115200 / `divisor`) bits/s.
-void serial_configure_baud_rate(
-  const unsigned short com, const unsigned short divisor
-  )
+void serial_configure_baud_rate(const unsigned short com, const unsigned short divisor)
 {
   outb(serial_line_command_port(com), SERIAL_LINE_ENABLE_DLAB);
   outb(com, (divisor >> 8) & 0x00FF);
@@ -47,8 +53,9 @@ static inline int serial_is_transmit_fifo_empty(const unsigned int com)
 // Write a byte to a serial port.
 void serial_write(unsigned short com, char data)
 {
-  while (!serial_is_transmit_fifo_empty(com));
-  
+  while (!serial_is_transmit_fifo_empty(com))
+    ;
+
   outb(com, data);
 }
 

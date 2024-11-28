@@ -11,8 +11,8 @@
 #include "../common/stdint.h"
 
 // Constants.
-#define PL0        0x0
-#define PL3        0x3
+#define PL0 0x0
+#define PL3 0x3
 #define TSS_SEGSEL 0x28
 
 // Initialize the GDT.

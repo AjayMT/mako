@@ -9,8 +9,8 @@
 #define _UNISTD_H_
 
 #include "stdint.h"
-#include <stddef.h>
 #include "sys/types.h"
+#include <stddef.h>
 
 pid_t getpid();
 int32_t close(uint32_t fd);

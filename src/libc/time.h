@@ -8,12 +8,14 @@
 #ifndef _TIME_H_
 #define _TIME_H_
 
-#include "sys/types.h"
 #include "stdint.h"
+#include "sys/types.h"
+#include <stddef.h>
 
 extern char *tzname[2];
 
-struct tm {
+struct tm
+{
   int32_t tm_sec;
   int32_t tm_min;
   int32_t tm_hour;

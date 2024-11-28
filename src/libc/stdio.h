@@ -9,12 +9,13 @@
 #define _STDIO_H_
 
 #include "stdint.h"
-#include <stddef.h>
 #include "sys/types.h"
+#include <stddef.h>
 
 #define BUFSIZ 512
 
-typedef struct {
+typedef struct
+{
   uint32_t fd;
   uint8_t eof;
   uint32_t offset;

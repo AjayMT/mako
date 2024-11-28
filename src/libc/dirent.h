@@ -10,12 +10,14 @@
 
 #include "stdint.h"
 
-struct dirent {
+struct dirent
+{
   uint32_t d_ino;
   char d_name[256];
 };
 
-typedef struct {
+typedef struct
+{
   uint32_t fd;
   uint32_t current_entry;
 } DIR;

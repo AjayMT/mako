@@ -9,8 +9,8 @@
 #define _SYSCALL_H_
 
 #include "../common/stdint.h"
-#include "process.h"
 #include "interrupt.h"
+#include "process.h"
 
 void interrupt_handler_syscall();
 

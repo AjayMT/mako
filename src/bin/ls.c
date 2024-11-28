@@ -12,10 +12,12 @@
 int main(int argc, char *argv[])
 {
   char *dir = ".";
-  if (argc > 1) dir = argv[1];
+  if (argc > 1)
+    dir = argv[1];
 
   DIR *d = opendir(dir);
-  if (d == NULL) return 1;
+  if (d == NULL)
+    return 1;
 
   struct dirent *ent = readdir(d);
   for (; ent != NULL; ent = readdir(d)) {

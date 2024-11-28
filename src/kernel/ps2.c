@@ -6,10 +6,10 @@
 // Author: Ajay Tatachar <ajay.tatachar@gmail.com>
 
 #include "ps2.h"
-#include "io.h"
 #include "interrupt.h"
-#include "ui.h"
+#include "io.h"
 #include "log.h"
+#include "ui.h"
 
 static const uint8_t PS2_DATA_PORT = 0x60;
 static const uint8_t PS2_STATUS_PORT = 0x64;
@@ -30,9 +30,11 @@ static const uint8_t MOUSE_DATA_ON = 0xf4;
 static const uint8_t MOUSE_SAMPLE_RATE = 0xf3;
 static const uint8_t MOUSE_RESOLUTION = 0xe8;
 
-typedef union {
+typedef union
+{
   uint8_t bits;
-  struct {
+  struct
+  {
     uint8_t button_left : 1;
     uint8_t button_right : 1;
     uint8_t button_middle : 1;
@@ -59,7 +61,8 @@ static void mouse_interrupt_handler(cpu_state_t cs, idt_info_t info, stack_state
   if (mouse_byte_idx == 0) {
     mouse_state_t state;
     state.bits = mouse_data;
-    if (!state.valid) return;
+    if (!state.valid)
+      return;
   }
 
   mouse_bytes[mouse_byte_idx] = mouse_data;
@@ -72,8 +75,10 @@ static void mouse_interrupt_handler(cpu_state_t cs, idt_info_t info, stack_state
     state.bits = mouse_bytes[0];
     int32_t dx = mouse_bytes[1];
     int32_t dy = mouse_bytes[2];
-    if (state.x_sign && dx) dx = dx - 0x100;
-    if (state.y_sign && dy) dy = dy - 0x100;
+    if (state.x_sign && dx)
+      dx = dx - 0x100;
+    if (state.y_sign && dy)
+      dy = dy - 0x100;
     if (state.x_ovfl || state.y_ovfl) {
       dx = 0;
       dy = 0;
@@ -85,11 +90,17 @@ static void mouse_interrupt_handler(cpu_state_t cs, idt_info_t info, stack_state
 
 // Wait until the PS2 input buffer is empty in order to write to it.
 static void ps2_wait_write()
-{ while (inb(PS2_STATUS_PORT) & 0b10); }
+{
+  while (inb(PS2_STATUS_PORT) & 0b10)
+    ;
+}
 
 // Wait until the PS2 output buffer is full in order to read from it.
 static void ps2_wait_read()
-{ while (!(inb(PS2_STATUS_PORT) & 1)); }
+{
+  while (!(inb(PS2_STATUS_PORT) & 1))
+    ;
+}
 
 static void ps2_command(uint8_t command)
 {

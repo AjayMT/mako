@@ -5,8 +5,8 @@
 //
 // Author: Ajay Tatachar <ajaymt2@illinois.edu>
 
-#include <stddef.h>
 #include "dlfcn.h"
+#include <stddef.h>
 
 // These are stubs for now.
 

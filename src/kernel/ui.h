@@ -9,9 +9,9 @@
 #define _UI_H_
 
 #include "../common/stdint.h"
-#include "process.h"
-#include "ds.h"
 #include "../common/ui.h"
+#include "ds.h"
+#include "process.h"
 
 uint32_t ui_init(uint32_t);
 uint32_t ui_handle_keyboard_event(uint8_t);

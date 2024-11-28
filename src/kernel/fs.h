@@ -9,39 +9,39 @@
 #define _FS_H_
 
 #include "../common/stdint.h"
-#include <stddef.h>
 #include "ds.h"
+#include <stddef.h>
 
 // The maximum length of a file name.
 #define FS_NAME_LEN 256
 
 // Path constants.
-#define FS_DIR_SELF     "."
-#define FS_DIR_UP       ".."
-#define FS_PATH_SEP     '/'
+#define FS_DIR_SELF "."
+#define FS_DIR_UP ".."
+#define FS_PATH_SEP '/'
 #define FS_PATH_SEP_STR "/"
 
 // fs_node_t flags.
-#define FS_FILE        1
-#define FS_DIRECTORY   2
-#define FS_CHARDEVICE  4
+#define FS_FILE 1
+#define FS_DIRECTORY 2
+#define FS_CHARDEVICE 4
 #define FS_BLOCKDEVICE 8
-#define FS_PIPE        0x10
-#define FS_SYMLINK     0x20
-#define FS_MOUNTPOINT  0x40
-#define FS_TTY         0x80
+#define FS_PIPE 0x10
+#define FS_SYMLINK 0x20
+#define FS_MOUNTPOINT 0x40
+#define FS_TTY 0x80
 
 // fs_open flags.
-#define O_RDONLY    0
-#define O_WRONLY    1
-#define O_RDWR      2
-#define O_APPEND    8
-#define O_CREAT     0x200
-#define O_TRUNC     0x400
-#define O_EXCL      0x800
-#define O_NOFOLLOW  0x1000
-#define O_PATH      0x2000
-#define O_NONBLOCK  0x4000
+#define O_RDONLY 0
+#define O_WRONLY 1
+#define O_RDWR 2
+#define O_APPEND 8
+#define O_CREAT 0x200
+#define O_TRUNC 0x400
+#define O_EXCL 0x800
+#define O_NOFOLLOW 0x1000
+#define O_PATH 0x2000
+#define O_NONBLOCK 0x4000
 #define O_DIRECTORY 0x8000
 
 struct fs_node_s;
@@ -50,12 +50,8 @@ struct dirent;
 // File operations: open, close, etc.
 typedef void (*open_type_t)(struct fs_node_s *, uint32_t);
 typedef void (*close_type_t)(struct fs_node_s *);
-typedef uint32_t (*read_type_t)(
-  struct fs_node_s *, uint32_t, uint32_t, uint8_t *
-  );
-typedef uint32_t (*write_type_t)(
-  struct fs_node_s *, uint32_t, uint32_t, uint8_t *
-  );
+typedef uint32_t (*read_type_t)(struct fs_node_s *, uint32_t, uint32_t, uint8_t *);
+typedef uint32_t (*write_type_t)(struct fs_node_s *, uint32_t, uint32_t, uint8_t *);
 typedef struct dirent *(*readdir_type_t)(struct fs_node_s *, uint32_t);
 typedef struct fs_node_s *(*finddir_type_t)(struct fs_node_s *, char *);
 typedef int32_t (*mkdir_type_t)(struct fs_node_s *, char *, uint16_t);
@@ -67,7 +63,8 @@ typedef int32_t (*readlink_type_t)(struct fs_node_s *, char *, size_t);
 typedef int32_t (*rename_type_t)(struct fs_node_s *, char *, char *);
 
 // A single filesystem node.
-typedef struct fs_node_s {
+typedef struct fs_node_s
+{
   char name[FS_NAME_LEN]; // File name.
   uint32_t mask;          // Permissions mask (rwx).
   uint32_t uid;           // User ID.
@@ -78,9 +75,9 @@ typedef struct fs_node_s {
   void *device;           // Device object.
   tree_node_t *tree_node; // (Optional) mount point tree node.
 
-  uint32_t atime;         // Accessed time.
-  uint32_t ctime;         // Created time.
-  uint32_t mtime;         // Modified time.
+  uint32_t atime; // Accessed time.
+  uint32_t ctime; // Created time.
+  uint32_t mtime; // Modified time.
 
   // File operations.
   open_type_t open;
@@ -99,7 +96,8 @@ typedef struct fs_node_s {
 } fs_node_t;
 
 // A single directory entry.
-struct dirent {
+struct dirent
+{
   uint32_t ino;
   char name[FS_NAME_LEN];
 };

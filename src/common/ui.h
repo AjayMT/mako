@@ -10,24 +10,27 @@
 
 #include <stdint.h>
 
-#define SCREENWIDTH  1024
+#define SCREENWIDTH 1024
 #define SCREENHEIGHT 768
 
-typedef struct ui_window_s {
+typedef struct ui_window_s
+{
   int32_t x;
   int32_t y;
   uint32_t w;
   uint32_t h;
 } ui_window_t;
 
-typedef enum {
+typedef enum
+{
   UI_EVENT_KEYBOARD,
   UI_EVENT_RESIZE,
   UI_EVENT_WAKE,
   UI_EVENT_SLEEP
 } ui_event_type_t;
 
-typedef struct ui_event_s {
+typedef struct ui_event_s
+{
   ui_event_type_t type;
   uint8_t code;
   uint32_t width;

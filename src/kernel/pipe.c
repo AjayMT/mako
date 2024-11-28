@@ -6,28 +6,32 @@
 // Author: Ajay Tatachar <ajaymt2@illinois.edu>
 
 #include "pipe.h"
-#include "kheap.h"
-#include "util.h"
-#include "process.h"
-#include "../common/signal.h"
 #include "../common/errno.h"
-#include "log.h"
-#include "klock.h"
+#include "../common/signal.h"
 #include "interrupt.h"
+#include "kheap.h"
+#include "klock.h"
+#include "log.h"
+#include "process.h"
+#include "util.h"
 
-#define CHECK(err, msg, code) if ((err)) {      \
-    log_error("pipe", msg "\n"); return (code); \
+#define CHECK(err, msg, code)                                                                      \
+  if ((err)) {                                                                                     \
+    log_error("pipe", msg "\n");                                                                   \
+    return (code);                                                                                 \
   }
 
 #define MAX_READERS 4
 static const uint32_t DEFAULT_SIZE = 1024;
 
-typedef struct {
+typedef struct
+{
   process_t *process;
   uint32_t size;
 } pipe_reader_t;
 
-typedef struct {
+typedef struct
+{
   fs_node_t *read_node;
   fs_node_t *write_node;
   uint8_t *buf;
@@ -55,7 +59,8 @@ static void pipe_wait(pipe_t *self, uint32_t size)
     }
   }
 
-  if (updated) process_unschedule(current_process);
+  if (updated)
+    process_unschedule(current_process);
   pipe_suspend(&(current_process->kregs), updated);
 }
 
@@ -72,14 +77,16 @@ static uint32_t pipe_read(fs_node_t *node, uint32_t offset, uint32_t size, uint8
   }
 
   uint32_t eflags = interrupt_save_disable();
-  if (size > self->count) size = self->count;
+  if (size > self->count)
+    size = self->count;
   for (uint32_t i = 0; i < size; ++i) {
     buf[i] = self->buf[self->head];
     self->head = (self->head + 1) % self->size;
   }
   self->count -= size;
   self->read_node->length = self->count;
-  if (self->write_node) self->write_node->length = self->count;
+  if (self->write_node)
+    self->write_node->length = self->count;
   interrupt_restore(eflags);
   kunlock(&self->reader_lock);
 
@@ -100,7 +107,8 @@ static uint32_t pipe_write(fs_node_t *node, uint32_t offset, uint32_t size, uint
 
   uint32_t space = self->size - self->count;
   uint32_t end = self->head + self->count;
-  if (size > space) size = space;
+  if (size > space)
+    size = space;
   for (uint32_t i = 0; i < size; ++i) {
     uint32_t buf_idx = (end + i) % self->size;
     self->buf[buf_idx] = buf[i];
@@ -111,12 +119,15 @@ static uint32_t pipe_write(fs_node_t *node, uint32_t offset, uint32_t size, uint
 
   uint32_t remaining_size = size;
   for (uint32_t i = 0; i < MAX_READERS; ++i) {
-    if (self->readers[i].process == NULL) continue;
+    if (self->readers[i].process == NULL)
+      continue;
 
     process_schedule(self->readers[i].process);
     self->readers[i].process = NULL;
-    if (self->readers[i].size >= remaining_size) break;
-    else remaining_size -= self->readers[i].size;
+    if (self->readers[i].size >= remaining_size)
+      break;
+    else
+      remaining_size -= self->readers[i].size;
   }
   interrupt_restore(eflags);
 
@@ -137,7 +148,8 @@ static void pipe_close_read(fs_node_t *node)
   self->read_node->close = NULL;
   self->read_node->length = 0;
   self->read_node = NULL;
-  if (self->write_node == NULL) kfree(self);
+  if (self->write_node == NULL)
+    kfree(self);
   interrupt_restore(eflags);
 }
 
@@ -157,7 +169,8 @@ static void pipe_close_write(fs_node_t *node)
   }
 
   for (uint32_t i = 0; i < MAX_READERS; ++i) {
-    if (self->readers[i].process == NULL) continue;
+    if (self->readers[i].process == NULL)
+      continue;
 
     process_schedule(self->readers[i].process);
     self->readers[i].process = NULL;
