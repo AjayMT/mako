@@ -201,12 +201,12 @@ static void ui_blit_window(ui_responder_t *r, struct pixel_buffer buffer)
     .h = min(r->window.y, SCREENHEIGHT) - title_bar_dst.y,
   };
 
-  const struct pixel_buffer title_bar_buf = { (uint32_t *)TITLE_BAR_PIXELS, TITLE_BAR_WIDTH };
+  static uint32_t title_bar_tmp_buf[sizeof(TITLE_BAR_PIXELS)];
+  u_memcpy32(title_bar_tmp_buf, TITLE_BAR_PIXELS, TITLE_BAR_HEIGHT * TITLE_BAR_WIDTH);
+  struct point window_title_dst = { TITLE_BAR_BUTTON_WIDTH + 4, 2 };
+  const struct pixel_buffer title_bar_buf = { title_bar_tmp_buf, TITLE_BAR_WIDTH };
+  render_text(title_bar_buf, window_title_dst, r->window_title, r->window_opacity);
   copy_rect(buffer, title_bar_dst, title_bar_buf, title_bar_src, title_bar_dim, r->window_opacity);
-
-  struct point window_title_dst = { title_bar_dst.x + TITLE_BAR_BUTTON_WIDTH + 4,
-                                    title_bar_dst.y + 2 };
-  render_text(buffer, window_title_dst, r->window_title, r->window_opacity);
 
   const struct point window_dst = {
     .x = max(r->window.x, 0),
