@@ -14,6 +14,9 @@
 #include "ui_font_data.h"
 #include <stddef.h>
 
+#define min(a, b) ((a) < (b) ? (a) : (b))
+#define max(a, b) ((a) > (b) ? (a) : (b))
+
 int32_t ui_acquire_window(const char *name)
 {
   // ((SCREENWIDTH / 2) * (SCREENHEIGHT / 2) * 4) / 0x1000
@@ -150,4 +153,40 @@ void ui_render_text(uint32_t *buf,
     render_char(p, buf_stride, char_info, font_data, font_height);
     x += char_info.width;
   }
+}
+
+void ui_measure_text(uint32_t *w, uint32_t *h, const char *str, size_t len, enum ui_font font)
+{
+  struct font_char_info *font_char_info;
+  uint8_t *font_data;
+  unsigned font_height;
+  select_font(&font_char_info, &font_data, &font_height, font);
+
+  uint32_t x = 0;
+  uint32_t y = 0;
+  uint32_t max_w = 0;
+  for (size_t i = 0; i < len; ++i) {
+    char c = 0;
+    switch (str[i]) {
+      case '\n':
+        y += font_height;
+        x = 0;
+        break;
+      case '\t':
+        x += 4 * font_char_info[' ' - 32].width;
+        break;
+      default:
+        c = str[i];
+    }
+
+    if (c < 32 || c > 126)
+      continue;
+
+    const struct font_char_info char_info = font_char_info[c - 32];
+    x += char_info.width;
+    max_w = max(max_w, x);
+  }
+
+  *w = max_w;
+  *h = y + font_height;
 }

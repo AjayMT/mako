@@ -22,7 +22,7 @@ int main(int argc, char *argv[])
 
   if (fork() == 0) {
     char *args[] = { NULL };
-    execve("/apps/pie", args, environ);
+    execve("/apps/term", args, environ);
   }
 
   while (1)

@@ -13,6 +13,8 @@
 
 void *memset(void *dest, int32_t c, size_t n);
 void *memcpy(void *dest, const void *src, size_t n);
+void *memset32(void *dest, int32_t c, size_t n);
+void *memcpy32(void *dest, const void *src, size_t n);
 void *memmove(void *dest, void *src, size_t n);
 
 void *memchr(const void *src, int32_t c, size_t n);

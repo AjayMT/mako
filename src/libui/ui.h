@@ -32,4 +32,6 @@ void ui_render_text(uint32_t *buf,
                     size_t len,
                     enum ui_font font);
 
+void ui_measure_text(uint32_t *w, uint32_t *h, const char *str, size_t len, enum ui_font font);
+
 #endif /* _UI_H_ */

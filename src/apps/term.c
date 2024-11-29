@@ -5,36 +5,345 @@
 //
 // Author: Ajay Tatachar <ajay.tatachar@gmail.com>
 
+#include "scancode.h"
 #include <mako.h>
+#include <stdbool.h>
+#include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
+#include <sys/stat.h>
 #include <ui.h>
+#include <unistd.h>
 
 static uint32_t *ui_buf = NULL;
+static uint32_t window_w = 0;
+static uint32_t window_h = 0;
+
+static const uint32_t background_color = 0xffffff;
+static const uint32_t text_color = 0;
+static const uint32_t cursor_w = 2;
+static const uint32_t cursor_h = 13;
+static const uint32_t line_height = 13;
+
+static uint32_t cursor_x = 0;
+static uint32_t cursor_y = 0;
+
+#define MAX_PATH_LEN 128
+
+static char line_buf[MAX_PATH_LEN];
+static unsigned line_idx = 0;
+
+static bool executing_program = false;
+static uint32_t prog_write_fd = 0;
+static uint32_t prog_read_fd = 0;
+static pid_t prog_pid = 0;
+
+void fill_rect(uint32_t x, uint32_t y, uint32_t w, uint32_t h, uint32_t color)
+{
+  for (uint32_t i = 0; i < h; ++i)
+    memset32(ui_buf + (y + i) * window_w + x, color, w);
+}
+
+void flip_cursor()
+{
+  for (uint32_t y = 0; y < cursor_h; ++y) {
+    for (uint32_t x = 0; x < cursor_w; ++x) {
+      uint32_t *pixel = ui_buf + (cursor_y + y) * window_w + cursor_x + x;
+      *pixel = background_color - *pixel;
+    }
+  }
+}
+
+void print(const char *text)
+{
+  size_t text_len = strlen(text);
+  flip_cursor();
+  ui_render_text(
+    ui_buf + (cursor_y * window_w) + cursor_x, window_w, text, text_len, UI_FONT_MONACO);
+  uint32_t w, h;
+  ui_measure_text(&w, &h, text, text_len, UI_FONT_MONACO);
+  cursor_x += w;
+  flip_cursor();
+  ui_redraw_rect(cursor_x - w, cursor_y, w + cursor_w, line_height);
+}
+
+void print_line(const char *text)
+{
+  size_t text_len = strlen(text);
+  flip_cursor();
+  ui_render_text(
+    ui_buf + (cursor_y * window_w) + cursor_x, window_w, text, text_len, UI_FONT_MONACO);
+  uint32_t w, h;
+  ui_measure_text(&w, &h, text, text_len, UI_FONT_MONACO);
+  cursor_y += h;
+  uint32_t old_cursor_x = cursor_x;
+  cursor_x = 0;
+  flip_cursor();
+  ui_redraw_rect(0, cursor_y - h, old_cursor_x + w + cursor_w, h);
+}
+
+void print_prompt()
+{
+  char buf[MAX_PATH_LEN];
+  getcwd(buf, MAX_PATH_LEN - 3);
+  size_t len = strlen(buf);
+  memcpy(buf + len, " % ", 4);
+  print(buf);
+}
+
+bool is_path_executable(const char *p)
+{
+  struct stat st;
+  int32_t res = stat(p, &st);
+  if (res)
+    return 0;
+  if ((st.st_dev & 1) == 0)
+    return 0;
+  return 1;
+}
+
+bool find_path(char *out, char *prog_name, char *env_path)
+{
+  if (is_path_executable(prog_name)) {
+    strncpy(out, prog_name, MAX_PATH_LEN);
+    return true;
+  }
+
+  char *path = strdup(env_path);
+  size_t path_len = strlen(path);
+  size_t prog_name_len = strlen(prog_name);
+
+  for (unsigned i = 0; i < path_len; ++i)
+    if (path[i] == ':')
+      path[i] = 0;
+
+  size_t step = strlen(path);
+  for (uint32_t i = 0; i < path_len; i += step + 1) {
+    step = strlen(path + i);
+
+    // FIXME should do bounds checking here
+    char this_path[MAX_PATH_LEN];
+    memcpy(this_path, path + i, step);
+    this_path[step] = '/';
+    memcpy(this_path + step + 1, prog_name, prog_name_len);
+    this_path[step + 1 + prog_name_len] = '\0';
+
+    if (is_path_executable(this_path)) {
+      strncpy(out, this_path, MAX_PATH_LEN);
+      free(path);
+      return true;
+    }
+  }
+
+  free(path);
+  return false;
+}
+
+void async_thread()
+{
+  close(prog_write_fd);
+  while (1) {
+    char buf[MAX_PATH_LEN];
+    memset(buf, 0, sizeof(buf));
+    int32_t r = read(prog_read_fd, buf, MAX_PATH_LEN);
+    if (r <= 0)
+      break;
+
+    // assuming the pipe is line-buffered
+    if (buf[r - 1] == '\n') {
+      buf[r - 1] = '\0';
+      print_line(buf);
+    } else
+      print(buf);
+  }
+
+  executing_program = false;
+  print_prompt();
+}
+
+void execute_async(const char *prog, char **args)
+{
+  uint32_t readfd, writefd;
+  int32_t err = pipe(&readfd, &writefd);
+  if (err)
+    return;
+
+  uint32_t readfd2, writefd2;
+  err = pipe(&readfd2, &writefd2);
+  if (err)
+    return;
+
+  executing_program = true;
+
+  prog_pid = fork();
+  if (prog_pid == 0) {
+    close(readfd);
+    close(writefd2);
+
+    uint32_t errfd = dup(writefd);
+    movefd(readfd2, 0);
+    movefd(writefd, 1);
+    movefd(errfd, 2);
+
+    execve(prog, args, environ);
+    exit(1);
+  }
+
+  prog_read_fd = readfd;
+  prog_write_fd = writefd2;
+  close(writefd);
+  close(readfd2);
+  thread(async_thread, NULL);
+  close(readfd);
+}
+
+void execute_program(char *cmd_buf)
+{
+  for (unsigned i = 0; i < sizeof(line_buf); ++i)
+    if (cmd_buf[i] == ' ')
+      cmd_buf[i] = '\0';
+
+  if (strlen(cmd_buf) == 0) {
+    print_prompt();
+    return;
+  }
+
+  char *args[MAX_PATH_LEN];
+  unsigned args_idx = 0;
+  for (unsigned i = strlen(cmd_buf) + 1; i < sizeof(line_buf); i += strlen(cmd_buf + i) + 1) {
+    args[args_idx] = cmd_buf + i;
+    ++args_idx;
+    if (args_idx >= MAX_PATH_LEN - 1)
+      break;
+  }
+  args[args_idx] = NULL;
+
+  char prog_path[MAX_PATH_LEN];
+
+  if (find_path(prog_path, cmd_buf, getenv("APPS_PATH"))) {
+    if (fork() == 0) {
+      execve(prog_path, args, environ);
+      exit(1);
+    }
+    print_prompt();
+    return;
+  }
+
+  if (find_path(prog_path, cmd_buf, getenv("PATH"))) {
+    execute_async(prog_path, args);
+    return;
+  }
+
+  char out[MAX_PATH_LEN];
+  snprintf(out, MAX_PATH_LEN, "'%s' not found", cmd_buf);
+  print_line(out);
+  print_prompt();
+}
 
 void keyboard_handler(uint8_t code)
 {
-  (void)code;
+  static bool lshift = false;
+  static bool rshift = false;
+
+  if (code & 0x80) {
+    code &= 0x7F;
+    switch (code) {
+      case KB_SC_LSHIFT:
+        lshift = false;
+        break;
+      case KB_SC_RSHIFT:
+        rshift = false;
+        break;
+    }
+    return;
+  }
+
+  if (code == KB_SC_ENTER) {
+    char input[sizeof(line_buf)];
+    memcpy(input, line_buf, sizeof(line_buf));
+    memset(line_buf, 0, sizeof(line_buf));
+    uint32_t input_len = line_idx;
+    line_idx = 0;
+
+    flip_cursor();
+    cursor_y += line_height;
+    uint32_t old_cursor_x = cursor_x;
+    cursor_x = 0;
+    flip_cursor();
+    ui_redraw_rect(
+      cursor_x, cursor_y - line_height, old_cursor_x + cursor_w, line_height + cursor_h);
+
+    if (!executing_program) {
+      execute_program(input);
+    } else {
+      input[input_len] = '\n';
+      write(prog_write_fd, input, input_len + 1);
+    }
+    return;
+  }
+
+  if (code == KB_SC_BS) {
+    if (line_idx == 0)
+      return;
+
+    --line_idx;
+    char deleted = line_buf[line_idx];
+    line_buf[line_idx] = '\0';
+    uint32_t w, h;
+    ui_measure_text(&w, &h, &deleted, 1, UI_FONT_MONACO);
+    cursor_x -= w;
+    fill_rect(cursor_x, cursor_y, w + cursor_w, line_height, background_color);
+    flip_cursor();
+    ui_redraw_rect(cursor_x, cursor_y, w + cursor_w, h);
+    return;
+  }
+
+  char c = scancode_to_ascii(code, lshift || rshift);
+  if (c != 0) {
+    line_buf[line_idx] = c;
+    ++line_idx;
+
+    flip_cursor();
+    ui_render_text(ui_buf + (cursor_y * window_w) + cursor_x, window_w, &c, 1, UI_FONT_MONACO);
+    uint32_t w, h;
+    ui_measure_text(&w, &h, &c, 1, UI_FONT_MONACO);
+    cursor_x += w;
+    flip_cursor();
+    ui_redraw_rect(cursor_x - w, cursor_y, w + cursor_w, line_height);
+  }
 }
 
 void resize_handler(ui_event_t ev)
 {
-  memset(ui_buf, 0xff, ev.width * ev.height * sizeof(uint32_t));
-
-  const char *str = "dex pie term img doomgeneric. int main(int argc, char *argv[]) {}";
-  ui_render_text(ui_buf + 10 * ev.width + 10, ev.width, str, strlen(str), UI_FONT_LUCIDA_GRANDE);
-  ui_render_text(ui_buf + 30 * ev.width + 10, ev.width, str, strlen(str), UI_FONT_MONACO);
-
-  ui_redraw_rect(0, 0, ev.width, ev.height);
+  window_w = ev.width;
+  window_h = ev.height;
+  memset32(ui_buf, 0xffffff, window_w * window_h);
+  ui_redraw_rect(0, 0, window_w, window_h);
+  print_prompt();
 }
 
 int main(int argc, char *argv[])
 {
   priority(1);
 
+  memset(line_buf, 0, sizeof(line_buf));
+
+  if (argc > 1)
+    chdir(argv[1]);
+
   int32_t res = ui_acquire_window("term");
   if (res < 0)
     return 1;
+
   ui_buf = (uint32_t *)res;
+
+  ui_event_t ev;
+  res = ui_next_event(&ev);
+  if (res < 0 || ev.type != UI_EVENT_WAKE)
+    return 1;
+
+  // Use the resize handler to render everything upon window creation.
+  resize_handler(ev);
 
   while (1) {
     ui_event_t ev;
@@ -45,7 +354,6 @@ int main(int argc, char *argv[])
       case UI_EVENT_KEYBOARD:
         keyboard_handler(ev.code);
         break;
-      case UI_EVENT_WAKE:
       case UI_EVENT_RESIZE:
         resize_handler(ev);
         break;
