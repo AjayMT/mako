@@ -7,11 +7,11 @@
 
 #include "ui.h"
 #include "../common/stdint.h"
-#include "../common/ui_font_data.h"
 #include "../libc/_syscall.h"
 #include "../libc/errno.h"
 #include "../libc/mako.h"
 #include "../libc/stdlib.h"
+#include "ui_font_data.h"
 #include <stddef.h>
 
 int32_t ui_acquire_window(const char *name)

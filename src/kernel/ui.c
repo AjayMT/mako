@@ -6,7 +6,6 @@
 // Author: Ajay Tatachar <ajaymt2@illinois.edu>
 
 #include "ui.h"
-#include "../common/ui_font_data.h"
 #include "constants.h"
 #include "ds.h"
 #include "fs.h"
@@ -19,6 +18,7 @@
 #include "pmm.h"
 #include "process.h"
 #include "ui_cursor.h"
+#include "ui_font_data.h"
 #include "ui_title_bar.h"
 #include "util.h"
 
