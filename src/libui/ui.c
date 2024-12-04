@@ -11,6 +11,7 @@
 #include "../libc/errno.h"
 #include "../libc/mako.h"
 #include "../libc/stdlib.h"
+#include "../libc/string.h"
 #include "ui_font_data.h"
 #include <stddef.h>
 
@@ -189,4 +190,153 @@ void ui_measure_text(uint32_t *w, uint32_t *h, const char *str, size_t len, enum
 
   *w = max_w;
   *h = y + font_height;
+}
+
+#define SCROLLBAR_SIZE 8
+
+static void draw_scrollbars(struct ui_scrollview *view)
+{
+  const uint32_t background_color = 0xf8d685;
+  const uint32_t scrollbar_color = 0xffffff;
+
+  uint32_t y_fill_start = (view->window_y * (view->window_h - SCROLLBAR_SIZE)) / view->content_h;
+  uint32_t y_fill_height = (view->window_h * (view->window_h - SCROLLBAR_SIZE)) / view->content_h;
+  for (uint32_t y = 0; y < view->window_h - SCROLLBAR_SIZE; ++y) {
+    uint32_t *bufp = view->window_buf + y * view->window_w + view->window_w - SCROLLBAR_SIZE;
+    if (y == 0 || y == view->window_h - SCROLLBAR_SIZE - 1) {
+      memset32(bufp, 0, SCROLLBAR_SIZE);
+      continue;
+    }
+    bufp[0] = 0;
+    if (y >= y_fill_start && y < y_fill_start + y_fill_height)
+      memset32(bufp + 1, scrollbar_color, SCROLLBAR_SIZE - 2);
+    else
+      memset32(bufp + 1, background_color, SCROLLBAR_SIZE - 2);
+    bufp[SCROLLBAR_SIZE - 1] = 0;
+  }
+
+  uint32_t x_fill_start = (view->window_x * (view->window_w - SCROLLBAR_SIZE)) / view->content_w;
+  uint32_t x_fill_width = (view->window_w * (view->window_w - SCROLLBAR_SIZE)) / view->content_w;
+  for (uint32_t y = view->window_h - SCROLLBAR_SIZE; y < view->window_h; ++y) {
+    uint32_t *bufp = view->window_buf + y * view->window_w;
+    if (y == view->window_h - SCROLLBAR_SIZE || y == view->window_h - 1) {
+      memset32(bufp, 0, view->window_w - SCROLLBAR_SIZE);
+      continue;
+    }
+    memset32(bufp, background_color, view->window_w - SCROLLBAR_SIZE);
+    memset32(bufp + x_fill_start, scrollbar_color, x_fill_width);
+    bufp[0] = 0;
+    bufp[view->window_w - SCROLLBAR_SIZE - 1] = 0;
+  }
+}
+
+bool ui_scrollview_init(struct ui_scrollview *view,
+                        uint32_t *window_buf,
+                        uint32_t window_w,
+                        uint32_t window_h)
+{
+  view->content_w = window_w;
+  view->content_h = window_h;
+  view->content_buf = malloc(view->content_w * view->content_h * sizeof(uint32_t));
+  if (view->content_buf == NULL) {
+    errno = ENOMEM;
+    return false;
+  }
+  view->window_buf = window_buf;
+  view->window_w = window_w;
+  view->window_h = window_h;
+  view->window_x = 0;
+  view->window_y = 0;
+
+  memset32(view->content_buf, 0xffffff, view->content_w * view->content_h);
+  memset32(view->window_buf, 0xffffff, view->window_w * view->window_h);
+  draw_scrollbars(view);
+
+  return true;
+}
+
+bool ui_scrollview_grow(struct ui_scrollview *view, uint32_t w, uint32_t h, uint32_t padding)
+{
+  uint32_t content_w = view->content_w;
+  uint32_t content_h = view->content_h;
+  bool grow = w >= content_w || h >= content_h;
+  if (!grow)
+    return true;
+  if (w >= content_w)
+    content_w = w + padding;
+  if (h >= content_h)
+    content_h = h + padding;
+
+  uint32_t *new_buf = malloc(content_w * content_h * sizeof(uint32_t));
+  if (new_buf == NULL)
+    return false;
+
+  memset32(new_buf, 0xffffff, content_w * content_h);
+  for (uint32_t y = 0; y < view->content_h; ++y)
+    memcpy32(new_buf + y * content_w, view->content_buf + y * view->content_w, view->content_w);
+
+  view->content_buf = new_buf;
+  view->content_w = content_w;
+  view->content_h = content_h;
+  draw_scrollbars(view);
+  return true;
+}
+
+#define min(a, b) ((a) < (b) ? (a) : (b))
+#define max(a, b) ((a) > (b) ? (a) : (b))
+
+void ui_scrollview_redraw_rect(struct ui_scrollview *view,
+                               uint32_t x,
+                               uint32_t y,
+                               uint32_t w,
+                               uint32_t h)
+{
+  uint32_t clamped_x = max(x, view->window_x);
+  uint32_t clamped_y = max(y, view->window_y);
+
+  if (clamped_x >= view->window_x + view->window_w ||
+      clamped_y >= view->window_y + view->window_h || clamped_x >= x + w || clamped_y >= y + h)
+    return;
+
+  uint32_t clamped_w = min(x + w, view->window_x + view->window_w) - clamped_x;
+  uint32_t clamped_h = min(y + h, view->window_y + view->window_h) - clamped_y;
+
+  for (uint32_t i = clamped_y; i < clamped_y + clamped_h; ++i) {
+    uint32_t *contentp = view->content_buf + i * view->content_w + clamped_x;
+    uint32_t *windowp =
+      view->window_buf + (i - view->window_y) * view->window_w + clamped_x - view->window_x;
+    memcpy32(windowp, contentp, clamped_w);
+  }
+
+  if (clamped_x + clamped_w >= view->window_w - SCROLLBAR_SIZE ||
+      clamped_y + clamped_h >= view->window_h - SCROLLBAR_SIZE) {
+    draw_scrollbars(view);
+    ui_redraw_rect(0, 0, view->window_w, view->window_h);
+  } else
+    ui_redraw_rect(clamped_x - view->window_x, clamped_y - view->window_y, clamped_w, clamped_h);
+}
+
+void ui_scrollview_scroll(struct ui_scrollview *view, int32_t dx, int32_t dy)
+{
+  bool scrolled = false;
+  if (view->window_x + dx < view->content_w - view->window_w) {
+    view->window_x += dx;
+    scrolled = true;
+  }
+  if (view->window_y + dy < view->content_h - view->window_h) {
+    view->window_y += dy;
+    scrolled = true;
+  }
+
+  if (!scrolled)
+    return;
+
+  for (uint32_t y = 0; y < view->window_h; ++y) {
+    uint32_t *windowp = view->window_buf + y * view->window_w;
+    uint32_t *contentp =
+      view->content_buf + (y + view->window_y) * view->content_w + view->window_x;
+    memcpy32(windowp, contentp, view->window_w);
+  }
+  draw_scrollbars(view);
+  ui_redraw_rect(0, 0, view->window_w, view->window_h);
 }
