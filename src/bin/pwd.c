@@ -14,7 +14,6 @@ int main(int argc, char *argv[])
   char *wd = getcwd(NULL, 0);
   if (wd == NULL)
     return 1;
-  size_t len = strlen(wd);
-  fwrite(wd, 1, len, stdout);
+  printf("%s\n", wd);
   return 0;
 }
