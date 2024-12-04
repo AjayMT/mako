@@ -65,7 +65,8 @@ typedef struct ui_responder_s
 {
   process_t *process;
   char window_title[20];
-  ui_window_t window;
+  struct point window_pos;
+  struct dim window_dim;
   uint8_t window_opacity;
   uint8_t window_is_moving;
   struct pixel_buffer buf;
@@ -189,16 +190,16 @@ static void ui_blit_window(ui_responder_t *r, struct pixel_buffer buffer)
   paging_set_cr3(p->cr3);
 
   const struct point title_bar_dst = {
-    .x = max(r->window.x, 0),
-    .y = max(r->window.y - TITLE_BAR_HEIGHT, 0),
+    .x = max(r->window_pos.x, 0),
+    .y = max(r->window_pos.y - TITLE_BAR_HEIGHT, 0),
   };
   const struct point title_bar_src = {
-    .x = title_bar_dst.x - r->window.x,
-    .y = title_bar_dst.y - (r->window.y - TITLE_BAR_HEIGHT),
+    .x = title_bar_dst.x - r->window_pos.x,
+    .y = title_bar_dst.y - (r->window_pos.y - TITLE_BAR_HEIGHT),
   };
   const struct dim title_bar_dim = {
-    .w = min(r->window.x + TITLE_BAR_WIDTH, SCREENWIDTH) - title_bar_dst.x,
-    .h = min(r->window.y, SCREENHEIGHT) - title_bar_dst.y,
+    .w = min(r->window_pos.x + TITLE_BAR_WIDTH, SCREENWIDTH) - title_bar_dst.x,
+    .h = min(r->window_pos.y, SCREENHEIGHT) - title_bar_dst.y,
   };
 
   static uint32_t title_bar_tmp_buf[sizeof(TITLE_BAR_PIXELS)];
@@ -209,16 +210,16 @@ static void ui_blit_window(ui_responder_t *r, struct pixel_buffer buffer)
   copy_rect(buffer, title_bar_dst, title_bar_buf, title_bar_src, title_bar_dim, r->window_opacity);
 
   const struct point window_dst = {
-    .x = max(r->window.x, 0),
-    .y = max(r->window.y, 0),
+    .x = max(r->window_pos.x, 0),
+    .y = max(r->window_pos.y, 0),
   };
   const struct point window_src = {
-    .x = window_dst.x - r->window.x,
-    .y = window_dst.y - r->window.y,
+    .x = window_dst.x - r->window_pos.x,
+    .y = window_dst.y - r->window_pos.y,
   };
   const struct dim window_dim = {
-    .w = min(r->window.x + r->window.w, SCREENWIDTH) - window_dst.x,
-    .h = min(r->window.y + r->window.h, SCREENHEIGHT) - window_dst.y,
+    .w = min(r->window_pos.x + r->window_dim.w, SCREENWIDTH) - window_dst.x,
+    .h = min(r->window_pos.y + r->window_dim.h, SCREENHEIGHT) - window_dst.y,
   };
 
   copy_rect(buffer, window_dst, r->buf, window_src, window_dim, r->window_opacity);
@@ -249,12 +250,13 @@ static void ui_redraw_key_responder(struct point origin, struct dim dim)
   uint32_t eflags = interrupt_save_disable();
   ui_responder_t *r = responders.head->value;
 
-  if (origin.x != 0 || origin.y != 0 || dim.w != r->window.w || dim.h != r->window.h) {
+  if (origin.x != 0 || origin.y != 0 || dim.w != r->window_dim.w || dim.h != r->window_dim.h) {
     // Partial redraw.
-    const struct point dst = { r->window.x + origin.x, r->window.y + origin.y };
+    // FIXME screen size bounds checking
+    const struct point dst = { r->window_pos.x + origin.x, r->window_pos.y + origin.y };
     const struct dim clamped_dim = {
-      .w = min(origin.x + dim.w, r->window.w) - origin.x,
-      .h = min(origin.y + dim.h, r->window.h) - origin.y,
+      .w = min(origin.x + dim.w, r->window_dim.w) - origin.x,
+      .h = min(origin.y + dim.h, r->window_dim.h) - origin.y,
     };
 
     const uint32_t cr3 = paging_get_cr3();
@@ -274,20 +276,20 @@ static void ui_redraw_key_responder(struct point origin, struct dim dim)
   }
 
   const struct point title_bar_pos = {
-    .x = max(r->window.x, 0),
-    .y = max(r->window.y - TITLE_BAR_HEIGHT, 0),
+    .x = max(r->window_pos.x, 0),
+    .y = max(r->window_pos.y - TITLE_BAR_HEIGHT, 0),
   };
   const struct dim title_bar_dim = {
-    .w = min(r->window.x + TITLE_BAR_WIDTH, SCREENWIDTH) - title_bar_pos.x,
-    .h = min(r->window.y, SCREENHEIGHT) - title_bar_pos.y,
+    .w = min(r->window_pos.x + TITLE_BAR_WIDTH, SCREENWIDTH) - title_bar_pos.x,
+    .h = min(r->window_pos.y, SCREENHEIGHT) - title_bar_pos.y,
   };
   const struct point window_pos = {
-    .x = max(r->window.x, 0),
-    .y = max(r->window.y, 0),
+    .x = max(r->window_pos.x, 0),
+    .y = max(r->window_pos.y, 0),
   };
   const struct dim window_dim = {
-    .w = min(r->window.x + r->window.w, SCREENWIDTH) - window_pos.x,
-    .h = min(r->window.y + r->window.h, SCREENHEIGHT) - window_pos.y,
+    .w = min(r->window_pos.x + r->window_dim.w, SCREENWIDTH) - window_pos.x,
+    .h = min(r->window_pos.y + r->window_dim.h, SCREENHEIGHT) - window_pos.y,
   };
 
   if (r->window_is_moving)
@@ -313,8 +315,8 @@ static void ui_redraw_moving_objects(struct point old, struct point new)
   if (responders.size) {
     key_responder = responders.head->value;
     if (key_responder->window_is_moving) {
-      moved_object_w = key_responder->window.w;
-      moved_object_h = key_responder->window.h + TITLE_BAR_HEIGHT;
+      moved_object_w = key_responder->window_dim.w;
+      moved_object_h = key_responder->window_dim.h + TITLE_BAR_HEIGHT;
     }
   }
 
@@ -428,8 +430,8 @@ static uint32_t ui_dispatch_window_event(ui_responder_t *r, ui_event_type_t t)
 {
   ui_event_t ev;
   ev.type = t;
-  ev.width = r->window.w;
-  ev.height = r->window.h;
+  ev.width = r->window_dim.w;
+  ev.height = r->window_dim.h;
 
   uint32_t written = fs_write(&r->event_pipe_write, 0, sizeof(ui_event_t), (uint8_t *)&ev);
 
@@ -507,14 +509,16 @@ static void ui_handle_mouse_click()
   list_foreach(node, &responders)
   {
     ui_responder_t *r = node->value;
-    if (mouse_in_rect(
-          r->window.x, r->window.y - TITLE_BAR_HEIGHT, TITLE_BAR_BUTTON_WIDTH, TITLE_BAR_HEIGHT)) {
+    if (mouse_in_rect(r->window_pos.x,
+                      r->window_pos.y - TITLE_BAR_HEIGHT,
+                      TITLE_BAR_BUTTON_WIDTH,
+                      TITLE_BAR_HEIGHT)) {
       if (!responders_lock)
         process_kill(r->process);
       return;
     }
-    if (mouse_in_rect(r->window.x + TITLE_BAR_WIDTH - TITLE_BAR_BUTTON_WIDTH,
-                      r->window.y - TITLE_BAR_HEIGHT,
+    if (mouse_in_rect(r->window_pos.x + TITLE_BAR_WIDTH - TITLE_BAR_BUTTON_WIDTH,
+                      r->window_pos.y - TITLE_BAR_HEIGHT,
                       TITLE_BAR_BUTTON_WIDTH,
                       TITLE_BAR_HEIGHT)) {
       new_key_responder = r;
@@ -526,12 +530,12 @@ static void ui_handle_mouse_click()
       break;
     }
     if (mouse_in_rect(
-          r->window.x, r->window.y - TITLE_BAR_HEIGHT, TITLE_BAR_WIDTH, TITLE_BAR_HEIGHT)) {
+          r->window_pos.x, r->window_pos.y - TITLE_BAR_HEIGHT, TITLE_BAR_WIDTH, TITLE_BAR_HEIGHT)) {
       new_key_responder = r;
       r->window_is_moving = 1;
       break;
     }
-    if (mouse_in_rect(r->window.x, r->window.y, r->window.w, r->window.h)) {
+    if (mouse_in_rect(r->window_pos.x, r->window_pos.y, r->window_dim.w, r->window_dim.h)) {
       new_key_responder = r;
       break;
     }
@@ -587,13 +591,13 @@ uint32_t ui_handle_mouse_event(int32_t dx, int32_t dy, uint8_t left_button, uint
   mouse_pos.y = min(mouse_pos.y, SCREENHEIGHT - 1);
 
   if (key_responder && key_responder->window_is_moving) {
-    const uint32_t old_window_x = key_responder->window.x;
-    const uint32_t old_window_y = key_responder->window.y;
-    key_responder->window.x += mouse_pos.x - old_mouse_pos.x;
-    key_responder->window.y += mouse_pos.y - old_mouse_pos.y;
+    const uint32_t old_window_x = key_responder->window_pos.x;
+    const uint32_t old_window_y = key_responder->window_pos.y;
+    key_responder->window_pos.x += mouse_pos.x - old_mouse_pos.x;
+    key_responder->window_pos.y += mouse_pos.y - old_mouse_pos.y;
     struct point old = { .x = old_window_x, .y = old_window_y - TITLE_BAR_HEIGHT };
-    struct point new = { .x = key_responder->window.x,
-                         .y = key_responder->window.y - TITLE_BAR_HEIGHT };
+    struct point new = { .x = key_responder->window_pos.x,
+                         .y = key_responder->window_pos.y - TITLE_BAR_HEIGHT };
     ui_redraw_moving_objects(old, new);
     return 0;
   }
@@ -614,15 +618,15 @@ uint32_t ui_make_responder(process_t *p, uint32_t buf, const char *name)
   CHECK(err, "Failed to create event pipe.", err);
   r->process = p;
   r->buf = (struct pixel_buffer){ (uint32_t *)buf, SCREENWIDTH >> 1 };
-  r->window.w = SCREENWIDTH >> 1;
-  r->window.h = SCREENHEIGHT >> 1;
+  r->window_dim.w = SCREENWIDTH >> 1;
+  r->window_dim.h = SCREENHEIGHT >> 1;
   r->window_opacity = 0xff;
   size_t name_len = u_strlen(name);
   u_memcpy(r->window_title, name, min(name_len, sizeof(r->window_title)));
 
   klock(&responders_lock);
-  r->window.x = SCREENWIDTH >> 2;
-  r->window.y = SCREENHEIGHT >> 2;
+  r->window_pos.x = SCREENWIDTH >> 2;
+  r->window_pos.y = SCREENHEIGHT >> 2;
 
   list_push_front(&responders, r);
   r->list_node = responders.head;

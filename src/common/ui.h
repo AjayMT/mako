@@ -13,14 +13,6 @@
 #define SCREENWIDTH 1024
 #define SCREENHEIGHT 768
 
-typedef struct ui_window_s
-{
-  int32_t x;
-  int32_t y;
-  uint32_t w;
-  uint32_t h;
-} ui_window_t;
-
 typedef enum
 {
   UI_EVENT_KEYBOARD,
