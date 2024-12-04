@@ -73,6 +73,8 @@
 #define KB_SC_UP 0x48
 #define KB_SC_DOWN 0x50
 
+#define KB_KEY_RELEASED_MASK 0x80
+
 char scancode_to_ascii(uint8_t sc, uint8_t shift)
 {
   char c = 0;

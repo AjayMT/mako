@@ -5,7 +5,7 @@
 //
 // Author: Ajay Tatachar <ajay.tatachar@gmail.com>
 
-#include "scancode.h"
+#include "../common/scancode.h"
 #include <mako.h>
 #include <stdbool.h>
 #include <stdio.h>
@@ -383,6 +383,11 @@ int main(int argc, char *argv[])
     switch (ev.type) {
       case UI_EVENT_KEYBOARD:
         keyboard_handler(ev.code);
+        break;
+      case UI_EVENT_SCROLL:
+        thread_lock(&ui_lock);
+        ui_scrollview_scroll(&view, ev.hscroll * 10, ev.vscroll * 10);
+        thread_unlock(&ui_lock);
         break;
       default:;
     }

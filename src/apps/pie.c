@@ -5,7 +5,7 @@
 //
 // Author: Ajay Tatachar <ajaymt2@illinois.edu>
 
-#include "scancode.h"
+#include "../common/scancode.h"
 #include <errno.h>
 #include <mako.h>
 #include <signal.h>

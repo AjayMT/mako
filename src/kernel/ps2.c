@@ -10,6 +10,7 @@
 #include "io.h"
 #include "log.h"
 #include "ui.h"
+#include <stdbool.h>
 
 static const uint8_t PS2_DATA_PORT = 0x60;
 static const uint8_t PS2_STATUS_PORT = 0x64;
@@ -25,10 +26,14 @@ static const uint8_t WRITE_CONFIG = 0x60;
 static const uint8_t MOUSE_WRITE = 0xd4;
 
 // Mouse commands
-static const uint8_t MOUSE_SET_DEFAULTS = 0xf6;
-static const uint8_t MOUSE_DATA_ON = 0xf4;
-static const uint8_t MOUSE_SAMPLE_RATE = 0xf3;
 static const uint8_t MOUSE_RESOLUTION = 0xe8;
+static const uint8_t MOUSE_DEVICE_ID = 0xf2;
+static const uint8_t MOUSE_SAMPLE_RATE = 0xf3;
+static const uint8_t MOUSE_DATA_ON = 0xf4;
+static const uint8_t MOUSE_SET_DEFAULTS = 0xf6;
+
+static bool mouse_vscroll = false;
+static bool mouse_hscroll = false;
 
 typedef union
 {
@@ -54,7 +59,7 @@ static void keyboard_interrupt_handler(cpu_state_t cs, idt_info_t info, stack_st
 
 static void mouse_interrupt_handler(cpu_state_t cs, idt_info_t info, stack_state_t ss)
 {
-  static uint8_t mouse_bytes[3];
+  static uint8_t mouse_bytes[4];
   static unsigned mouse_byte_idx = 0;
 
   uint8_t mouse_data = inb(PS2_DATA_PORT);
@@ -68,7 +73,8 @@ static void mouse_interrupt_handler(cpu_state_t cs, idt_info_t info, stack_state
   mouse_bytes[mouse_byte_idx] = mouse_data;
   ++mouse_byte_idx;
 
-  if (mouse_byte_idx == 3) {
+  const unsigned mouse_byte_count = (mouse_vscroll || mouse_hscroll) ? 4 : 3;
+  if (mouse_byte_idx == mouse_byte_count) {
     mouse_byte_idx = 0;
 
     mouse_state_t state;
@@ -84,7 +90,30 @@ static void mouse_interrupt_handler(cpu_state_t cs, idt_info_t info, stack_state
       dy = 0;
     }
 
-    ui_handle_mouse_event(dx, dy, state.button_left, state.button_right);
+    int8_t vscroll = 0;
+    int8_t hscroll = 0;
+    if (mouse_vscroll) {
+      uint8_t scroll_byte = mouse_bytes[3];
+      if (mouse_hscroll) {
+        switch (scroll_byte & 0b1111) {
+          case 1:
+            vscroll = 1;
+            break;
+          case 0xf:
+            vscroll = -1;
+            break;
+          case 2:
+            hscroll = 1;
+            break;
+          case 0xe:
+            hscroll = -1;
+            break;
+        }
+      } else
+        vscroll = (int8_t)scroll_byte;
+    }
+
+    ui_handle_mouse_event(dx, dy, state.button_left, state.button_right, vscroll, hscroll);
   }
 }
 
@@ -159,11 +188,40 @@ uint32_t ps2_init()
   ps2_command(ENABLE_PORT2);
 
   mouse_write(MOUSE_SET_DEFAULTS);
-  mouse_write(MOUSE_SAMPLE_RATE);
-  mouse_write(10);
   mouse_write(MOUSE_RESOLUTION);
   mouse_write(0);
   mouse_write(MOUSE_DATA_ON);
+
+  // Try to enable vertical scroll wheel
+  mouse_write(MOUSE_DEVICE_ID);
+  ps2_wait_read();
+  inb(PS2_DATA_PORT);
+  mouse_write(MOUSE_SAMPLE_RATE);
+  mouse_write(200);
+  mouse_write(MOUSE_SAMPLE_RATE);
+  mouse_write(100);
+  mouse_write(MOUSE_SAMPLE_RATE);
+  mouse_write(80);
+  mouse_write(MOUSE_DEVICE_ID);
+  ps2_wait_read();
+  mouse_vscroll = inb(PS2_DATA_PORT) == 3;
+
+  // Try to enable horizontal scroll wheel
+  mouse_write(MOUSE_DEVICE_ID);
+  ps2_wait_read();
+  inb(PS2_DATA_PORT);
+  mouse_write(MOUSE_SAMPLE_RATE);
+  mouse_write(200);
+  mouse_write(MOUSE_SAMPLE_RATE);
+  mouse_write(200);
+  mouse_write(MOUSE_SAMPLE_RATE);
+  mouse_write(80);
+  mouse_write(MOUSE_DEVICE_ID);
+  ps2_wait_read();
+  mouse_hscroll = inb(PS2_DATA_PORT) == 4;
+
+  mouse_write(MOUSE_SAMPLE_RATE);
+  mouse_write(10);
 
   register_interrupt_handler(33, keyboard_interrupt_handler);
   register_interrupt_handler(44, mouse_interrupt_handler);

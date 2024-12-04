@@ -196,37 +196,41 @@ void ui_measure_text(uint32_t *w, uint32_t *h, const char *str, size_t len, enum
 
 static void draw_scrollbars(struct ui_scrollview *view)
 {
-  const uint32_t background_color = 0xf8d685;
+  const uint32_t background_color = 0xcccccc;
   const uint32_t scrollbar_color = 0xffffff;
 
-  uint32_t y_fill_start = (view->window_y * (view->window_h - SCROLLBAR_SIZE)) / view->content_h;
-  uint32_t y_fill_height = (view->window_h * (view->window_h - SCROLLBAR_SIZE)) / view->content_h;
-  for (uint32_t y = 0; y < view->window_h - SCROLLBAR_SIZE; ++y) {
-    uint32_t *bufp = view->window_buf + y * view->window_w + view->window_w - SCROLLBAR_SIZE;
-    if (y == 0 || y == view->window_h - SCROLLBAR_SIZE - 1) {
-      memset32(bufp, 0, SCROLLBAR_SIZE);
-      continue;
+  if (view->window_h != view->content_h) {
+    uint32_t y_fill_start = (view->window_y * (view->window_h - SCROLLBAR_SIZE)) / view->content_h;
+    uint32_t y_fill_height = (view->window_h * (view->window_h - SCROLLBAR_SIZE)) / view->content_h;
+    for (uint32_t y = 0; y < view->window_h - SCROLLBAR_SIZE; ++y) {
+      uint32_t *bufp = view->window_buf + y * view->window_w + view->window_w - SCROLLBAR_SIZE;
+      if (y == 0 || y == view->window_h - SCROLLBAR_SIZE - 1) {
+        memset32(bufp, background_color, SCROLLBAR_SIZE);
+        continue;
+      }
+      bufp[0] = background_color;
+      if (y >= y_fill_start && y < y_fill_start + y_fill_height)
+        memset32(bufp + 1, scrollbar_color, SCROLLBAR_SIZE - 2);
+      else
+        memset32(bufp + 1, background_color, SCROLLBAR_SIZE - 2);
+      bufp[SCROLLBAR_SIZE - 1] = background_color;
     }
-    bufp[0] = 0;
-    if (y >= y_fill_start && y < y_fill_start + y_fill_height)
-      memset32(bufp + 1, scrollbar_color, SCROLLBAR_SIZE - 2);
-    else
-      memset32(bufp + 1, background_color, SCROLLBAR_SIZE - 2);
-    bufp[SCROLLBAR_SIZE - 1] = 0;
   }
 
-  uint32_t x_fill_start = (view->window_x * (view->window_w - SCROLLBAR_SIZE)) / view->content_w;
-  uint32_t x_fill_width = (view->window_w * (view->window_w - SCROLLBAR_SIZE)) / view->content_w;
-  for (uint32_t y = view->window_h - SCROLLBAR_SIZE; y < view->window_h; ++y) {
-    uint32_t *bufp = view->window_buf + y * view->window_w;
-    if (y == view->window_h - SCROLLBAR_SIZE || y == view->window_h - 1) {
-      memset32(bufp, 0, view->window_w - SCROLLBAR_SIZE);
-      continue;
+  if (view->window_w != view->content_w) {
+    uint32_t x_fill_start = (view->window_x * (view->window_w - SCROLLBAR_SIZE)) / view->content_w;
+    uint32_t x_fill_width = (view->window_w * (view->window_w - SCROLLBAR_SIZE)) / view->content_w;
+    for (uint32_t y = view->window_h - SCROLLBAR_SIZE; y < view->window_h; ++y) {
+      uint32_t *bufp = view->window_buf + y * view->window_w;
+      if (y == view->window_h - SCROLLBAR_SIZE || y == view->window_h - 1) {
+        memset32(bufp, background_color, view->window_w - SCROLLBAR_SIZE);
+        continue;
+      }
+      memset32(bufp, background_color, view->window_w - SCROLLBAR_SIZE);
+      memset32(bufp + x_fill_start, scrollbar_color, x_fill_width);
+      bufp[0] = background_color;
+      bufp[view->window_w - SCROLLBAR_SIZE - 1] = background_color;
     }
-    memset32(bufp, background_color, view->window_w - SCROLLBAR_SIZE);
-    memset32(bufp + x_fill_start, scrollbar_color, x_fill_width);
-    bufp[0] = 0;
-    bufp[view->window_w - SCROLLBAR_SIZE - 1] = 0;
   }
 }
 

@@ -6,6 +6,7 @@
 // Author: Ajay Tatachar <ajaymt2@illinois.edu>
 
 #include "ui.h"
+#include "../common/scancode.h"
 #include "constants.h"
 #include "ds.h"
 #include "fs.h"
@@ -21,6 +22,7 @@
 #include "ui_font_data.h"
 #include "ui_title_bar.h"
 #include "util.h"
+#include <stdbool.h>
 
 #define CHECK(err, msg, code)                                                                      \
   if ((err)) {                                                                                     \
@@ -68,7 +70,7 @@ typedef struct ui_responder_s
   struct point window_pos;
   struct dim window_dim;
   uint8_t window_opacity;
-  uint8_t window_is_moving;
+  bool window_is_moving;
   struct pixel_buffer buf;
   fs_node_t event_pipe_read;
   fs_node_t event_pipe_write;
@@ -83,6 +85,8 @@ static struct pixel_buffer frame_buffer = { NULL, 0 };
 
 struct point mouse_pos = { 100, 100 };
 static uint8_t mouse_left_clicked = 0;
+static bool key_lshift_pressed = false;
+static bool key_rshift_pressed = false;
 
 static list_t responders;
 static volatile uint32_t responders_lock = 0;
@@ -449,12 +453,9 @@ uint32_t ui_handle_keyboard_event(uint8_t code)
     return 0;
   }
 
-  static const uint8_t scancode_meta_pressed = 0x38;
-  static const uint8_t scancode_meta_released = 0xb8;
-  static const uint8_t scancode_tab_pressed = 0x0f;
-  static uint8_t meta_pressed = 0;
+  static bool meta_pressed = false;
 
-  if (meta_pressed && code == scancode_tab_pressed) {
+  if (meta_pressed && code == KB_SC_TAB) {
     // Rotate responders list
     if (responders.size > 1) {
       ui_responder_t *key_responder = responders.head->value;
@@ -477,10 +478,24 @@ uint32_t ui_handle_keyboard_event(uint8_t code)
     return 0;
   }
 
-  if (code == scancode_meta_pressed)
-    meta_pressed = 1;
-  else if (code == scancode_meta_released)
-    meta_pressed = 0;
+  bool pressed = true;
+  uint8_t pressed_code = code;
+  if (code & KB_KEY_RELEASED_MASK) {
+    pressed_code &= ~KB_KEY_RELEASED_MASK;
+    pressed = false;
+  }
+
+  switch (pressed_code) {
+    case KB_SC_META:
+      meta_pressed = pressed;
+      break;
+    case KB_SC_LSHIFT:
+      key_lshift_pressed = pressed;
+      break;
+    case KB_SC_RSHIFT:
+      key_rshift_pressed = pressed;
+      break;
+  }
 
   ui_event_t ev;
   ev.type = UI_EVENT_KEYBOARD;
@@ -532,7 +547,7 @@ static void ui_handle_mouse_click()
     if (mouse_in_rect(
           r->window_pos.x, r->window_pos.y - TITLE_BAR_HEIGHT, TITLE_BAR_WIDTH, TITLE_BAR_HEIGHT)) {
       new_key_responder = r;
-      r->window_is_moving = 1;
+      r->window_is_moving = true;
       break;
     }
     if (mouse_in_rect(r->window_pos.x, r->window_pos.y, r->window_dim.w, r->window_dim.h)) {
@@ -559,10 +574,38 @@ static void ui_handle_mouse_click()
   ui_redraw_all();
 }
 
-uint32_t ui_handle_mouse_event(int32_t dx, int32_t dy, uint8_t left_button, uint8_t right_button)
+static void handle_mouse_scroll(int8_t vscroll, int8_t hscroll)
+{
+  list_foreach(node, &responders)
+  {
+    ui_responder_t *r = node->value;
+    if (mouse_in_rect(r->window_pos.x, r->window_pos.y, r->window_dim.w, r->window_dim.h)) {
+      ui_event_t ev;
+      ev.type = UI_EVENT_SCROLL;
+      if (key_lshift_pressed || key_rshift_pressed) {
+        ev.vscroll = hscroll;
+        ev.hscroll = vscroll;
+      } else {
+        ev.vscroll = vscroll;
+        ev.hscroll = hscroll;
+      }
+      uint32_t written = fs_write(&r->event_pipe_write, 0, sizeof(ui_event_t), (uint8_t *)&ev);
+      if (written != sizeof(ui_event_t))
+        log_error("ui", "Failed to dispatch scroll event.");
+      return;
+    }
+  }
+}
+
+uint32_t ui_handle_mouse_event(int32_t dx,
+                               int32_t dy,
+                               uint8_t left_button,
+                               uint8_t right_button,
+                               int8_t vscroll,
+                               int8_t hscroll)
 {
   uint8_t click_event = mouse_left_clicked != left_button;
-  if (dx == 0 && dy == 0 && !click_event)
+  if (dx == 0 && dy == 0 && vscroll == 0 && hscroll == 0 && !click_event)
     return 0;
 
   mouse_left_clicked = left_button;
@@ -571,11 +614,14 @@ uint32_t ui_handle_mouse_event(int32_t dx, int32_t dy, uint8_t left_button, uint
   if (responders.size)
     key_responder = responders.head->value;
 
+  if (vscroll || hscroll)
+    handle_mouse_scroll(vscroll, hscroll);
+
   if (click_event) {
     if (mouse_left_clicked)
       ui_handle_mouse_click();
     else if (key_responder && key_responder->window_is_moving) {
-      key_responder->window_is_moving = 0;
+      key_responder->window_is_moving = false;
       ui_redraw_all();
     }
     return 0;
