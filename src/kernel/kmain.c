@@ -94,22 +94,27 @@ void kmain(uint32_t mb_info_addr,
 
   register_interrupt_handler(14, page_fault_handler);
 
-  uint32_t res;
-  res = pmm_init(mb_info, kphys_start, kphys_end);
-  CHECK(res, "pmm");
+  uint32_t err;
+  err = pmm_init(mb_info, kphys_start, kphys_end);
+  CHECK(err, "pmm");
 
-  res = paging_init(kernel_pd, (uint32_t)kernel_pd - KERNEL_START_VADDR);
-  CHECK(res, "paging");
+  err = paging_init(kernel_pd, (uint32_t)kernel_pd - KERNEL_START_VADDR);
+  CHECK(err, "paging");
   paging_set_kernel_pd(kernel_pd, (uint32_t)kernel_pd - KERNEL_START_VADDR);
 
-  res = fs_init();
-  CHECK(res, "fs");
-  res = ata_init();
-  CHECK(res, "ata");
-  res = ustar_init("/dev/hda");
-  CHECK(res, "ustar");
-  res = ps2_init();
-  CHECK(res, "ps2");
+  err = fs_init();
+  CHECK(err, "fs");
+  err = ata_init();
+  CHECK(err, "ata");
+  err = ustar_init("/dev/hda");
+  CHECK(err, "ustar");
+  err = ps2_init();
+  CHECK(err, "ps2");
+
+  uint8_t *vbe_mode_info_p = (uint8_t *)(mb_info->vbe_mode_info + KERNEL_START_VADDR);
+  // FIXME use a real vbe mode info struct
+  const uint32_t video_frame_buffer_addr = *(uint32_t *)(vbe_mode_info_p + 40);
+  log_info("kmain", "video frame buffer addr = %x\n", video_frame_buffer_addr);
 
   const uint32_t num_video_pages = (SCREENWIDTH * SCREENHEIGHT * sizeof(uint32_t)) >> 12;
   uint32_t video_vaddr = paging_next_vaddr(num_video_pages, KERNEL_START_VADDR);
@@ -118,42 +123,44 @@ void kmain(uint32_t mb_info_addr,
   flags.rw = 1;
   paging_result_t r;
   for (uint32_t i = 0; i < num_video_pages; ++i) {
-    r = paging_map(video_vaddr + (i << 12), 0xFD000000 + (i << 12), flags);
+    r = paging_map(video_vaddr + (i << 12), video_frame_buffer_addr + (i << 12), flags);
     CHECK(r != PAGING_OK, "ui");
   }
-  res = ui_init(video_vaddr);
-  CHECK(res, "ui");
+  err = ui_init(video_vaddr);
+  CHECK(err, "ui");
 
   static fs_node_t debug_node;
   u_memset(&debug_node, 0, sizeof(fs_node_t));
   debug_node.write = debug_write;
-  res = fs_mount(&debug_node, "/dev/debug");
-  CHECK(res, "debug_node");
+  err = fs_mount(&debug_node, "/dev/debug");
+  CHECK(err, "debug_node");
 
   static fs_node_t null_node;
   u_memset(&null_node, 0, sizeof(fs_node_t));
-  res = fs_mount(&null_node, "/dev/null");
-  CHECK(res, "null_node");
+  err = fs_mount(&null_node, "/dev/null");
+  CHECK(err, "null_node");
 
   fs_node_t init_node;
-  res = fs_open_node(&init_node, "/bin/init", 0);
-  CHECK(res, "init");
+  err = fs_open_node(&init_node, "/bin/init", 0);
+  CHECK(err, "init");
   uint8_t *init_text = kmalloc(init_node.length);
   fs_read(&init_node, 0, init_node.length, init_text);
 
   unregister_interrupt_handler(14);
-  res = process_init();
-  CHECK(res, "process");
+  err = process_init();
+  CHECK(err, "process");
 
   process_image_t p;
-  res = elf_load(&p, init_text);
-  CHECK(res, "init ELF");
+  err = elf_load(&p, init_text);
+  CHECK(err, "init ELF");
 
   process_create_schedule_init(p);
 
   kfree(init_text);
   kfree(p.text);
   kfree(p.data);
+
+  log_info("kmain", "kernel init complete\n");
 
   enable_interrupts();
 }
