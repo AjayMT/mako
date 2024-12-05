@@ -18,19 +18,18 @@
 #define min(a, b) ((a) < (b) ? (a) : (b))
 #define max(a, b) ((a) > (b) ? (a) : (b))
 
-int32_t ui_acquire_window(const char *name)
+int32_t ui_acquire_window(const char *title, uint32_t w, uint32_t h)
 {
-  // ((SCREENWIDTH / 2) * (SCREENHEIGHT / 2) * 4) / 0x1000
-  uint32_t buf = pagealloc(((SCREENWIDTH >> 1) * (SCREENHEIGHT >> 1)) >> 10);
-  if (buf == 0)
+  uint32_t *buf = malloc(w * h * sizeof(uint32_t));
+  if (buf == NULL)
     return -1;
 
-  int32_t res = _syscall2(SYSCALL_UI_MAKE_RESPONDER, buf, (uint32_t)name);
+  int32_t res = _syscall4(SYSCALL_UI_MAKE_RESPONDER, (uint32_t)buf, (uint32_t)title, w, h);
   if (res < 0) {
     errno = -res;
     return -1;
   }
-  return buf;
+  return (int32_t)buf;
 }
 
 int32_t ui_redraw_rect(uint32_t x, uint32_t y, uint32_t w, uint32_t h)

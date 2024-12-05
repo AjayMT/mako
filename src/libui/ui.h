@@ -13,7 +13,7 @@
 #include <stdbool.h>
 #include <stddef.h>
 
-int32_t ui_acquire_window(const char *);
+int32_t ui_acquire_window(const char *title, uint32_t w, uint32_t h);
 int32_t ui_redraw_rect(uint32_t, uint32_t, uint32_t, uint32_t);
 int32_t ui_next_event(ui_event_t *);
 int32_t ui_yield();

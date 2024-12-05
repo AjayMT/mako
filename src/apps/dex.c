@@ -915,7 +915,7 @@ int main(int argc, char *argv[])
   cs = CS_DEFAULT;
   update_footer_text();
 
-  res = ui_acquire_window("dex");
+  res = ui_acquire_window("dex", SCREENWIDTH >> 1, SCREENHEIGHT >> 1);
   if (res < 0)
     return 1;
   ui_buf = (uint32_t *)res;
@@ -936,7 +936,7 @@ int main(int argc, char *argv[])
       case UI_EVENT_KEYBOARD:
         keyboard_handler(ev.code);
         break;
-      case UI_EVENT_RESIZE:
+      case UI_EVENT_RESIZE_REQUEST:
         resize_handler(ev);
         break;
       default:;

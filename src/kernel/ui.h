@@ -21,7 +21,7 @@ uint32_t ui_handle_mouse_event(int32_t dx,
                                uint8_t right_button,
                                int8_t vscroll,
                                int8_t hscroll);
-uint32_t ui_make_responder(process_t *, uint32_t, const char *);
+uint32_t ui_make_responder(process_t *p, uint32_t buf, const char *title, uint32_t w, uint32_t h);
 uint32_t ui_kill(process_t *);
 uint32_t ui_redraw_rect(process_t *, uint32_t, uint32_t, uint32_t, uint32_t);
 uint32_t ui_yield(process_t *);

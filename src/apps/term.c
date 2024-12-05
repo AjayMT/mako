@@ -358,7 +358,7 @@ int main(int argc, char *argv[])
   if (argc > 1)
     chdir(argv[1]);
 
-  int32_t res = ui_acquire_window("term");
+  int32_t res = ui_acquire_window("term", SCREENWIDTH >> 1, SCREENHEIGHT >> 1);
   if (res < 0)
     return 1;
 
@@ -372,7 +372,6 @@ int main(int argc, char *argv[])
   if (!ui_scrollview_init(&view, ui_buf, ev.width, ev.height))
     return 1;
 
-  ui_redraw_rect(0, 0, ev.width, ev.height);
   print_prompt();
 
   while (1) {

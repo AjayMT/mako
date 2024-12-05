@@ -729,10 +729,10 @@ static void syscall_yield()
   process_switch_next();
 }
 
-static void syscall_ui_make_responder(uint32_t buf, const char *name)
+static void syscall_ui_make_responder(uint32_t buf, const char *name, uint32_t w, uint32_t h)
 {
   process_t *current = process_current();
-  current->uregs.eax = -ui_make_responder(current, buf, name);
+  current->uregs.eax = -ui_make_responder(current, buf, name, w, h);
 }
 
 static void syscall_ui_redraw_rect(uint32_t x, uint32_t y, uint32_t w, uint32_t h)

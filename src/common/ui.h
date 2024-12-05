@@ -17,7 +17,7 @@ typedef enum
 {
   UI_EVENT_KEYBOARD,
   UI_EVENT_SCROLL,
-  UI_EVENT_RESIZE,
+  UI_EVENT_RESIZE_REQUEST,
   UI_EVENT_WAKE,
   UI_EVENT_SLEEP
 } ui_event_type_t;
