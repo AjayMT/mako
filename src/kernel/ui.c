@@ -314,9 +314,8 @@ static void ui_redraw_key_responder(struct point origin, struct dim dim)
     .w = min(origin.x + dim.w, r->window_dim.w) - origin.x,
     .h = min(origin.y + dim.h, r->window_dim.h) - origin.y,
   };
-  const bool rect_on_screen = clip_rect_on_screen(&dst, &src, &clipped_dim);
 
-  if (!rect_on_screen) {
+  if (!clip_rect_on_screen(&dst, &src, &clipped_dim)) {
     interrupt_restore(eflags);
     return;
   }
@@ -324,9 +323,9 @@ static void ui_redraw_key_responder(struct point origin, struct dim dim)
   const uint32_t cr3 = paging_get_cr3();
   paging_set_cr3(r->process->cr3);
   if (r->window_is_moving)
-    copy_rect(moving_objects, dst, r->buf, origin, clipped_dim, r->window_opacity);
+    copy_rect(moving_objects, dst, r->buf, src, clipped_dim, r->window_opacity);
   else {
-    copy_rect(static_objects, dst, r->buf, origin, clipped_dim, r->window_opacity);
+    copy_rect(static_objects, dst, r->buf, src, clipped_dim, r->window_opacity);
     copy_rect(moving_objects, dst, static_objects, dst, clipped_dim, 0xff);
   }
   paging_set_cr3(cr3);
@@ -745,6 +744,8 @@ uint32_t ui_redraw_rect(process_t *p, uint32_t x, uint32_t y, uint32_t w, uint32
     ui_redraw_key_responder(origin, dim);
   else
     ui_redraw_all();
+
+  r->first_draw = false;
 
   interrupt_restore(eflags);
   return 0;
