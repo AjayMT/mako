@@ -809,6 +809,12 @@ static void syscall_ui_set_wallpaper(const char *path)
   current->uregs.eax = -ui_set_wallpaper(path);
 }
 
+static void syscall_ui_resize_window(uint32_t buf, uint32_t w, uint32_t h)
+{
+  process_t *current = process_current();
+  current->uregs.eax = -ui_resize_window(current, buf, w, h);
+}
+
 static syscall_t syscall_table[] = {
   syscall_exit,
   syscall_fork,
@@ -852,6 +858,7 @@ static syscall_t syscall_table[] = {
   syscall_systime,
   syscall_priority,
   syscall_ui_set_wallpaper,
+  syscall_ui_resize_window,
 };
 
 process_registers_t *syscall_handler(cpu_state_t cs, stack_state_t ss)

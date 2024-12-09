@@ -28,5 +28,6 @@ uint32_t ui_yield(process_t *);
 uint32_t ui_next_event(process_t *, uint32_t);
 uint32_t ui_poll_events(process_t *);
 uint32_t ui_set_wallpaper(const char *);
+uint32_t ui_resize_window(process_t *p, uint32_t buf, uint32_t w, uint32_t h);
 
 #endif /* _UI_H_ */

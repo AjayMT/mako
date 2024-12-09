@@ -639,10 +639,10 @@ int main(int argc, char *argv[])
 
   update_footer_text();
 
-  int32_t res = ui_acquire_window("pie", SCREENWIDTH >> 1, SCREENHEIGHT >> 1);
+  ui_buf = malloc((SCREENWIDTH >> 1) * (SCREENHEIGHT >> 1) * sizeof(uint32_t));
+  int32_t res = ui_acquire_window(ui_buf, "pie", SCREENWIDTH >> 1, SCREENHEIGHT >> 1);
   if (res < 0)
     return 1;
-  ui_buf = (uint32_t *)res;
 
   ui_event_t ev;
   res = ui_next_event(&ev);

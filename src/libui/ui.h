@@ -13,7 +13,8 @@
 #include <stdbool.h>
 #include <stddef.h>
 
-int32_t ui_acquire_window(const char *title, uint32_t w, uint32_t h);
+int32_t ui_acquire_window(uint32_t *buf, const char *title, uint32_t w, uint32_t h);
+int32_t ui_resize_window(uint32_t *buf, uint32_t w, uint32_t h);
 int32_t ui_redraw_rect(uint32_t, uint32_t, uint32_t, uint32_t);
 int32_t ui_next_event(ui_event_t *);
 int32_t ui_yield();
@@ -58,5 +59,6 @@ void ui_scrollview_redraw_rect(struct ui_scrollview *view,
                                uint32_t w,
                                uint32_t h);
 void ui_scrollview_scroll(struct ui_scrollview *view, int32_t dx, int32_t dy);
+void ui_scrollview_clear(struct ui_scrollview *view, uint32_t *new_buf, uint32_t w, uint32_t h);
 
 #endif /* _UI_H_ */

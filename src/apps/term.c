@@ -349,6 +349,38 @@ void keyboard_handler(uint8_t code)
   thread_unlock(&ui_lock);
 }
 
+void resize_request_handler(uint32_t w, uint32_t h)
+{
+  thread_lock(&ui_lock);
+  uint32_t *new_ui_buf = malloc(w * h * sizeof(uint32_t));
+  if (new_ui_buf == NULL) {
+    thread_unlock(&ui_lock);
+    return;
+  }
+
+  free(view.content_buf);
+  if (!ui_scrollview_init(&view, new_ui_buf, w, h)) {
+    thread_unlock(&ui_lock);
+    return;
+  }
+
+  cursor_x = 0;
+  cursor_y = 0;
+  line_idx = 0;
+  memset(line_buf, 0, sizeof(line_buf));
+
+  print_prompt();
+  int32_t err = ui_resize_window(new_ui_buf, w, h);
+  if (err) {
+    thread_unlock(&ui_lock);
+    return;
+  }
+
+  free(ui_buf);
+  ui_buf = new_ui_buf;
+  thread_unlock(&ui_lock);
+}
+
 int main(int argc, char *argv[])
 {
   priority(1);
@@ -358,15 +390,14 @@ int main(int argc, char *argv[])
   if (argc > 1)
     chdir(argv[1]);
 
-  int32_t res = ui_acquire_window("term", SCREENWIDTH >> 1, SCREENHEIGHT >> 1);
-  if (res < 0)
+  ui_buf = malloc((SCREENWIDTH >> 1) * (SCREENHEIGHT >> 1) * sizeof(uint32_t));
+  int32_t err = ui_acquire_window(ui_buf, "term", SCREENWIDTH >> 1, SCREENHEIGHT >> 1);
+  if (err < 0)
     return 1;
 
-  ui_buf = (uint32_t *)res;
-
   ui_event_t ev;
-  res = ui_next_event(&ev);
-  if (res < 0 || ev.type != UI_EVENT_WAKE)
+  err = ui_next_event(&ev);
+  if (err < 0 || ev.type != UI_EVENT_WAKE)
     return 1;
 
   if (!ui_scrollview_init(&view, ui_buf, ev.width, ev.height))
@@ -376,8 +407,8 @@ int main(int argc, char *argv[])
 
   while (1) {
     ui_event_t ev;
-    res = ui_next_event(&ev);
-    if (res < 0)
+    err = ui_next_event(&ev);
+    if (err < 0)
       return 1;
     switch (ev.type) {
       case UI_EVENT_KEYBOARD:
@@ -387,6 +418,9 @@ int main(int argc, char *argv[])
         thread_lock(&ui_lock);
         ui_scrollview_scroll(&view, ev.hscroll * 10, ev.vscroll * 10);
         thread_unlock(&ui_lock);
+        break;
+      case UI_EVENT_RESIZE_REQUEST:
+        resize_request_handler(ev.width, ev.height);
         break;
       default:;
     }

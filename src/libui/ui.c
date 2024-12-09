@@ -18,18 +18,24 @@
 #define min(a, b) ((a) < (b) ? (a) : (b))
 #define max(a, b) ((a) > (b) ? (a) : (b))
 
-int32_t ui_acquire_window(const char *title, uint32_t w, uint32_t h)
+int32_t ui_acquire_window(uint32_t *buf, const char *title, uint32_t w, uint32_t h)
 {
-  uint32_t *buf = malloc(w * h * sizeof(uint32_t));
-  if (buf == NULL)
-    return -1;
-
   int32_t res = _syscall4(SYSCALL_UI_MAKE_RESPONDER, (uint32_t)buf, (uint32_t)title, w, h);
   if (res < 0) {
     errno = -res;
     return -1;
   }
-  return (int32_t)buf;
+  return 0;
+}
+
+int32_t ui_resize_window(uint32_t *buf, uint32_t w, uint32_t h)
+{
+  int32_t res = _syscall3(SYSCALL_UI_RESIZE_WINDOW, (uint32_t)buf, w, h);
+  if (res < 0) {
+    errno = -res;
+    return -1;
+  }
+  return 0;
 }
 
 int32_t ui_redraw_rect(uint32_t x, uint32_t y, uint32_t w, uint32_t h)
