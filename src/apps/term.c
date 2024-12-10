@@ -27,9 +27,9 @@ static const uint32_t line_height = 13;
 static uint32_t cursor_x = 0;
 static uint32_t cursor_y = 0;
 
-#define MAX_PATH_LEN 128
+#define SMALL_BUFFER_SIZE 256
 
-static char line_buf[MAX_PATH_LEN];
+static char line_buf[SMALL_BUFFER_SIZE];
 static unsigned line_idx = 0;
 
 static bool executing_program = false;
@@ -100,8 +100,8 @@ void print_line(const char *text)
 
 void print_prompt()
 {
-  char buf[MAX_PATH_LEN];
-  getcwd(buf, MAX_PATH_LEN - 3);
+  char buf[SMALL_BUFFER_SIZE];
+  getcwd(buf, SMALL_BUFFER_SIZE - 4);
   size_t len = strlen(buf);
   memcpy(buf + len, " % ", 4);
   print(buf);
@@ -133,14 +133,14 @@ bool find_path(char *out, char *prog_name, char *env_path)
     step = strlen(path + i);
 
     // FIXME should do bounds checking here
-    char this_path[MAX_PATH_LEN];
+    char this_path[SMALL_BUFFER_SIZE];
     memcpy(this_path, path + i, step);
     this_path[step] = '/';
     memcpy(this_path + step + 1, prog_name, prog_name_len);
     this_path[step + 1 + prog_name_len] = '\0';
 
     if (is_path_executable(this_path)) {
-      strncpy(out, this_path, MAX_PATH_LEN);
+      strncpy(out, this_path, SMALL_BUFFER_SIZE);
       free(path);
       return true;
     }
@@ -150,13 +150,13 @@ bool find_path(char *out, char *prog_name, char *env_path)
   return false;
 }
 
-void async_thread()
+void program_thread()
 {
   close(prog_write_fd);
   while (1) {
-    char buf[MAX_PATH_LEN];
+    char buf[SMALL_BUFFER_SIZE];
     memset(buf, 0, sizeof(buf));
-    int32_t r = read(prog_read_fd, buf, MAX_PATH_LEN);
+    int32_t r = read(prog_read_fd, buf, SMALL_BUFFER_SIZE - 1);
     if (r <= 0)
       break;
 
@@ -175,6 +175,8 @@ void async_thread()
   }
 
   thread_lock(&ui_lock);
+  close(prog_read_fd);
+  prog_read_fd = 0;
   executing_program = false;
   print_prompt();
   thread_unlock(&ui_lock);
@@ -182,6 +184,8 @@ void async_thread()
 
 void execute_async(const char *prog, char **args)
 {
+  executing_program = true;
+
   uint32_t readfd, writefd;
   int32_t err = pipe(&readfd, &writefd);
   if (err)
@@ -191,8 +195,6 @@ void execute_async(const char *prog, char **args)
   err = pipe(&readfd2, &writefd2);
   if (err)
     return;
-
-  executing_program = true;
 
   prog_pid = fork();
   if (prog_pid == 0) {
@@ -212,7 +214,7 @@ void execute_async(const char *prog, char **args)
   prog_write_fd = writefd2;
   close(writefd);
   close(readfd2);
-  thread(async_thread, NULL);
+  thread(program_thread, NULL);
   close(readfd);
 }
 
@@ -227,7 +229,7 @@ void execute_program(char *cmd_buf, size_t cmd_len)
     return;
   }
 
-  char *args[MAX_PATH_LEN];
+  char *args[SMALL_BUFFER_SIZE];
   unsigned args_idx = 0;
   size_t cur_arg_len = 0;
   for (unsigned i = strlen(cmd_buf) + 1; i < cmd_len; i += cur_arg_len + 1) {
@@ -236,12 +238,12 @@ void execute_program(char *cmd_buf, size_t cmd_len)
       continue;
     args[args_idx] = cmd_buf + i;
     ++args_idx;
-    if (args_idx >= MAX_PATH_LEN - 1)
+    if (args_idx >= SMALL_BUFFER_SIZE - 1)
       break;
   }
   args[args_idx] = NULL;
 
-  char prog_path[MAX_PATH_LEN];
+  char prog_path[SMALL_BUFFER_SIZE];
 
   if (find_path(prog_path, cmd_buf, getenv("APPS_PATH"))) {
     if (fork() == 0) {
@@ -262,8 +264,8 @@ void execute_program(char *cmd_buf, size_t cmd_len)
     return;
   }
 
-  char out[MAX_PATH_LEN];
-  snprintf(out, MAX_PATH_LEN, "'%s' not found", cmd_buf);
+  char out[SMALL_BUFFER_SIZE];
+  snprintf(out, SMALL_BUFFER_SIZE, "'%s' not found", cmd_buf);
   print_line(out);
   print_prompt();
 }
@@ -313,6 +315,10 @@ void keyboard_handler(uint8_t code)
       print_line(&tmp);
 
       if (!executing_program) {
+        if (prog_write_fd != 0) {
+          close(prog_write_fd);
+          prog_write_fd = 0;
+        }
         execute_program(input, input_len);
       } else {
         input[input_len] = '\n';
@@ -369,7 +375,9 @@ void resize_request_handler(uint32_t w, uint32_t h)
   line_idx = 0;
   memset(line_buf, 0, sizeof(line_buf));
 
-  print_prompt();
+  if (!executing_program)
+    print_prompt();
+
   int32_t err = ui_resize_window(new_ui_buf, w, h);
   if (err) {
     thread_unlock(&ui_lock);
