@@ -356,36 +356,34 @@ static void blit_window(struct responder *r)
 
 static void blit_cursor()
 {
+  uint32_t cursor_w = min(mouse_pos.x + CURSOR_WIDTH, SCREENWIDTH) - mouse_pos.x;
+  uint32_t cursor_h = min(mouse_pos.y + CURSOR_HEIGHT, SCREENHEIGHT) - mouse_pos.y;
+  const uint32_t cursor_colors[] = { 0, 0xffffff };
+
   if (cursor_flipped) {
-    for (uint32_t y = 0; y < CURSOR_HEIGHT; ++y) {
-      if (mouse_pos.y + y >= SCREENHEIGHT)
-        break;
-      for (uint32_t x = 0; x < CURSOR_WIDTH; ++x) {
-        if (mouse_pos.x + x >= SCREENWIDTH)
-          break;
-        const uint32_t pixel_offset = ((mouse_pos.y + y) * SCREENWIDTH) + mouse_pos.x + x;
+    for (uint32_t y = 0; y < cursor_h; ++y) {
+      const uint32_t row_offset = (mouse_pos.y + y) * SCREENWIDTH;
+      for (uint32_t x = 0; x < cursor_w; ++x) {
+        const uint32_t pixel_offset = row_offset + mouse_pos.x + x;
         cursor_bg_buffer.buf[y * CURSOR_WIDTH + x] = back_buffer.buf[pixel_offset];
         uint8_t cursor_pixel = cursor_pixels[x * CURSOR_WIDTH + y];
         if (cursor_pixel == CURSOR_NONE)
           continue;
-        back_buffer.buf[pixel_offset] = cursor_pixel == CURSOR_BLACK ? 0 : 0xffffff;
+        back_buffer.buf[pixel_offset] = cursor_colors[cursor_pixel];
       }
     }
     return;
   }
 
-  for (uint32_t y = 0; y < CURSOR_HEIGHT; ++y) {
-    if (mouse_pos.y + y >= SCREENHEIGHT)
-      break;
-    for (uint32_t x = 0; x < CURSOR_WIDTH; ++x) {
-      if (mouse_pos.x + x >= SCREENWIDTH)
-        break;
-      const uint32_t pixel_offset = ((mouse_pos.y + y) * SCREENWIDTH) + mouse_pos.x + x;
+  for (uint32_t y = 0; y < cursor_h; ++y) {
+    const uint32_t row_offset = (mouse_pos.y + y) * SCREENWIDTH;
+    for (uint32_t x = 0; x < cursor_w; ++x) {
+      const uint32_t pixel_offset = row_offset + mouse_pos.x + x;
       cursor_bg_buffer.buf[y * CURSOR_WIDTH + x] = back_buffer.buf[pixel_offset];
       uint8_t cursor_pixel = cursor_pixels[y * CURSOR_WIDTH + x];
       if (cursor_pixel == CURSOR_NONE)
         continue;
-      back_buffer.buf[pixel_offset] = cursor_pixel == CURSOR_BLACK ? 0 : 0xffffff;
+      back_buffer.buf[pixel_offset] = cursor_colors[cursor_pixel];
     }
   }
 }

@@ -13,9 +13,9 @@
 
 enum cursor_color
 {
-  CURSOR_NONE,
-  CURSOR_BLACK,
-  CURSOR_WHITE,
+  CURSOR_BLACK = 0,
+  CURSOR_WHITE = 1,
+  CURSOR_NONE = 2,
 };
 
 #define CURSOR_DEFAULT_WIDTH 15
