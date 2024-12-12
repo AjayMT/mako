@@ -1,3 +1,3 @@
 [submodule "ports"]
 	path = ports
-	url = git@github.com:AjayMT/mako-ports.git
+	url = https://github.com/AjayMT/mako-ports.git
