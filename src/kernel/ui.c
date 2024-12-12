@@ -93,6 +93,8 @@ static struct pixel_buffer frame_buffer = { NULL, 0 };
 
 struct point mouse_pos = { 100, 100 };
 static uint8_t mouse_left_clicked = 0;
+static const uint8_t *cursor_pixels = CURSOR_DEFAULT_PIXELS;
+static bool cursor_flipped = false;
 static bool key_lshift_pressed = false;
 static bool key_rshift_pressed = false;
 
@@ -354,6 +356,24 @@ static void blit_window(struct responder *r)
 
 static void blit_cursor()
 {
+  if (cursor_flipped) {
+    for (uint32_t y = 0; y < CURSOR_HEIGHT; ++y) {
+      if (mouse_pos.y + y >= SCREENHEIGHT)
+        break;
+      for (uint32_t x = 0; x < CURSOR_WIDTH; ++x) {
+        if (mouse_pos.x + x >= SCREENWIDTH)
+          break;
+        const uint32_t pixel_offset = ((mouse_pos.y + y) * SCREENWIDTH) + mouse_pos.x + x;
+        cursor_bg_buffer.buf[y * CURSOR_WIDTH + x] = back_buffer.buf[pixel_offset];
+        uint8_t cursor_pixel = cursor_pixels[x * CURSOR_WIDTH + y];
+        if (cursor_pixel == CURSOR_NONE)
+          continue;
+        back_buffer.buf[pixel_offset] = cursor_pixel == CURSOR_BLACK ? 0 : 0xffffff;
+      }
+    }
+    return;
+  }
+
   for (uint32_t y = 0; y < CURSOR_HEIGHT; ++y) {
     if (mouse_pos.y + y >= SCREENHEIGHT)
       break;
@@ -361,10 +381,11 @@ static void blit_cursor()
       if (mouse_pos.x + x >= SCREENWIDTH)
         break;
       const uint32_t pixel_offset = ((mouse_pos.y + y) * SCREENWIDTH) + mouse_pos.x + x;
-      const uint32_t cursor_pixel = CURSOR_PIXELS[y * CURSOR_WIDTH + x];
       cursor_bg_buffer.buf[y * CURSOR_WIDTH + x] = back_buffer.buf[pixel_offset];
-      if (cursor_pixel & 0xff000000)
-        back_buffer.buf[pixel_offset] = cursor_pixel;
+      uint8_t cursor_pixel = cursor_pixels[y * CURSOR_WIDTH + x];
+      if (cursor_pixel == CURSOR_NONE)
+        continue;
+      back_buffer.buf[pixel_offset] = cursor_pixel == CURSOR_BLACK ? 0 : 0xffffff;
     }
   }
 }
@@ -764,6 +785,53 @@ static void handle_mouse_scroll(int8_t vscroll, int8_t hscroll)
   }
 }
 
+static void update_mouse_cursor()
+{
+  cursor_pixels = CURSOR_DEFAULT_PIXELS;
+  cursor_flipped = false;
+
+  if (responders.size == 0)
+    return;
+
+  struct responder *r = responders.head->value;
+  if (mouse_in_rect(r->window_pos.x,
+                    r->window_pos.y - TITLE_BAR_HEIGHT,
+                    TITLE_BAR_BUTTON_WIDTH,
+                    TITLE_BAR_HEIGHT)) {
+    cursor_pixels = CURSOR_CLOSE_PIXELS;
+    return;
+  }
+  if (mouse_in_rect(r->window_pos.x + TITLE_BAR_WIDTH - TITLE_BAR_BUTTON_WIDTH,
+                    r->window_pos.y - TITLE_BAR_HEIGHT,
+                    TITLE_BAR_BUTTON_WIDTH,
+                    TITLE_BAR_HEIGHT)) {
+    cursor_pixels = CURSOR_OPACITY_PIXELS;
+    return;
+  }
+  if (mouse_in_rect(r->window_pos.x + r->window_dim.w,
+                    r->window_pos.y + r->window_dim.h,
+                    window_shadow_size,
+                    window_shadow_size)) {
+    cursor_pixels = CURSOR_RESIZE_DIAG_PIXELS;
+    return;
+  }
+  if (mouse_in_rect(r->window_pos.x + r->window_dim.w,
+                    r->window_pos.y + window_shadow_size,
+                    window_shadow_size,
+                    r->window_dim.h - window_shadow_size)) {
+    cursor_pixels = CURSOR_RESIZE_PIXELS;
+    cursor_flipped = true;
+    return;
+  }
+  if (mouse_in_rect(r->window_pos.x + window_shadow_size,
+                    r->window_pos.y + r->window_dim.h,
+                    r->window_dim.w - window_shadow_size,
+                    window_shadow_size)) {
+    cursor_pixels = CURSOR_RESIZE_PIXELS;
+    return;
+  }
+}
+
 uint32_t ui_handle_mouse_event(int32_t dx,
                                int32_t dy,
                                uint8_t left_button,
@@ -814,6 +882,8 @@ uint32_t ui_handle_mouse_event(int32_t dx,
   mouse_pos.x = min(mouse_pos.x, SCREENWIDTH - 1);
   mouse_pos.y = max(mouse_pos.y, 0);
   mouse_pos.y = min(mouse_pos.y, SCREENHEIGHT - 1);
+
+  update_mouse_cursor();
 
   if (key_responder) {
     if (key_responder->window_moving) {
