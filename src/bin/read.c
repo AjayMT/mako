@@ -38,7 +38,7 @@ int main(int argc, char *argv[])
 
   while (nread < (size_t)buf.st_size) {
     nread += fread(text, 1, buf.st_size - nread, f);
-    nwritten = fwrite(text, 1, nread, f);
+    nwritten = fwrite(text, 1, nread, stdout);
     while (nwritten < nread)
       nwritten += fwrite(text + nwritten, 1, nread - nwritten, stdout);
   }
