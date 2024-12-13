@@ -6,6 +6,8 @@
 // Author: Ajay Tatachar <ajay.tatachar@gmail.com>
 
 #include "../common/scancode.h"
+#include <dirent.h>
+#include <libgen.h>
 #include <mako.h>
 #include <stdbool.h>
 #include <stdio.h>
@@ -110,8 +112,8 @@ void print_prompt()
 bool is_path_executable(const char *p)
 {
   struct stat st;
-  int32_t res = stat(p, &st);
-  if (res)
+  int32_t err = stat(p, &st);
+  if (err)
     return 0;
   if ((st.st_dev & 1) == 0)
     return 0;
@@ -270,6 +272,51 @@ void execute_program(char *cmd_buf, size_t cmd_len)
   print_prompt();
 }
 
+char *find_tab_completion()
+{
+  char *path = line_buf + line_idx;
+  while (*path != ' ' && path != line_buf)
+    --path;
+  if (*path == ' ')
+    ++path;
+
+  char dirname_buf[SMALL_BUFFER_SIZE];
+  char *dirname_tmp = dirname(path);
+  strncpy(dirname_buf, dirname_tmp, SMALL_BUFFER_SIZE);
+
+  DIR *d = opendir(dirname_buf);
+  if (d == NULL)
+    return NULL;
+
+  size_t path_len = strlen(path);
+  char *basename = path + path_len;
+  while (*basename != '/' && basename != path)
+    --basename;
+  if (*basename == '/')
+    ++basename;
+  size_t basename_len = path_len - (basename - path);
+
+  static char completion_buf[SMALL_BUFFER_SIZE];
+  char *completion = NULL;
+
+  struct dirent *ent = readdir(d);
+  for (; ent != NULL; free(ent), ent = readdir(d)) {
+    if (strcmp(ent->d_name, ".") == 0 || strcmp(ent->d_name, "..") == 0)
+      continue;
+
+    if (strncmp(ent->d_name, basename, basename_len) == 0) {
+      strncpy(completion_buf, ent->d_name + basename_len, SMALL_BUFFER_SIZE);
+      completion = completion_buf;
+      break;
+    }
+  }
+
+  if (ent != NULL)
+    free(ent);
+  closedir(d);
+  return completion;
+}
+
 void keyboard_handler(uint8_t code)
 {
   static bool lshift = false;
@@ -339,6 +386,15 @@ void keyboard_handler(uint8_t code)
       fill_rect(cursor_x, cursor_y, w + cursor_w, line_height, background_color);
       flip_cursor();
       ui_scrollview_redraw_rect(&view, cursor_x, cursor_y, w + cursor_w, h);
+      break;
+    }
+    case KB_SC_TAB: {
+      char *completion = find_tab_completion();
+      if (completion == NULL)
+        break;
+      strcpy(line_buf + line_idx, completion);
+      line_idx += strlen(completion);
+      print(completion);
       break;
     }
     default: {
