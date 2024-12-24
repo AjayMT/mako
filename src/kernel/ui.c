@@ -77,13 +77,15 @@ struct responder
   bool window_resizing_h;
   struct pixel_buffer buf;
   struct pixel_buffer bg_buf;
+  struct pixel_buffer title_bar_buf;
   fs_node_t event_pipe_read;
   fs_node_t event_pipe_write;
   list_node_t *list_node;
 };
 
-static const unsigned window_shadow_size = 5;
-static const uint32_t window_shadow_color = 0x555555;
+static const unsigned window_small_shadow_size = 3;
+static const unsigned window_large_shadow_size = 5;
+static const uint32_t window_shadow_color = 0x5b7c99;
 
 static const size_t frame_size = SCREENWIDTH * SCREENHEIGHT;
 static uint32_t *wallpaper = NULL;
@@ -94,7 +96,6 @@ static struct pixel_buffer frame_buffer = { NULL, 0 };
 struct point mouse_pos = { 100, 100 };
 static uint8_t mouse_left_clicked = 0;
 static const uint8_t *cursor_pixels = CURSOR_DEFAULT_PIXELS;
-static bool cursor_flipped = false;
 static bool key_lshift_pressed = false;
 static bool key_rshift_pressed = false;
 
@@ -214,6 +215,15 @@ static inline bool mouse_in_rect(int32_t x, int32_t y, uint32_t w, uint32_t h)
          mouse_pos.y < y + (int32_t)h;
 }
 
+static inline bool rect_intersect(struct point p1, struct dim d1, struct point p2, struct dim d2)
+{
+  const bool x_int =
+    (p1.x >= p2.x && p1.x < p2.x + (int32_t)d2.w) || (p2.x >= p1.x && p2.x < p1.x + (int32_t)d1.w);
+  const bool y_int =
+    (p1.y >= p2.y && p1.y < p2.y + (int32_t)d2.h) || (p2.y >= p1.y && p2.y < p1.y + (int32_t)d1.h);
+  return x_int && y_int;
+}
+
 static void render_char(struct pixel_buffer buf,
                         struct point dst,
                         struct font_char_info c,
@@ -271,45 +281,59 @@ static void blit_window(struct responder *r)
   const uint32_t cr3 = paging_get_cr3();
   paging_set_cr3(p->cr3);
 
-  struct point bg_buf_src = { r->window_pos.x, r->window_pos.y - TITLE_BAR_HEIGHT };
+  struct point bg_buf_src = { r->window_pos.x - window_small_shadow_size,
+                              r->window_pos.y - TITLE_BAR_HEIGHT - window_small_shadow_size };
   struct point bg_buf_dst = { 0, 0 };
-  struct dim bg_buf_dim = { r->window_dim.w + window_shadow_size,
-                            r->window_dim.h + TITLE_BAR_HEIGHT + window_shadow_size };
+  struct dim bg_buf_dim = { r->window_dim.w + window_small_shadow_size + window_large_shadow_size,
+                            r->window_dim.h + TITLE_BAR_HEIGHT + window_small_shadow_size +
+                              window_large_shadow_size };
   if (clip_rect_on_screen(&bg_buf_src, &bg_buf_dst, &bg_buf_dim))
     copy_rect(r->bg_buf, bg_buf_dst, back_buffer, bg_buf_src, bg_buf_dim);
 
-  struct point title_bar_dst = { r->window_pos.x, r->window_pos.y - TITLE_BAR_HEIGHT };
-  struct point title_bar_src = { 0, 0 };
-  struct dim title_bar_dim = { TITLE_BAR_WIDTH, TITLE_BAR_HEIGHT };
-  if (clip_rect_on_screen(&title_bar_dst, &title_bar_src, &title_bar_dim)) {
-    static uint32_t title_bar_tmp_buf[sizeof(TITLE_BAR_PIXELS)];
-    u_memcpy32(title_bar_tmp_buf, TITLE_BAR_PIXELS, TITLE_BAR_HEIGHT * TITLE_BAR_WIDTH);
-    struct point window_title_dst = { TITLE_BAR_BUTTON_WIDTH + 4, 2 };
-    const struct pixel_buffer title_bar_buf = { title_bar_tmp_buf, TITLE_BAR_WIDTH };
-    render_text(title_bar_buf, window_title_dst, r->window_title);
-
-    copy_rect_alpha(back_buffer,
-                    title_bar_dst,
-                    title_bar_buf,
-                    title_bar_src,
-                    r->bg_buf,
-                    title_bar_src,
-                    title_bar_dim,
-                    r->window_opacity);
-  }
-
-  struct point tb_shadow_dst = { .x = r->window_pos.x + TITLE_BAR_WIDTH,
-                                 .y = r->window_pos.y - TITLE_BAR_HEIGHT + window_shadow_size };
+  struct point tb_shadow_dst = { .x = r->window_pos.x - window_small_shadow_size,
+                                 .y =
+                                   r->window_pos.y - TITLE_BAR_HEIGHT - window_small_shadow_size };
   struct point tb_shadow_src = { 0, 0 };
-  struct dim tb_shadow_dim = { window_shadow_size, TITLE_BAR_HEIGHT - window_shadow_size };
+  struct dim tb_shadow_dim = { .w = TITLE_BAR_WIDTH + window_small_shadow_size * 2,
+                               .h = TITLE_BAR_WIDTH + window_small_shadow_size };
   if (clip_rect_on_screen(&tb_shadow_dst, &tb_shadow_src, &tb_shadow_dim))
     fill_rect(back_buffer,
               tb_shadow_dst,
               r->bg_buf,
-              (struct point){ TITLE_BAR_WIDTH, window_shadow_size },
+              tb_shadow_src,
               tb_shadow_dim,
               window_shadow_color,
               r->window_opacity);
+
+  struct point window_shadow_dst = { .x = r->window_pos.x - window_small_shadow_size,
+                                     .y = r->window_pos.y - window_small_shadow_size };
+  struct point window_shadow_src = { 0, 0 };
+  struct dim window_shadow_dim = {
+    .w = r->window_dim.w + window_small_shadow_size + window_large_shadow_size,
+    .h = r->window_dim.h + window_small_shadow_size + window_large_shadow_size
+  };
+  if (clip_rect_on_screen(&window_shadow_dst, &window_shadow_src, &window_shadow_dim))
+    fill_rect(back_buffer,
+              window_shadow_dst,
+              r->bg_buf,
+              (struct point){ window_shadow_src.x, window_shadow_src.y + TITLE_BAR_HEIGHT },
+              window_shadow_dim,
+              window_shadow_color,
+              r->window_opacity);
+
+  struct point title_bar_dst = { r->window_pos.x, r->window_pos.y - TITLE_BAR_HEIGHT };
+  struct point title_bar_src = { 0, 0 };
+  struct dim title_bar_dim = { TITLE_BAR_WIDTH, TITLE_BAR_HEIGHT };
+  if (clip_rect_on_screen(&title_bar_dst, &title_bar_src, &title_bar_dim))
+    copy_rect_alpha(back_buffer,
+                    title_bar_dst,
+                    r->title_bar_buf,
+                    title_bar_src,
+                    r->bg_buf,
+                    (struct point){ title_bar_src.x + window_small_shadow_size,
+                                    title_bar_src.y + window_small_shadow_size },
+                    title_bar_dim,
+                    r->window_opacity);
 
   struct point window_dst = r->window_pos;
   struct point window_src = { 0, 0 };
@@ -320,38 +344,22 @@ static void blit_window(struct responder *r)
                     r->buf,
                     window_src,
                     r->bg_buf,
-                    (struct point){ window_src.x, window_src.y + TITLE_BAR_HEIGHT },
+                    (struct point){ window_src.x + window_small_shadow_size,
+                                    window_src.y + TITLE_BAR_HEIGHT + window_small_shadow_size },
                     window_dim,
                     r->window_opacity);
 
-  struct point rshadow_dst = { .x = r->window_pos.x + r->window_dim.w,
-                               .y = r->window_pos.y + window_shadow_size };
-  struct point rshadow_src = { 0, 0 };
-  struct dim rshadow_dim = { window_shadow_size, r->window_dim.h - window_shadow_size };
-  if (clip_rect_on_screen(&rshadow_dst, &rshadow_src, &rshadow_dim))
-    fill_rect(back_buffer,
-              rshadow_dst,
-              r->bg_buf,
-              (struct point){ r->window_dim.w, TITLE_BAR_HEIGHT + window_shadow_size },
-              rshadow_dim,
-              window_shadow_color,
-              r->window_opacity);
-
-  struct point bshadow_dst = { .x = r->window_pos.x + window_shadow_size,
-                               .y = r->window_pos.y + r->window_dim.h };
-  struct point bshadow_src = { 0, 0 };
-  struct dim bshadow_dim = { r->window_dim.w, window_shadow_size };
-  if (clip_rect_on_screen(&bshadow_dst, &bshadow_src, &bshadow_dim))
-    fill_rect(back_buffer,
-              bshadow_dst,
-              r->bg_buf,
-              (struct point){ window_shadow_size, r->window_dim.h + TITLE_BAR_HEIGHT },
-              bshadow_dim,
-              window_shadow_color,
-              r->window_opacity);
-
   paging_set_cr3(cr3);
   interrupt_restore(eflags);
+}
+
+static void clear_cursor()
+{
+  struct point cursor_dst = mouse_pos;
+  struct dim cursor_dim = { CURSOR_WIDTH, CURSOR_HEIGHT };
+  struct point cursor_src = { 0, 0 };
+  if (clip_rect_on_screen(&cursor_dst, &cursor_src, &cursor_dim))
+    copy_rect(back_buffer, cursor_dst, cursor_bg_buffer, cursor_src, cursor_dim);
 }
 
 static void blit_cursor()
@@ -359,21 +367,6 @@ static void blit_cursor()
   uint32_t cursor_w = min(mouse_pos.x + CURSOR_WIDTH, SCREENWIDTH) - mouse_pos.x;
   uint32_t cursor_h = min(mouse_pos.y + CURSOR_HEIGHT, SCREENHEIGHT) - mouse_pos.y;
   const uint32_t cursor_colors[] = { 0, 0xffffff };
-
-  if (cursor_flipped) {
-    for (uint32_t y = 0; y < cursor_h; ++y) {
-      const uint32_t row_offset = (mouse_pos.y + y) * SCREENWIDTH;
-      for (uint32_t x = 0; x < cursor_w; ++x) {
-        const uint32_t pixel_offset = row_offset + mouse_pos.x + x;
-        cursor_bg_buffer.buf[y * CURSOR_WIDTH + x] = back_buffer.buf[pixel_offset];
-        uint8_t cursor_pixel = cursor_pixels[x * CURSOR_WIDTH + y];
-        if (cursor_pixel == CURSOR_NONE)
-          continue;
-        back_buffer.buf[pixel_offset] = cursor_colors[cursor_pixel];
-      }
-    }
-    return;
-  }
 
   for (uint32_t y = 0; y < cursor_h; ++y) {
     const uint32_t row_offset = (mouse_pos.y + y) * SCREENWIDTH;
@@ -418,6 +411,11 @@ static void redraw_key_responder(struct point origin, struct dim dim)
     return;
   }
 
+  bool redraw_cursor =
+    rect_intersect(mouse_pos, (struct dim){ CURSOR_WIDTH, CURSOR_HEIGHT }, dst, clipped_dim);
+  if (redraw_cursor)
+    clear_cursor();
+
   const uint32_t cr3 = paging_get_cr3();
   paging_set_cr3(r->process->cr3);
 
@@ -426,12 +424,13 @@ static void redraw_key_responder(struct point origin, struct dim dim)
                   r->buf,
                   src,
                   r->bg_buf,
-                  (struct point){ src.x, src.y + TITLE_BAR_HEIGHT },
+                  (struct point){ src.x + window_small_shadow_size,
+                                  src.y + TITLE_BAR_HEIGHT + window_small_shadow_size },
                   clipped_dim,
                   r->window_opacity);
   paging_set_cr3(cr3);
 
-  if (mouse_in_rect(dst.x, dst.y, clipped_dim.w - CURSOR_WIDTH, clipped_dim.h - CURSOR_HEIGHT))
+  if (redraw_cursor)
     blit_cursor();
 
   if (r->window_resizing_w || r->window_resizing_h)
@@ -453,8 +452,10 @@ static void redraw_moving_objects(struct point old, struct point new)
   if (responders.size) {
     key_responder = responders.head->value;
     if (key_responder->window_moving) {
-      moved_object_w = key_responder->window_dim.w + window_shadow_size;
-      moved_object_h = key_responder->window_dim.h + TITLE_BAR_HEIGHT + window_shadow_size;
+      moved_object_w =
+        key_responder->window_dim.w + window_small_shadow_size + window_large_shadow_size;
+      moved_object_h = key_responder->window_dim.h + TITLE_BAR_HEIGHT + window_small_shadow_size +
+                       window_large_shadow_size;
       window_moving = true;
     }
   }
@@ -710,25 +711,25 @@ static void handle_mouse_click()
 
     if (mouse_in_rect(r->window_pos.x + r->window_dim.w,
                       r->window_pos.y + r->window_dim.h,
-                      window_shadow_size,
-                      window_shadow_size)) {
+                      window_large_shadow_size,
+                      window_large_shadow_size)) {
       new_key_responder = r;
       r->window_resizing_w = true;
       r->window_resizing_h = true;
       break;
     }
     if (mouse_in_rect(r->window_pos.x + r->window_dim.w,
-                      r->window_pos.y + window_shadow_size,
-                      window_shadow_size,
-                      r->window_dim.h - window_shadow_size)) {
+                      r->window_pos.y + window_large_shadow_size,
+                      window_large_shadow_size,
+                      r->window_dim.h - window_large_shadow_size)) {
       new_key_responder = r;
       r->window_resizing_w = true;
       break;
     }
-    if (mouse_in_rect(r->window_pos.x + window_shadow_size,
+    if (mouse_in_rect(r->window_pos.x + window_large_shadow_size,
                       r->window_pos.y + r->window_dim.h,
-                      r->window_dim.w - window_shadow_size,
-                      window_shadow_size)) {
+                      r->window_dim.w - window_large_shadow_size,
+                      window_large_shadow_size)) {
       new_key_responder = r;
       r->window_resizing_h = true;
       break;
@@ -738,16 +739,50 @@ static void handle_mouse_click()
   if (new_key_responder == NULL)
     return;
 
-  if (new_key_responder != responders.head->value) {
+  struct responder *old_key_responder = responders.head->value;
+  bool changed_key_responder = old_key_responder != new_key_responder;
+
+  if (changed_opacity && !changed_key_responder) {
+    struct point dst = { new_key_responder->window_pos.x - window_small_shadow_size,
+                         new_key_responder->window_pos.y - TITLE_BAR_HEIGHT -
+                           window_small_shadow_size };
+    struct point src = { 0, 0 };
+    struct dim dim = { new_key_responder->window_dim.w + window_small_shadow_size +
+                         window_large_shadow_size,
+                       new_key_responder->window_dim.h + TITLE_BAR_HEIGHT +
+                         window_small_shadow_size + window_large_shadow_size };
+    if (clip_rect_on_screen(&dst, &src, &dim)) {
+      bool redraw_cursor =
+        rect_intersect(mouse_pos, (struct dim){ CURSOR_WIDTH, CURSOR_HEIGHT }, dst, dim);
+      if (redraw_cursor)
+        clear_cursor();
+
+      copy_rect(back_buffer, dst, new_key_responder->bg_buf, src, dim);
+      blit_window(new_key_responder);
+
+      if (redraw_cursor)
+        blit_cursor();
+
+      copy_rect(frame_buffer, dst, back_buffer, dst, dim);
+    }
+
+    return;
+  }
+
+  if (changed_key_responder) {
     list_remove(&responders, new_key_responder->list_node, 0);
     new_key_responder->list_node->next = responders.head;
     new_key_responder->list_node->prev = NULL;
     responders.head->prev = new_key_responder->list_node;
     responders.head = new_key_responder->list_node;
     responders.size++;
+    uint32_t err = dispatch_window_event(old_key_responder, UI_EVENT_SLEEP);
+    if (err)
+      log_error("ui", "Failed to dispatch sleep event: %u\n", err);
+    err = dispatch_window_event(new_key_responder, UI_EVENT_WAKE);
+    if (err)
+      log_error("ui", "Failed to dispatch wake event: %u\n", err);
   }
-
-  redraw_all();
 
   if (new_key_responder->window_resizing_w || new_key_responder->window_resizing_h) {
     struct point invert_dst = new_key_responder->window_pos;
@@ -755,9 +790,13 @@ static void handle_mouse_click()
     struct dim invert_dim = new_key_responder->window_dim;
     if (clip_rect_on_screen(&invert_dst, &invert_src, &invert_dim)) {
       invert_rect(back_buffer, invert_dst, invert_dim);
-      copy_rect(frame_buffer, invert_dst, back_buffer, invert_dst, invert_dim);
+      if (!changed_key_responder)
+        copy_rect(frame_buffer, invert_dst, back_buffer, invert_dst, invert_dim);
     }
   }
+
+  if (changed_key_responder)
+    redraw_all();
 }
 
 static void handle_mouse_scroll(int8_t vscroll, int8_t hscroll)
@@ -786,7 +825,6 @@ static void handle_mouse_scroll(int8_t vscroll, int8_t hscroll)
 static void update_mouse_cursor()
 {
   cursor_pixels = CURSOR_DEFAULT_PIXELS;
-  cursor_flipped = false;
 
   if (responders.size == 0)
     return;
@@ -808,24 +846,23 @@ static void update_mouse_cursor()
   }
   if (mouse_in_rect(r->window_pos.x + r->window_dim.w,
                     r->window_pos.y + r->window_dim.h,
-                    window_shadow_size,
-                    window_shadow_size)) {
-    cursor_pixels = CURSOR_RESIZE_DIAG_PIXELS;
+                    window_large_shadow_size,
+                    window_large_shadow_size)) {
+    cursor_pixels = CURSOR_RESIZE_WH_PIXELS;
     return;
   }
   if (mouse_in_rect(r->window_pos.x + r->window_dim.w,
-                    r->window_pos.y + window_shadow_size,
-                    window_shadow_size,
-                    r->window_dim.h - window_shadow_size)) {
-    cursor_pixels = CURSOR_RESIZE_PIXELS;
-    cursor_flipped = true;
+                    r->window_pos.y + window_large_shadow_size,
+                    window_large_shadow_size,
+                    r->window_dim.h - window_large_shadow_size)) {
+    cursor_pixels = CURSOR_RESIZE_W_PIXELS;
     return;
   }
-  if (mouse_in_rect(r->window_pos.x + window_shadow_size,
+  if (mouse_in_rect(r->window_pos.x + window_large_shadow_size,
                     r->window_pos.y + r->window_dim.h,
-                    r->window_dim.w - window_shadow_size,
-                    window_shadow_size)) {
-    cursor_pixels = CURSOR_RESIZE_PIXELS;
+                    r->window_dim.w - window_large_shadow_size,
+                    window_large_shadow_size)) {
+    cursor_pixels = CURSOR_RESIZE_H_PIXELS;
     return;
   }
 }
@@ -889,9 +926,11 @@ uint32_t ui_handle_mouse_event(int32_t dx,
       const uint32_t old_window_y = key_responder->window_pos.y;
       key_responder->window_pos.x += mouse_pos.x - old_mouse_pos.x;
       key_responder->window_pos.y += mouse_pos.y - old_mouse_pos.y;
-      struct point old = { .x = old_window_x, .y = old_window_y - TITLE_BAR_HEIGHT };
-      struct point new = { .x = key_responder->window_pos.x,
-                           .y = key_responder->window_pos.y - TITLE_BAR_HEIGHT };
+      struct point old = { .x = old_window_x - window_small_shadow_size,
+                           .y = old_window_y - TITLE_BAR_HEIGHT - window_small_shadow_size };
+      struct point new = { .x = key_responder->window_pos.x - window_small_shadow_size,
+                           .y = key_responder->window_pos.y - TITLE_BAR_HEIGHT -
+                                window_small_shadow_size };
       redraw_moving_objects(old, new);
       return 0;
     } else if (key_responder->window_resizing_w || key_responder->window_resizing_h) {
@@ -925,24 +964,35 @@ uint32_t ui_make_responder(process_t *p, uint32_t buf, const char *title, uint32
   struct responder *r = kmalloc(sizeof(struct responder));
   CHECK_UNLOCK_R(r == NULL, "No memory.", ENOMEM);
   u_memset(r, 0, sizeof(struct responder));
+
   uint32_t err = pipe_create(&r->event_pipe_read, &r->event_pipe_write);
   CHECK_UNLOCK_R(err, "Failed to create event pipe.", err);
+
   r->process = p;
+  r->window_pos.x = SCREENWIDTH >> 2;
+  r->window_pos.y = SCREENHEIGHT >> 2;
   r->window_dim.w = min(max(w, TITLE_BAR_WIDTH), SCREENWIDTH);
   r->window_dim.h = min(max(h, 50), SCREENHEIGHT - TITLE_BAR_HEIGHT);
   r->resize_dim = r->window_dim;
-  r->buf = (struct pixel_buffer){ (uint32_t *)buf, r->window_dim.w };
-  r->bg_buf.buf =
-    kmalloc((r->window_dim.w + window_shadow_size) *
-            (r->window_dim.h + TITLE_BAR_HEIGHT + window_shadow_size) * sizeof(uint32_t));
-  CHECK_UNLOCK_R(r->bg_buf.buf == NULL, "No memory.", ENOMEM);
-  r->bg_buf.stride = r->window_dim.w + window_shadow_size;
   r->window_opacity = 0xff;
   r->window_drawn = false;
+  r->buf = (struct pixel_buffer){ (uint32_t *)buf, r->window_dim.w };
+
+  const unsigned bg_buf_w = r->window_dim.w + window_small_shadow_size + window_large_shadow_size;
+  const unsigned bg_buf_h =
+    r->window_dim.h + TITLE_BAR_HEIGHT + window_small_shadow_size + window_large_shadow_size;
+  r->bg_buf.buf = kmalloc(bg_buf_w * bg_buf_h * sizeof(uint32_t));
+  CHECK_UNLOCK_R(r->bg_buf.buf == NULL, "No memory.", ENOMEM);
+  r->bg_buf.stride = r->window_dim.w + window_small_shadow_size + window_large_shadow_size;
+
   size_t title_len = u_strlen(title);
   u_memcpy(r->window_title, title, min(title_len, sizeof(r->window_title)));
-  r->window_pos.x = SCREENWIDTH >> 2;
-  r->window_pos.y = SCREENHEIGHT >> 2;
+  r->title_bar_buf.buf = kmalloc(TITLE_BAR_WIDTH * TITLE_BAR_HEIGHT * sizeof(uint32_t));
+  CHECK_UNLOCK_R(r->title_bar_buf.buf == NULL, "No memory.", ENOMEM);
+  r->title_bar_buf.stride = TITLE_BAR_WIDTH;
+  u_memcpy32(r->title_bar_buf.buf, TITLE_BAR_PIXELS, TITLE_BAR_WIDTH * TITLE_BAR_HEIGHT);
+  const struct point title_dst = { TITLE_BAR_BUTTON_WIDTH + 4, 2 };
+  render_text(r->title_bar_buf, title_dst, r->window_title);
 
   list_push_front(&responders, r);
   r->list_node = responders.head;
@@ -971,15 +1021,41 @@ uint32_t ui_kill(process_t *p)
   fs_close(&r->event_pipe_read);
   fs_close(&r->event_pipe_write);
   uint8_t is_head = responders.head->value == r;
-  list_remove(&responders, r->list_node, 1);
 
+  if (is_head) {
+    uint32_t eflags = interrupt_save_disable();
+    struct point bg_dst = { .x = r->window_pos.x - window_small_shadow_size,
+                            .y = r->window_pos.y - TITLE_BAR_HEIGHT - window_small_shadow_size };
+    struct point bg_src = { 0, 0 };
+    struct dim bg_dim = {
+      .w = r->window_dim.w + window_small_shadow_size + window_large_shadow_size,
+      .h = r->window_dim.h + TITLE_BAR_HEIGHT + window_small_shadow_size + window_large_shadow_size
+    };
+    if (clip_rect_on_screen(&bg_dst, &bg_src, &bg_dim)) {
+      bool redraw_cursor =
+        rect_intersect(mouse_pos, (struct dim){ CURSOR_WIDTH, CURSOR_HEIGHT }, bg_dst, bg_dim);
+      if (redraw_cursor)
+        clear_cursor();
+      copy_rect(back_buffer, bg_dst, r->bg_buf, bg_src, bg_dim);
+      if (redraw_cursor) {
+        cursor_pixels = CURSOR_DEFAULT_PIXELS;
+        blit_cursor();
+      }
+      copy_rect(frame_buffer, bg_dst, back_buffer, bg_dst, bg_dim);
+    }
+    interrupt_restore(eflags);
+  }
+
+  list_remove(&responders, r->list_node, 1);
   if (is_head && responders.size) {
     uint32_t err = dispatch_window_event(responders.head->value, UI_EVENT_WAKE);
     CHECK_UNLOCK_R(err, "Failed to dispatch wake event.", err);
   }
 
   kunlock(&responders_lock);
-  redraw_all();
+
+  if (!is_head)
+    redraw_all();
   return 0;
 }
 
@@ -996,15 +1072,26 @@ uint32_t ui_redraw_rect(process_t *p, uint32_t x, uint32_t y, uint32_t w, uint32
       redraw_key_responder(origin, dim);
     } else {
       r->window_drawn = true;
-      blit_window(r);
-      struct point dst = { r->window_pos.x, r->window_pos.y - TITLE_BAR_HEIGHT };
+      struct point dst = { r->window_pos.x - window_small_shadow_size,
+                           r->window_pos.y - TITLE_BAR_HEIGHT - window_small_shadow_size };
       struct point src = { 0, 0 };
-      struct dim dim = { r->window_dim.w + window_shadow_size,
-                         r->window_dim.h + TITLE_BAR_HEIGHT + window_shadow_size };
-      if (clip_rect_on_screen(&dst, &src, &dim))
+      struct dim dim = { r->window_dim.w + window_small_shadow_size + window_large_shadow_size,
+                         r->window_dim.h + TITLE_BAR_HEIGHT + window_small_shadow_size +
+                           window_large_shadow_size };
+      if (clip_rect_on_screen(&dst, &src, &dim)) {
+        bool redraw_mouse =
+          rect_intersect(mouse_pos, (struct dim){ CURSOR_WIDTH, CURSOR_HEIGHT }, dst, dim);
+        if (redraw_mouse)
+          clear_cursor();
+        blit_window(r);
+        if (redraw_mouse)
+          blit_cursor();
         copy_rect(frame_buffer, dst, back_buffer, dst, dim);
+      }
     }
   } else
+    // FIXME: we don't need to redraw the windows behind this one
+    // and can maybe partially redraw this window
     redraw_all();
 
   interrupt_restore(eflags);
@@ -1110,11 +1197,12 @@ uint32_t ui_resize_window(process_t *p, uint32_t buf, uint32_t w, uint32_t h)
   r->resize_dim = r->window_dim;
   r->buf = (struct pixel_buffer){ (uint32_t *)buf, r->window_dim.w };
   kfree(r->bg_buf.buf);
-  r->bg_buf.buf =
-    kmalloc((r->window_dim.w + window_shadow_size) *
-            (r->window_dim.h + TITLE_BAR_HEIGHT + window_shadow_size) * sizeof(uint32_t));
+  const unsigned bg_buf_w = r->window_dim.w + window_small_shadow_size + window_large_shadow_size;
+  const unsigned bg_buf_h =
+    r->window_dim.h + TITLE_BAR_HEIGHT + window_small_shadow_size + window_large_shadow_size;
+  r->bg_buf.buf = kmalloc(bg_buf_w * bg_buf_h * sizeof(uint32_t));
   CHECK_RESTORE_EFLAGS(r->bg_buf.buf == NULL, "No memory.", ENOMEM);
-  r->bg_buf.stride = r->window_dim.w + window_shadow_size;
+  r->bg_buf.stride = r->window_dim.w + window_small_shadow_size + window_large_shadow_size;
 
   redraw_all();
   interrupt_restore(eflags);
