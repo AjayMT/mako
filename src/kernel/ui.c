@@ -83,8 +83,8 @@ struct responder
   list_node_t *list_node;
 };
 
-// static const uint32_t window_shadow_color = 0x5b7c99;
-static const uint32_t window_shadow_color = 0;
+static const uint32_t window_resize_control_size = 5;
+static const uint32_t window_shadow_color = 0x5b7c99;
 
 static const size_t frame_size = SCREENWIDTH * SCREENHEIGHT;
 static uint32_t *wallpaper = NULL;
@@ -165,7 +165,7 @@ static void draw_shadows(struct responder *r)
 {
   const int32_t shadow_x = r->window_pos.x - WINDOW_SHADOW_SIZE;
   const int32_t shadow_y = r->window_pos.y - TITLE_BAR_HEIGHT - WINDOW_SHADOW_SIZE;
-  const uint8_t max_opacity = min(r->window_opacity, 0xff);
+  const uint8_t max_opacity = min(r->window_opacity, 0x33);
 
   int32_t y_start = max(r->window_pos.y - TITLE_BAR_HEIGHT, 0);
   int32_t y_end = min(r->window_pos.y + r->window_dim.h, SCREENHEIGHT);
@@ -196,7 +196,7 @@ static void draw_shadows(struct responder *r)
   for (int32_t y = y_start; y < y_end; ++y) {
     const int32_t yoff = y - shadow_y;
     uint32_t *backbuf_ptr = back_buffer.buf + (y * back_buffer.stride);
-    uint32_t *bgbuf_ptr = r->bg_buf.buf + (yoff * r->bg_buf.stride);
+    uint32_t *bgbuf_ptr = r->bg_buf.buf + ((y - shadow_y) * r->bg_buf.stride);
 
     int32_t x_start = max(shadow_x, 0);
     int32_t x_end = min(shadow_x + WINDOW_SHADOW_SIZE, SCREENWIDTH);
@@ -205,13 +205,88 @@ static void draw_shadows(struct responder *r)
       uint32_t pixel = WINDOW_SHADOW_PIXELS[(WINDOW_SHADOW_SIZE - 1 - yoff) * WINDOW_SHADOW_SIZE +
                                             WINDOW_SHADOW_SIZE - 1 - xoff];
       const uint8_t opacity = (max_opacity * (pixel >> 24)) / 0xff;
-      backbuf_ptr[x] = blend_alpha(bgbuf_ptr[xoff], window_shadow_color, opacity);
+      backbuf_ptr[x] = blend_alpha(bgbuf_ptr[x - shadow_x], window_shadow_color, opacity);
     }
 
     x_start = max(r->window_pos.x, 0);
     x_end = min(r->window_pos.x + TITLE_BAR_WIDTH, SCREENWIDTH);
     for (int32_t x = x_start; x < x_end; ++x) {
       uint32_t pixel = WINDOW_SHADOW_PIXELS[WINDOW_SHADOW_SIZE - 1 - yoff];
+      const uint8_t opacity = (max_opacity * (pixel >> 24)) / 0xff;
+      backbuf_ptr[x] = blend_alpha(bgbuf_ptr[x - shadow_x], window_shadow_color, opacity);
+    }
+
+    x_start = max(r->window_pos.x + TITLE_BAR_WIDTH, 0);
+    x_end = min(r->window_pos.x + TITLE_BAR_WIDTH + WINDOW_SHADOW_SIZE, SCREENWIDTH);
+    for (int32_t x = x_start; x < x_end; ++x) {
+      const int32_t xoff = x - (r->window_pos.x + TITLE_BAR_WIDTH);
+      uint32_t pixel =
+        WINDOW_SHADOW_PIXELS[(WINDOW_SHADOW_SIZE - 1 - yoff) * WINDOW_SHADOW_SIZE + xoff];
+      const uint8_t opacity = (max_opacity * (pixel >> 24)) / 0xff;
+      backbuf_ptr[x] = blend_alpha(bgbuf_ptr[x - shadow_x], window_shadow_color, opacity);
+    }
+  }
+
+  y_start = max(r->window_pos.y - WINDOW_SHADOW_SIZE, 0);
+  y_end = min(r->window_pos.y, SCREENHEIGHT);
+  for (int32_t y = y_start; y < y_end; ++y) {
+    const int32_t yoff = y - (r->window_pos.y - WINDOW_SHADOW_SIZE);
+    uint32_t *backbuf_ptr = back_buffer.buf + (y * back_buffer.stride);
+    uint32_t *bgbuf_ptr = r->bg_buf.buf + ((y - shadow_y) * r->bg_buf.stride);
+
+    int32_t x_start = max(r->window_pos.x + TITLE_BAR_WIDTH, 0);
+    int32_t x_corner_end = min(r->window_pos.x + TITLE_BAR_WIDTH + WINDOW_SHADOW_SIZE, SCREENWIDTH);
+    int32_t x_end = min(r->window_pos.x + r->window_dim.w, SCREENWIDTH);
+    for (int32_t x = x_start; x < x_end; ++x) {
+      uint32_t pixel = WINDOW_SHADOW_PIXELS[WINDOW_SHADOW_SIZE - 1 - yoff];
+      const uint8_t opacity = (max_opacity * (pixel >> 24)) / 0xff;
+      if (x < x_corner_end)
+        backbuf_ptr[x] = blend_alpha(backbuf_ptr[x], window_shadow_color, opacity);
+      else
+        backbuf_ptr[x] = blend_alpha(bgbuf_ptr[x - shadow_x], window_shadow_color, opacity);
+    }
+
+    x_start = max(r->window_pos.x + r->window_dim.w, 0);
+    x_end = min(r->window_pos.x + r->window_dim.w + WINDOW_SHADOW_SIZE, SCREENWIDTH);
+    for (int32_t x = x_start; x < x_end; ++x) {
+      const int32_t xoff = x - (r->window_pos.x + r->window_dim.w);
+      uint32_t pixel =
+        WINDOW_SHADOW_PIXELS[(WINDOW_SHADOW_SIZE - 1 - yoff) * WINDOW_SHADOW_SIZE + xoff];
+      const uint8_t opacity = (max_opacity * (pixel >> 24)) / 0xff;
+      backbuf_ptr[x] = blend_alpha(bgbuf_ptr[x - shadow_x], window_shadow_color, opacity);
+    }
+  }
+
+  y_start = max(r->window_pos.y + r->window_dim.h, 0);
+  y_end = min(r->window_pos.y + r->window_dim.h + WINDOW_SHADOW_SIZE, SCREENHEIGHT);
+  for (int32_t y = y_start; y < y_end; ++y) {
+    const int32_t yoff = y - (r->window_pos.y + r->window_dim.h);
+    uint32_t *backbuf_ptr = back_buffer.buf + (y * back_buffer.stride);
+    uint32_t *bgbuf_ptr = r->bg_buf.buf + ((y - shadow_y) * r->bg_buf.stride);
+
+    int32_t x_start = max(r->window_pos.x, 0);
+    int32_t x_end = min(r->window_pos.x + r->window_dim.w, SCREENWIDTH);
+    for (int32_t x = x_start; x < x_end; ++x) {
+      uint32_t pixel = WINDOW_SHADOW_PIXELS[yoff];
+      const uint8_t opacity = (max_opacity * (pixel >> 24)) / 0xff;
+      backbuf_ptr[x] = blend_alpha(bgbuf_ptr[x - shadow_x], window_shadow_color, opacity);
+    }
+
+    x_start = max(r->window_pos.x - WINDOW_SHADOW_SIZE, 0);
+    x_end = min(r->window_pos.x, SCREENWIDTH);
+    for (int32_t x = x_start; x < x_end; ++x) {
+      const int32_t xoff = x - (r->window_pos.x - WINDOW_SHADOW_SIZE);
+      uint32_t pixel =
+        WINDOW_SHADOW_PIXELS[yoff * WINDOW_SHADOW_SIZE + (WINDOW_SHADOW_SIZE - 1 - xoff)];
+      const uint8_t opacity = (max_opacity * (pixel >> 24)) / 0xff;
+      backbuf_ptr[x] = blend_alpha(bgbuf_ptr[x - shadow_x], window_shadow_color, opacity);
+    }
+
+    x_start = max(r->window_pos.x + r->window_dim.w, 0);
+    x_end = min(r->window_pos.x + r->window_dim.w + WINDOW_SHADOW_SIZE, SCREENWIDTH);
+    for (int32_t x = x_start; x < x_end; ++x) {
+      const int32_t xoff = x - (r->window_pos.x + r->window_dim.w);
+      uint32_t pixel = WINDOW_SHADOW_PIXELS[yoff * WINDOW_SHADOW_SIZE + xoff];
       const uint8_t opacity = (max_opacity * (pixel >> 24)) / 0xff;
       backbuf_ptr[x] = blend_alpha(bgbuf_ptr[x - shadow_x], window_shadow_color, opacity);
     }
@@ -716,25 +791,25 @@ static void handle_mouse_click()
 
     if (mouse_in_rect(r->window_pos.x + r->window_dim.w,
                       r->window_pos.y + r->window_dim.h,
-                      WINDOW_SHADOW_SIZE,
-                      WINDOW_SHADOW_SIZE)) {
+                      window_resize_control_size,
+                      window_resize_control_size)) {
       new_key_responder = r;
       r->window_resizing_w = true;
       r->window_resizing_h = true;
       break;
     }
     if (mouse_in_rect(r->window_pos.x + r->window_dim.w,
-                      r->window_pos.y + WINDOW_SHADOW_SIZE,
-                      WINDOW_SHADOW_SIZE,
-                      r->window_dim.h - WINDOW_SHADOW_SIZE)) {
+                      r->window_pos.y + window_resize_control_size,
+                      window_resize_control_size,
+                      r->window_dim.h - window_resize_control_size)) {
       new_key_responder = r;
       r->window_resizing_w = true;
       break;
     }
-    if (mouse_in_rect(r->window_pos.x + WINDOW_SHADOW_SIZE,
+    if (mouse_in_rect(r->window_pos.x + window_resize_control_size,
                       r->window_pos.y + r->window_dim.h,
-                      r->window_dim.w - WINDOW_SHADOW_SIZE,
-                      WINDOW_SHADOW_SIZE)) {
+                      r->window_dim.w - window_resize_control_size,
+                      window_resize_control_size)) {
       new_key_responder = r;
       r->window_resizing_h = true;
       break;
@@ -849,22 +924,22 @@ static void update_mouse_cursor()
   }
   if (mouse_in_rect(r->window_pos.x + r->window_dim.w,
                     r->window_pos.y + r->window_dim.h,
-                    WINDOW_SHADOW_SIZE,
-                    WINDOW_SHADOW_SIZE)) {
+                    window_resize_control_size,
+                    window_resize_control_size)) {
     cursor_pixels = CURSOR_RESIZE_WH_PIXELS;
     return;
   }
   if (mouse_in_rect(r->window_pos.x + r->window_dim.w,
-                    r->window_pos.y + WINDOW_SHADOW_SIZE,
-                    WINDOW_SHADOW_SIZE,
-                    r->window_dim.h - WINDOW_SHADOW_SIZE)) {
+                    r->window_pos.y + window_resize_control_size,
+                    window_resize_control_size,
+                    r->window_dim.h - window_resize_control_size)) {
     cursor_pixels = CURSOR_RESIZE_W_PIXELS;
     return;
   }
-  if (mouse_in_rect(r->window_pos.x + WINDOW_SHADOW_SIZE,
+  if (mouse_in_rect(r->window_pos.x + window_resize_control_size,
                     r->window_pos.y + r->window_dim.h,
-                    r->window_dim.w - WINDOW_SHADOW_SIZE,
-                    WINDOW_SHADOW_SIZE)) {
+                    r->window_dim.w - window_resize_control_size,
+                    window_resize_control_size)) {
     cursor_pixels = CURSOR_RESIZE_H_PIXELS;
     return;
   }
