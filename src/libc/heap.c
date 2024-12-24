@@ -14,7 +14,7 @@
 // This is a simple first-fit allocator with block splitting / coalescing.
 
 static const size_t MIN_BLOCK_SIZE = 8;
-static const uint32_t PHYS_ADDR_OFFSET = 12;
+static const uint32_t PAGE_SIZE_SHIFT = 12;
 static const uint32_t PAGE_SIZE = 0x1000;
 static const uint32_t PAGE_FREE_THRESHOLD = PAGE_SIZE;
 
@@ -35,7 +35,7 @@ static volatile uint32_t heap_lock = 0;
 // Simple block properties.
 static inline uint32_t size(block_t *block)
 {
-  return block->size_next & (~1);
+  return block->size_next & ~1;
 }
 static inline block_t *next(block_t *block)
 {
@@ -43,19 +43,17 @@ static inline block_t *next(block_t *block)
 }
 static inline uint8_t is_free(block_t *block)
 {
-  return block->next_free || block->prev_free;
+  return block->next_free || block->prev_free || head == block;
 }
 
 // Utility functions.
-static inline size_t page_align_up(size_t a)
-{
-  if (a != (a & 0xFFFFF000))
-    a = (a & 0xFFFFF000) + PAGE_SIZE;
-  return a;
-}
 static inline size_t page_align_down(uint32_t a)
 {
-  return a & 0xFFFFF000;
+  return (a >> PAGE_SIZE_SHIFT) << PAGE_SIZE_SHIFT;
+}
+static inline size_t page_align_up(size_t a)
+{
+  return page_align_down(a + PAGE_SIZE - 1);
 }
 
 // push_front and remove are the standard operations on the free list.
@@ -114,8 +112,7 @@ static block_t *merge(block_t *block)
 static void alloc_pages(size_t size)
 {
   size = page_align_up(size + sizeof(block_t));
-  uint32_t npages = size >> PHYS_ADDR_OFFSET;
-  uint32_t vaddr = pagealloc(npages);
+  uint32_t vaddr = pagealloc(size >> PAGE_SIZE_SHIFT);
   if (vaddr == 0)
     return;
 
@@ -155,7 +152,7 @@ static void free_pages(block_t *block)
     removed_block->prev->size_next &= ~1;
   remove(removed_block);
 
-  uint32_t npages = (page_end - page_start) >> PHYS_ADDR_OFFSET;
+  uint32_t npages = (page_end - page_start) >> PAGE_SIZE_SHIFT;
   pagefree(page_start, npages);
 }
 

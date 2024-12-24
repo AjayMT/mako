@@ -49,10 +49,9 @@ void fill_rect(uint32_t x, uint32_t y, uint32_t w, uint32_t h, uint32_t color)
 void flip_cursor()
 {
   for (uint32_t y = 0; y < cursor_h; ++y) {
-    for (uint32_t x = 0; x < cursor_w; ++x) {
-      uint32_t *pixel = view.content_buf + (cursor_y + y) * view.content_w + cursor_x + x;
-      *pixel = background_color - *pixel;
-    }
+    uint32_t *pixels = view.content_buf + (cursor_y + y) * view.content_w + cursor_x;
+    for (uint32_t x = 0; x < cursor_w; ++x)
+      pixels[x] = ~pixels[x];
   }
 }
 

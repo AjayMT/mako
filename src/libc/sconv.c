@@ -201,7 +201,7 @@ int64_t atol(const char *s)
   switch (*s) {
     case '-':
       neg = 1;
-      /* Fallthrough is intentional here */
+      __attribute__((fallthrough));
     case '+':
       s++;
   }
@@ -224,7 +224,7 @@ int32_t atoi(const char *s)
   switch (*s) {
     case '-':
       neg = 1;
-      /* Fallthrough is intentional here */
+      __attribute__((fallthrough));
     case '+':
       s++;
   }

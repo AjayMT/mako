@@ -36,7 +36,7 @@ static block_t *head = NULL;
 // Simple block properties.
 static inline uint32_t size(block_t *block)
 {
-  return block->size_next & (~1);
+  return block->size_next & ~1;
 }
 static inline block_t *next(block_t *block)
 {
@@ -44,7 +44,7 @@ static inline block_t *next(block_t *block)
 }
 static inline uint8_t is_free(block_t *block)
 {
-  return block->next_free || block->prev_free;
+  return block->next_free || block->prev_free || head == block;
 }
 
 // push_front and remove are the standard operations on the free list.

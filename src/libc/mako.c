@@ -58,10 +58,10 @@ int32_t pagefree(uint32_t vaddr, uint32_t npages)
 
 static void thread_start()
 {
-  uint32_t edi, ecx;
-  asm volatile("movl %%edi, %0" : "=r"(edi));
+  uint32_t edx, ecx;
+  asm volatile("movl %%edx, %0" : "=r"(edx));
   asm volatile("movl %%ecx, %0" : "=r"(ecx));
-  thread_t t = (thread_t)edi;
+  thread_t t = (thread_t)edx;
   t((void *)ecx);
   exit(0);
 }

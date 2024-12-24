@@ -284,6 +284,7 @@ bool ui_scrollview_grow(struct ui_scrollview *view, uint32_t w, uint32_t h, uint
   for (uint32_t y = 0; y < view->content_h; ++y)
     memcpy32(new_buf + y * content_w, view->content_buf + y * view->content_w, view->content_w);
 
+  free(view->content_buf);
   view->content_buf = new_buf;
   view->content_w = content_w;
   view->content_h = content_h;

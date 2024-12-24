@@ -67,9 +67,7 @@ int32_t u_strncmp(const char *s1, const char *s2, size_t n)
 
 size_t u_page_align_up(size_t a)
 {
-  if (a != (a & 0xFFFFF000))
-    a = (a & 0xFFFFF000) + PAGE_SIZE;
-  return a;
+  return u_page_align_down(a + PAGE_SIZE - 1);
 }
 
 size_t u_page_align_down(uint32_t a)

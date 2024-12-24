@@ -545,8 +545,8 @@ static void keyboard_handler(uint8_t code)
           render_path();
           render_dirents();
           update_cursor(0);
-          break;
         }
+        break;
       case KB_SC_N:
         cs = CS_CREATE_TYPE;
         update_footer_text();

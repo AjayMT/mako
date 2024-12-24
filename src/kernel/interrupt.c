@@ -47,15 +47,10 @@ void forward_interrupt(cpu_state_t c_state, idt_info_t info, stack_state_t s_sta
     pic_acknowledge(info.idt_index);
 
   if (registered_handlers[info.idt_index] == 0) {
-    // TODO Handle this.
-    /* log_error( */
-    /*   "interrupt", */
-    /*   "unhandled interrupt %u, eip %x\n", */
-    /*   info.idt_index, */
-    /*   s_state.eip */
-    /*   ); */
+    log_error("interrupt", "unhandled interrupt %u, eip %x\n", info.idt_index, s_state.eip);
     return;
   }
 
   registered_handlers[info.idt_index](c_state, info, s_state);
+  disable_interrupts();
 }

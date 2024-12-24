@@ -691,7 +691,7 @@ static void syscall_thread(uint32_t eip, uint32_t data)
   child->uregs.ebp = child->mmap.stack_top;
   child->uregs.esp = child->uregs.ebp;
   child->uregs.eip = child->thread_start;
-  child->uregs.edi = eip;
+  child->uregs.edx = eip;
   child->uregs.ecx = data;
   child->uregs.eax = 0;
   current->uregs.eax = child->pid;
@@ -868,10 +868,10 @@ process_registers_t *syscall_handler(cpu_state_t cs, stack_state_t ss)
   process_t *current = process_current();
   current->in_kernel = 1;
   uint32_t syscall_num = cs.eax;
-  uint32_t a1 = cs.edi;
+  uint32_t a1 = cs.ebx;
   uint32_t a2 = cs.ecx;
   uint32_t a3 = cs.edx;
-  uint32_t a4 = cs.esi;
+  uint32_t a4 = cs.edi;
 
   enable_interrupts();
   syscall_table[syscall_num](a1, a2, a3, a4);
@@ -884,7 +884,7 @@ process_registers_t *syscall_handler(cpu_state_t cs, stack_state_t ss)
     current->current_signal = current->next_signal;
     current->next_signal = 0;
     current->uregs.eip = current->signal_eip;
-    current->uregs.edi = current->current_signal;
+    current->uregs.edx = current->current_signal;
   }
 
   return &(current->uregs);

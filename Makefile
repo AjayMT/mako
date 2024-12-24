@@ -2,8 +2,8 @@
 # TODO: remove extraneous dependencies
 
 CC := i386-elf-gcc
-CFLAGS := -g -nostdlib -finline-small-functions -Wno-unused -Wall -Wextra -Werror -Wno-implicit-fallthrough \
-          -Wno-builtin-declaration-mismatch
+CFLAGS := -O2 -g -nostdlib -Wall -Wextra -Werror \
+          -Wno-unused -Wno-builtin-declaration-mismatch -Wno-maybe-uninitialized -Wno-stringop-truncation
 LD := i386-elf-ld
 LDFLAGS := -T link.ld
 AS := nasm
@@ -15,7 +15,8 @@ KERNEL_ASM_OBJECTS := $(filter-out constants.s.o,$(notdir $(patsubst %.s,%.s.o,$
 KERNEL_OBJECTS := $(notdir $(patsubst %.c,%.o,$(wildcard src/kernel/*.c)))
 
 LIBC_OBJECTS := $(notdir $(patsubst %.c,%.o,$(wildcard src/libc/*.c)))
-CRT_OBJECTS := crt0.o crti.o crtn.o
+LIBC_ASM_OBJECTS := $(notdir $(patsubst %.s,%.o,$(wildcard src/libc/*.s)))
+CRT_OBJECTS := $(notdir $(patsubst %.s,%.o,$(wildcard src/libc/crt/*.s)))
 
 PORTS := nanoc lua doomgeneric
 APPS := $(notdir $(patsubst %.c,%,$(wildcard src/apps/*.c)))
@@ -75,25 +76,25 @@ $(filter-out wallpaper,$(BIN)): $(wildcard src/bin/*.c) libc.a $(CRT_OBJECTS)
 wallpaper: src/bin/wallpaper.c libc.a libui.a $(CRT_OBJECTS)
 	$(CC) $(CFLAGS) -Isrc/libc/ -Isrc/libui/ src/bin/$@.c $(CRT_OBJECTS) libc.a libui.a -lgcc -o $@
 
-libnanoc.a: src/nanoc.c $(wildcard src/common/*)
-	$(CC) $(CFLAGS) -ffreestanding -c src/nanoc.c -o nanoc.o
+libnanoc.a: src/nanoc.c $(wildcard src/common/*) src/libc/_syscall.h _syscall.o
+	$(CC) $(CFLAGS) -ffreestanding -r src/nanoc.c _syscall.o -o nanoc.o
 	$(AR) $(ARFLAGS) libnanoc.a nanoc.o
 
 libui.a: $(wildcard src/libui/*) $(wildcard src/common/*) libc.a
 	$(CC) $(CFLAGS) -ffreestanding -c src/libui/ui.c -o libui.o # Name `ui.o` conflicts with kernel object
 	$(AR) $(ARFLAGS) libui.a libui.o
 
-libc.a: $(LIBC_OBJECTS) setjmp.o
-	$(AR) $(ARFLAGS) libc.a $(LIBC_OBJECTS) setjmp.o
+libc.a: $(LIBC_OBJECTS) $(LIBC_ASM_OBJECTS)
+	$(AR) $(ARFLAGS) libc.a $(LIBC_OBJECTS) $(LIBC_ASM_OBJECTS)
 
-$(CRT_OBJECTS): $(wildcard src/libc/*.s)
-	$(AS) $(ASFLAGS) src/libc/$(basename $@).s -o $@
+$(CRT_OBJECTS): $(wildcard src/libc/crt/*.s)
+	$(AS) $(ASFLAGS) src/libc/crt/$(basename $@).s -o $@
 
-$(LIBC_OBJECTS): $(wildcard src/libc/*.c) $(wildcard src/libc/*.h) $(wildcard src/common/*)
+$(LIBC_OBJECTS): $(wildcard src/libc/*.c) $(wildcard src/libc/*.h) $(wildcard src/libc/sys/*.h) $(wildcard src/common/*)
 	$(CC) $(CFLAGS) -ffreestanding -c src/libc/$(basename $@).c -o $@
 
-setjmp.o: src/libc/setjmp.s
-	$(AS) $(ASFLAGS) src/libc/setjmp.s -o setjmp.o
+$(LIBC_ASM_OBJECTS): $(wildcard src/libc/*.s)
+	$(AS) $(ASFLAGS) src/libc/$(basename $@).s -o $@
 
 # ==== /HDD Image ====
 
@@ -104,6 +105,8 @@ qemu: mako.iso hda.img
 
 .PHONY: clean
 clean:
+	$(MAKE) -C ports/lua clean
+	$(MAKE) -C ports/doomgeneric/doomgeneric clean
 	rm -rf *.elf *.o *.a iso/boot/kernel.elf mako.iso com1.out                 \
 	       sysroot/lib/* sysroot/bin/* sysroot/apps/* lua c4 doomgeneric nanoc \
 	       $(APPS) $(BIN) $(PORTS) hda.img hda.tar ustar_image png2wp \

@@ -185,7 +185,7 @@ static void invert_rect(struct pixel_buffer buf, struct point pos, struct dim di
   for (uint32_t y = 0; y < dim.h; ++y) {
     uint32_t offset = (pos.y + y) * buf.stride + pos.x;
     for (uint32_t x = 0; x < dim.w; ++x)
-      buf.buf[offset + x] = 0xffffff - buf.buf[offset + x];
+      buf.buf[offset + x] = ~buf.buf[offset + x];
   }
 }
 

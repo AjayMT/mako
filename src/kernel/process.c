@@ -139,7 +139,7 @@ uint32_t process_switch_next()
     next->current_signal = next->next_signal;
     next->next_signal = 0;
     next->uregs.eip = next->signal_eip;
-    next->uregs.edi = next->current_signal;
+    next->uregs.edx = next->current_signal;
   }
 
   process_resume(next);
@@ -455,7 +455,9 @@ uint32_t process_load(process_t *process, process_image_t img)
   uint32_t err = paging_clear_user_space();
   CHECK_RESTORE_EFLAGS_CR3(err, "Failed to clear user address space.", err);
 
-  uint32_t npages = u_page_align_up(img.text_len) >> PHYS_ADDR_OFFSET;
+  uint32_t npages =
+    (u_page_align_up(img.text_vaddr + img.text_len) - u_page_align_down(img.text_vaddr)) >>
+    PHYS_ADDR_OFFSET;
   page_table_entry_t flags;
   u_memset(&flags, 0, sizeof(flags));
   flags.user = 1;
@@ -470,7 +472,8 @@ uint32_t process_load(process_t *process, process_image_t img)
 
   u_memcpy((uint8_t *)img.text_vaddr, img.text, img.text_len);
 
-  npages = u_page_align_up(img.data_len) >> PHYS_ADDR_OFFSET;
+  npages = (u_page_align_up(img.data_vaddr + img.data_len) - u_page_align_down(img.data_vaddr)) >>
+           PHYS_ADDR_OFFSET;
   for (uint32_t i = 0; i < npages; ++i) {
     uint32_t paddr = pmm_alloc(1);
     CHECK_RESTORE_EFLAGS_CR3(paddr == 0, "No memory.", ENOMEM);

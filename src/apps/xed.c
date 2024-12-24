@@ -717,6 +717,7 @@ static void keyboard_handler(uint8_t code)
         }
         if (window_w != SCREENWIDTH || window_h != SCREENHEIGHT)
           exit(0);
+        break;
       default:
         update = 0;
     }
