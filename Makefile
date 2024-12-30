@@ -107,7 +107,6 @@ qemu: mako.iso hda.img
 clean:
 	$(MAKE) -C ports/lua clean
 	$(MAKE) -C ports/doomgeneric/doomgeneric clean
-	rm -rf *.elf *.o *.a iso/boot/kernel.elf mako.iso com1.out                 \
-	       sysroot/lib/* sysroot/bin/* sysroot/apps/* lua c4 doomgeneric nanoc \
-	       $(APPS) $(BIN) $(PORTS) hda.img hda.tar ustar_image png2wp \
-	       png2bitmap font_compiler
+	rm -rf *.elf *.o *.a iso/boot/kernel.elf mako.iso com1.out \
+	       sysroot/lib/* sysroot/bin/* sysroot/apps/* \
+	       $(APPS) $(BIN) $(PORTS) hda.img hda.tar ustar_image font_compiler

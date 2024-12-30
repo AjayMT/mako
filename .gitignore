@@ -7,8 +7,6 @@
 /hda.tar
 /ustar_image
 /font_compiler
-/png2wp
-/png2bitmap
 /dex
 /init
 /wallpaper
@@ -19,7 +17,6 @@
 /pie
 /term
 /lua
-/c4
 /doomgeneric
 /nanoc
 /img
