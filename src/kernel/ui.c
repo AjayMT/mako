@@ -84,10 +84,10 @@ struct responder
 };
 
 static const uint32_t window_resize_control_size = 5;
-static const uint32_t window_shadow_color = 0x5b7c99;
 
 static const size_t frame_size = SCREENWIDTH * SCREENHEIGHT;
 static uint32_t *wallpaper = NULL;
+static struct pixel_buffer window_blit_buffer = { NULL, 0 };
 static struct pixel_buffer cursor_bg_buffer = { NULL, 0 };
 static struct pixel_buffer back_buffer = { NULL, 0 };
 static struct pixel_buffer frame_buffer = { NULL, 0 };
@@ -161,134 +161,124 @@ static void copy_rect(struct pixel_buffer dst,
   }
 }
 
-static void draw_shadows(struct responder *r)
+static void draw_window_shadows(struct dim window_dim, uint8_t window_opacity)
 {
-  const int32_t shadow_x = r->window_pos.x - WINDOW_SHADOW_SIZE;
-  const int32_t shadow_y = r->window_pos.y - TITLE_BAR_HEIGHT - WINDOW_SHADOW_SIZE;
-  const uint8_t max_opacity = min(r->window_opacity, 0x33);
+  const uint32_t window_shadow_color = 0x5b7c99;
+  const uint8_t max_opacity = min(window_opacity, 0x33);
 
-  int32_t y_start = max(r->window_pos.y - TITLE_BAR_HEIGHT, 0);
-  int32_t y_end = min(r->window_pos.y + r->window_dim.h, SCREENHEIGHT);
-  for (int32_t y = y_start; y < y_end; ++y) {
-    uint32_t *backbuf_ptr = back_buffer.buf + (y * back_buffer.stride);
-    uint32_t *bgbuf_ptr = r->bg_buf.buf + ((y - shadow_y) * r->bg_buf.stride);
+  // Draw shadows around the title bar.
+  for (int32_t y = 0; y < WINDOW_SHADOW_SIZE; ++y) {
+    uint32_t *blitbuf_ptr = window_blit_buffer.buf + y * window_blit_buffer.stride;
 
-    int32_t x_start = max(shadow_x, 0);
-    int32_t x_end = min(r->window_pos.x, SCREENWIDTH);
-    for (int32_t x = x_start; x < x_end; ++x) {
-      const uint32_t pixel = WINDOW_SHADOW_PIXELS[WINDOW_SHADOW_SIZE - 1 + shadow_x - x];
-      const uint8_t opacity = (max_opacity * (pixel >> 24)) / 0xff;
-      backbuf_ptr[x] = blend_alpha(bgbuf_ptr[x - shadow_x], window_shadow_color, opacity);
+    for (int32_t x = 0; x < WINDOW_SHADOW_SIZE; ++x) {
+      const uint8_t pixel = WINDOW_SHADOW_PIXELS[(WINDOW_SHADOW_SIZE - 1 - y) * WINDOW_SHADOW_SIZE +
+                                                 (WINDOW_SHADOW_SIZE - 1 - x)];
+      const uint8_t opacity = (max_opacity * pixel) / 0xff;
+      blitbuf_ptr[x] = blend_alpha(blitbuf_ptr[x], window_shadow_color, opacity);
     }
 
-    const bool in_title_bar = y - shadow_y < TITLE_BAR_HEIGHT + (int32_t)WINDOW_SHADOW_SIZE;
-    const int32_t rshadow_x = r->window_pos.x + (in_title_bar ? TITLE_BAR_WIDTH : r->window_dim.w);
-    x_start = max(rshadow_x, 0);
-    x_end = min(rshadow_x + WINDOW_SHADOW_SIZE, SCREENWIDTH);
-    for (int32_t x = x_start; x < x_end; ++x) {
-      const uint8_t opacity = (max_opacity * (WINDOW_SHADOW_PIXELS[x - rshadow_x] >> 24)) / 0xff;
-      backbuf_ptr[x] = blend_alpha(bgbuf_ptr[x - shadow_x], window_shadow_color, opacity);
+    const uint8_t pixel = WINDOW_SHADOW_PIXELS[WINDOW_SHADOW_SIZE - 1 - y];
+    const uint8_t opacity = (max_opacity * pixel) / 0xff;
+    for (int32_t x = WINDOW_SHADOW_SIZE; x < WINDOW_SHADOW_SIZE + TITLE_BAR_WIDTH; ++x)
+      blitbuf_ptr[x] = blend_alpha(blitbuf_ptr[x], window_shadow_color, opacity);
+
+    const int32_t xoff = WINDOW_SHADOW_SIZE + TITLE_BAR_WIDTH;
+    for (int32_t x = 0; x < WINDOW_SHADOW_SIZE; ++x) {
+      const uint8_t pixel =
+        WINDOW_SHADOW_PIXELS[(WINDOW_SHADOW_SIZE - 1 - y) * WINDOW_SHADOW_SIZE + x];
+      const uint8_t opacity = (max_opacity * pixel) / 0xff;
+      blitbuf_ptr[x + xoff] = blend_alpha(blitbuf_ptr[x + xoff], window_shadow_color, opacity);
+    }
+  }
+  for (int32_t y = WINDOW_SHADOW_SIZE; y < WINDOW_SHADOW_SIZE + TITLE_BAR_HEIGHT; ++y) {
+    uint32_t *blitbuf_ptr = window_blit_buffer.buf + y * window_blit_buffer.stride;
+
+    for (int32_t x = 0; x < WINDOW_SHADOW_SIZE; ++x) {
+      const uint8_t pixel = WINDOW_SHADOW_PIXELS[WINDOW_SHADOW_SIZE - 1 - x];
+      const uint8_t opacity = (max_opacity * pixel) / 0xff;
+      blitbuf_ptr[x] = blend_alpha(blitbuf_ptr[x], window_shadow_color, opacity);
+    }
+  }
+  const int32_t y_concave_corner = TITLE_BAR_HEIGHT;
+  for (int32_t y = WINDOW_SHADOW_SIZE; y < y_concave_corner; ++y) {
+    uint32_t *blitbuf_ptr = window_blit_buffer.buf + y * window_blit_buffer.stride;
+
+    const int32_t xoff = WINDOW_SHADOW_SIZE + TITLE_BAR_WIDTH;
+    for (int32_t x = 0; x < WINDOW_SHADOW_SIZE; ++x) {
+      const uint8_t pixel = WINDOW_SHADOW_PIXELS[x];
+      const uint8_t opacity = (max_opacity * pixel) / 0xff;
+      blitbuf_ptr[x + xoff] = blend_alpha(blitbuf_ptr[x + xoff], window_shadow_color, opacity);
+    }
+  }
+  for (int32_t y = 0; y < WINDOW_SHADOW_SIZE; ++y) {
+    uint32_t *blitbuf_ptr =
+      window_blit_buffer.buf + (y + y_concave_corner) * window_blit_buffer.stride;
+
+    const uint8_t ypixel = WINDOW_SHADOW_PIXELS[WINDOW_SHADOW_SIZE - 1 - y];
+    const int32_t xoff = WINDOW_SHADOW_SIZE + TITLE_BAR_WIDTH;
+    for (int32_t x = 0; x < WINDOW_SHADOW_SIZE; ++x) {
+      const uint8_t xpixel = WINDOW_SHADOW_PIXELS[x];
+      const uint8_t pixel = max(xpixel, ypixel);
+      const uint8_t opacity = (max_opacity * pixel) / 0xff;
+      blitbuf_ptr[x + xoff] = blend_alpha(blitbuf_ptr[x + xoff], window_shadow_color, opacity);
     }
   }
 
-  y_start = max(shadow_y, 0);
-  y_end = min(shadow_y + WINDOW_SHADOW_SIZE, SCREENHEIGHT);
-  for (int32_t y = y_start; y < y_end; ++y) {
-    const int32_t yoff = y - shadow_y;
-    uint32_t *backbuf_ptr = back_buffer.buf + (y * back_buffer.stride);
-    uint32_t *bgbuf_ptr = r->bg_buf.buf + ((y - shadow_y) * r->bg_buf.stride);
-
-    int32_t x_start = max(shadow_x, 0);
-    int32_t x_end = min(shadow_x + WINDOW_SHADOW_SIZE, SCREENWIDTH);
-    for (int32_t x = x_start; x < x_end; ++x) {
-      const int32_t xoff = x - shadow_x;
-      uint32_t pixel = WINDOW_SHADOW_PIXELS[(WINDOW_SHADOW_SIZE - 1 - yoff) * WINDOW_SHADOW_SIZE +
-                                            WINDOW_SHADOW_SIZE - 1 - xoff];
-      const uint8_t opacity = (max_opacity * (pixel >> 24)) / 0xff;
-      backbuf_ptr[x] = blend_alpha(bgbuf_ptr[x - shadow_x], window_shadow_color, opacity);
+  // Draw shadows around the window.
+  for (int32_t y = 0; y < (int32_t)window_dim.h; ++y) {
+    uint32_t *blitbuf_ptr = window_blit_buffer.buf +
+                            (y + WINDOW_SHADOW_SIZE + TITLE_BAR_HEIGHT) * window_blit_buffer.stride;
+    for (int32_t x = 0; x < WINDOW_SHADOW_SIZE; ++x) {
+      const uint8_t pixel = WINDOW_SHADOW_PIXELS[WINDOW_SHADOW_SIZE - 1 - x];
+      const uint8_t opacity = (max_opacity * pixel) / 0xff;
+      blitbuf_ptr[x] = blend_alpha(blitbuf_ptr[x], window_shadow_color, opacity);
     }
-
-    x_start = max(r->window_pos.x, 0);
-    x_end = min(r->window_pos.x + TITLE_BAR_WIDTH, SCREENWIDTH);
-    for (int32_t x = x_start; x < x_end; ++x) {
-      uint32_t pixel = WINDOW_SHADOW_PIXELS[WINDOW_SHADOW_SIZE - 1 - yoff];
-      const uint8_t opacity = (max_opacity * (pixel >> 24)) / 0xff;
-      backbuf_ptr[x] = blend_alpha(bgbuf_ptr[x - shadow_x], window_shadow_color, opacity);
-    }
-
-    x_start = max(r->window_pos.x + TITLE_BAR_WIDTH, 0);
-    x_end = min(r->window_pos.x + TITLE_BAR_WIDTH + WINDOW_SHADOW_SIZE, SCREENWIDTH);
-    for (int32_t x = x_start; x < x_end; ++x) {
-      const int32_t xoff = x - (r->window_pos.x + TITLE_BAR_WIDTH);
-      uint32_t pixel =
-        WINDOW_SHADOW_PIXELS[(WINDOW_SHADOW_SIZE - 1 - yoff) * WINDOW_SHADOW_SIZE + xoff];
-      const uint8_t opacity = (max_opacity * (pixel >> 24)) / 0xff;
-      backbuf_ptr[x] = blend_alpha(bgbuf_ptr[x - shadow_x], window_shadow_color, opacity);
+    const int32_t xoff = WINDOW_SHADOW_SIZE + window_dim.w;
+    for (int32_t x = 0; x < WINDOW_SHADOW_SIZE; ++x) {
+      const uint8_t pixel = WINDOW_SHADOW_PIXELS[x];
+      const uint8_t opacity = (max_opacity * pixel) / 0xff;
+      blitbuf_ptr[x + xoff] = blend_alpha(blitbuf_ptr[x + xoff], window_shadow_color, opacity);
     }
   }
+  const int32_t x_concave_corner = WINDOW_SHADOW_SIZE * 2 + TITLE_BAR_WIDTH;
+  for (int32_t y = 0; y < WINDOW_SHADOW_SIZE; ++y) {
+    uint32_t *blitbuf_ptr =
+      window_blit_buffer.buf + (y + y_concave_corner) * window_blit_buffer.stride;
 
-  y_start = max(r->window_pos.y - WINDOW_SHADOW_SIZE, 0);
-  y_end = min(r->window_pos.y, SCREENHEIGHT);
-  for (int32_t y = y_start; y < y_end; ++y) {
-    const int32_t yoff = y - (r->window_pos.y - WINDOW_SHADOW_SIZE);
-    uint32_t *backbuf_ptr = back_buffer.buf + (y * back_buffer.stride);
-    uint32_t *bgbuf_ptr = r->bg_buf.buf + ((y - shadow_y) * r->bg_buf.stride);
+    const uint8_t pixel = WINDOW_SHADOW_PIXELS[WINDOW_SHADOW_SIZE - 1 - y];
+    const uint8_t opacity = (max_opacity * pixel) / 0xff;
+    for (int32_t x = x_concave_corner; x < WINDOW_SHADOW_SIZE + (int32_t)window_dim.w; ++x)
+      blitbuf_ptr[x] = blend_alpha(blitbuf_ptr[x], window_shadow_color, opacity);
 
-    int32_t x_start = max(r->window_pos.x + TITLE_BAR_WIDTH, 0);
-    int32_t x_corner_end = min(r->window_pos.x + TITLE_BAR_WIDTH + WINDOW_SHADOW_SIZE, SCREENWIDTH);
-    int32_t x_end = min(r->window_pos.x + r->window_dim.w, SCREENWIDTH);
-    for (int32_t x = x_start; x < x_end; ++x) {
-      uint32_t pixel = WINDOW_SHADOW_PIXELS[WINDOW_SHADOW_SIZE - 1 - yoff];
-      const uint8_t opacity = (max_opacity * (pixel >> 24)) / 0xff;
-      if (x < x_corner_end)
-        backbuf_ptr[x] = blend_alpha(backbuf_ptr[x], window_shadow_color, opacity);
-      else
-        backbuf_ptr[x] = blend_alpha(bgbuf_ptr[x - shadow_x], window_shadow_color, opacity);
-    }
-
-    x_start = max(r->window_pos.x + r->window_dim.w, 0);
-    x_end = min(r->window_pos.x + r->window_dim.w + WINDOW_SHADOW_SIZE, SCREENWIDTH);
-    for (int32_t x = x_start; x < x_end; ++x) {
-      const int32_t xoff = x - (r->window_pos.x + r->window_dim.w);
-      uint32_t pixel =
-        WINDOW_SHADOW_PIXELS[(WINDOW_SHADOW_SIZE - 1 - yoff) * WINDOW_SHADOW_SIZE + xoff];
-      const uint8_t opacity = (max_opacity * (pixel >> 24)) / 0xff;
-      backbuf_ptr[x] = blend_alpha(bgbuf_ptr[x - shadow_x], window_shadow_color, opacity);
+    const int32_t xoff = WINDOW_SHADOW_SIZE + window_dim.w;
+    for (int32_t x = 0; x < WINDOW_SHADOW_SIZE; ++x) {
+      const uint8_t pixel =
+        WINDOW_SHADOW_PIXELS[WINDOW_SHADOW_SIZE * (WINDOW_SHADOW_SIZE - 1 - y) + x];
+      const uint8_t opacity = (max_opacity * pixel) / 0xff;
+      blitbuf_ptr[x + xoff] = blend_alpha(blitbuf_ptr[x + xoff], window_shadow_color, opacity);
     }
   }
+  for (int32_t y = 0; y < WINDOW_SHADOW_SIZE; ++y) {
+    uint32_t *blitbuf_ptr =
+      window_blit_buffer.buf +
+      (y + WINDOW_SHADOW_SIZE + TITLE_BAR_HEIGHT + window_dim.h) * window_blit_buffer.stride;
 
-  y_start = max(r->window_pos.y + r->window_dim.h, 0);
-  y_end = min(r->window_pos.y + r->window_dim.h + WINDOW_SHADOW_SIZE, SCREENHEIGHT);
-  for (int32_t y = y_start; y < y_end; ++y) {
-    const int32_t yoff = y - (r->window_pos.y + r->window_dim.h);
-    uint32_t *backbuf_ptr = back_buffer.buf + (y * back_buffer.stride);
-    uint32_t *bgbuf_ptr = r->bg_buf.buf + ((y - shadow_y) * r->bg_buf.stride);
+    const uint8_t pixel = WINDOW_SHADOW_PIXELS[y];
+    const uint8_t opacity = (max_opacity * pixel) / 0xff;
+    for (int32_t x = WINDOW_SHADOW_SIZE; x < WINDOW_SHADOW_SIZE + (int32_t)window_dim.w; ++x)
+      blitbuf_ptr[x] = blend_alpha(blitbuf_ptr[x], window_shadow_color, opacity);
 
-    int32_t x_start = max(r->window_pos.x, 0);
-    int32_t x_end = min(r->window_pos.x + r->window_dim.w, SCREENWIDTH);
-    for (int32_t x = x_start; x < x_end; ++x) {
-      uint32_t pixel = WINDOW_SHADOW_PIXELS[yoff];
-      const uint8_t opacity = (max_opacity * (pixel >> 24)) / 0xff;
-      backbuf_ptr[x] = blend_alpha(bgbuf_ptr[x - shadow_x], window_shadow_color, opacity);
+    for (int32_t x = 0; x < WINDOW_SHADOW_SIZE; ++x) {
+      const uint8_t pixel =
+        WINDOW_SHADOW_PIXELS[WINDOW_SHADOW_SIZE * y + (WINDOW_SHADOW_SIZE - 1 - x)];
+      const uint8_t opacity = (max_opacity * pixel) / 0xff;
+      blitbuf_ptr[x] = blend_alpha(blitbuf_ptr[x], window_shadow_color, opacity);
     }
-
-    x_start = max(r->window_pos.x - WINDOW_SHADOW_SIZE, 0);
-    x_end = min(r->window_pos.x, SCREENWIDTH);
-    for (int32_t x = x_start; x < x_end; ++x) {
-      const int32_t xoff = x - (r->window_pos.x - WINDOW_SHADOW_SIZE);
-      uint32_t pixel =
-        WINDOW_SHADOW_PIXELS[yoff * WINDOW_SHADOW_SIZE + (WINDOW_SHADOW_SIZE - 1 - xoff)];
-      const uint8_t opacity = (max_opacity * (pixel >> 24)) / 0xff;
-      backbuf_ptr[x] = blend_alpha(bgbuf_ptr[x - shadow_x], window_shadow_color, opacity);
-    }
-
-    x_start = max(r->window_pos.x + r->window_dim.w, 0);
-    x_end = min(r->window_pos.x + r->window_dim.w + WINDOW_SHADOW_SIZE, SCREENWIDTH);
-    for (int32_t x = x_start; x < x_end; ++x) {
-      const int32_t xoff = x - (r->window_pos.x + r->window_dim.w);
-      uint32_t pixel = WINDOW_SHADOW_PIXELS[yoff * WINDOW_SHADOW_SIZE + xoff];
-      const uint8_t opacity = (max_opacity * (pixel >> 24)) / 0xff;
-      backbuf_ptr[x] = blend_alpha(bgbuf_ptr[x - shadow_x], window_shadow_color, opacity);
+    const int32_t xoff = WINDOW_SHADOW_SIZE + window_dim.w;
+    for (int32_t x = 0; x < WINDOW_SHADOW_SIZE; ++x) {
+      const uint8_t pixel = WINDOW_SHADOW_PIXELS[WINDOW_SHADOW_SIZE * y + x];
+      const uint8_t opacity = (max_opacity * pixel) / 0xff;
+      blitbuf_ptr[x + xoff] = blend_alpha(blitbuf_ptr[x + xoff], window_shadow_color, opacity);
     }
   }
 }
@@ -386,6 +376,22 @@ static void render_text(struct pixel_buffer buf, struct point dst, const char *s
   }
 }
 
+static inline struct point window_chrome_pos(struct point window_pos)
+{
+  return (struct point){ window_pos.x - WINDOW_SHADOW_SIZE,
+                         window_pos.y - TITLE_BAR_HEIGHT - WINDOW_SHADOW_SIZE };
+}
+static inline struct dim window_chrome_dim(struct dim window_dim)
+{
+  return (struct dim){ window_dim.w + WINDOW_SHADOW_SIZE * 2,
+                       window_dim.h + TITLE_BAR_HEIGHT + WINDOW_SHADOW_SIZE * 2 };
+}
+static inline struct point window_chrome_content_offset(struct point chrome_pos)
+{
+  return (struct point){ chrome_pos.x + WINDOW_SHADOW_SIZE,
+                         chrome_pos.y + TITLE_BAR_HEIGHT + WINDOW_SHADOW_SIZE };
+}
+
 static void blit_window(struct responder *r)
 {
   const process_t *p = r->process;
@@ -393,43 +399,44 @@ static void blit_window(struct responder *r)
   const uint32_t cr3 = paging_get_cr3();
   paging_set_cr3(p->cr3);
 
-  struct point bg_buf_src = { r->window_pos.x - WINDOW_SHADOW_SIZE,
-                              r->window_pos.y - TITLE_BAR_HEIGHT - WINDOW_SHADOW_SIZE };
-  struct point bg_buf_dst = { 0, 0 };
-  struct dim bg_buf_dim = { r->window_dim.w + WINDOW_SHADOW_SIZE * 2,
-                            r->window_dim.h + TITLE_BAR_HEIGHT + WINDOW_SHADOW_SIZE * 2 };
-  if (clip_rect_on_screen(&bg_buf_src, &bg_buf_dst, &bg_buf_dim))
-    copy_rect(r->bg_buf, bg_buf_dst, back_buffer, bg_buf_src, bg_buf_dim);
+  struct point bg_buf_dst = window_chrome_pos(r->window_pos);
+  struct point bg_buf_src = { 0, 0 };
+  struct dim bg_buf_dim = window_chrome_dim(r->window_dim);
+  if (!clip_rect_on_screen(&bg_buf_dst, &bg_buf_src, &bg_buf_dim))
+    return;
 
-  draw_shadows(r);
+  // Copy the contents of the screen into the window background buffer.
+  copy_rect(r->bg_buf, bg_buf_src, back_buffer, bg_buf_dst, bg_buf_dim);
 
-  struct point title_bar_dst = { r->window_pos.x, r->window_pos.y - TITLE_BAR_HEIGHT };
-  struct point title_bar_src = { 0, 0 };
-  struct dim title_bar_dim = { TITLE_BAR_WIDTH, TITLE_BAR_HEIGHT };
-  if (clip_rect_on_screen(&title_bar_dst, &title_bar_src, &title_bar_dim))
-    copy_rect_alpha(
-      back_buffer,
-      title_bar_dst,
-      r->title_bar_buf,
-      title_bar_src,
-      r->bg_buf,
-      (struct point){ title_bar_src.x + WINDOW_SHADOW_SIZE, title_bar_src.y + WINDOW_SHADOW_SIZE },
-      title_bar_dim,
-      r->window_opacity);
+  // Draw the background, window chrome and window contents onto the window
+  // blit buffer.
+  copy_rect(window_blit_buffer,
+            (struct point){ 0, 0 },
+            r->bg_buf,
+            (struct point){ 0, 0 },
+            window_chrome_dim(r->window_dim));
+  draw_window_shadows(r->window_dim, r->window_opacity);
+  struct point title_bar_dst = { WINDOW_SHADOW_SIZE, WINDOW_SHADOW_SIZE };
+  copy_rect_alpha(window_blit_buffer,
+                  title_bar_dst,
+                  r->title_bar_buf,
+                  (struct point){ 0, 0 },
+                  r->bg_buf,
+                  title_bar_dst,
+                  (struct dim){ TITLE_BAR_WIDTH, TITLE_BAR_HEIGHT },
+                  r->window_opacity);
+  struct point window_dst = window_chrome_content_offset((struct point){ 0, 0 });
+  copy_rect_alpha(window_blit_buffer,
+                  window_dst,
+                  r->buf,
+                  (struct point){ 0, 0 },
+                  r->bg_buf,
+                  window_dst,
+                  r->window_dim,
+                  r->window_opacity);
 
-  struct point window_dst = r->window_pos;
-  struct point window_src = { 0, 0 };
-  struct dim window_dim = r->window_dim;
-  if (clip_rect_on_screen(&window_dst, &window_src, &window_dim))
-    copy_rect_alpha(back_buffer,
-                    window_dst,
-                    r->buf,
-                    window_src,
-                    r->bg_buf,
-                    (struct point){ window_src.x + WINDOW_SHADOW_SIZE,
-                                    window_src.y + TITLE_BAR_HEIGHT + WINDOW_SHADOW_SIZE },
-                    window_dim,
-                    r->window_opacity);
+  // Copy the window blit buffer onto the backbuffer.
+  copy_rect(back_buffer, bg_buf_dst, window_blit_buffer, bg_buf_src, bg_buf_dim);
 
   paging_set_cr3(cr3);
   interrupt_restore(eflags);
@@ -501,15 +508,14 @@ static void redraw_key_responder(struct point origin, struct dim dim)
   const uint32_t cr3 = paging_get_cr3();
   paging_set_cr3(r->process->cr3);
 
-  copy_rect_alpha(
-    back_buffer,
-    dst,
-    r->buf,
-    src,
-    r->bg_buf,
-    (struct point){ src.x + WINDOW_SHADOW_SIZE, src.y + TITLE_BAR_HEIGHT + WINDOW_SHADOW_SIZE },
-    clipped_dim,
-    r->window_opacity);
+  copy_rect_alpha(back_buffer,
+                  dst,
+                  r->buf,
+                  src,
+                  r->bg_buf,
+                  window_chrome_content_offset(src),
+                  clipped_dim,
+                  r->window_opacity);
   paging_set_cr3(cr3);
 
   if (redraw_cursor)
@@ -534,8 +540,8 @@ static void redraw_moving_objects(struct point old, struct point new)
   if (responders.size) {
     key_responder = responders.head->value;
     if (key_responder->window_moving) {
-      moved_object_w = key_responder->window_dim.w + WINDOW_SHADOW_SIZE * 2,
-      moved_object_h = key_responder->window_dim.h + TITLE_BAR_HEIGHT + WINDOW_SHADOW_SIZE * 2;
+      struct dim moved_object_dim = window_chrome_dim(key_responder->window_dim);
+      moved_object_w = moved_object_dim.w, moved_object_h = moved_object_dim.h;
       window_moving = true;
     }
   }
@@ -637,6 +643,10 @@ uint32_t ui_init(uint32_t video_vaddr)
   back_buffer.buf = kmalloc(frame_size * sizeof(uint32_t));
   CHECK(back_buffer.buf == NULL, "Failed to allocate back_buffer", ENOMEM);
   back_buffer.stride = SCREENWIDTH;
+
+  window_blit_buffer.buf = kmalloc(frame_size * sizeof(uint32_t));
+  CHECK(window_blit_buffer.buf == NULL, "Failed to allocate window_blit_buffer", ENOMEM);
+  window_blit_buffer.stride = SCREENWIDTH;
 
   wallpaper = kmalloc(frame_size * sizeof(uint32_t));
   CHECK(wallpaper == NULL, "Failed to allocate wallpaper", ENOMEM);
@@ -823,12 +833,9 @@ static void handle_mouse_click()
   bool changed_key_responder = old_key_responder != new_key_responder;
 
   if (changed_opacity && !changed_key_responder) {
-    struct point dst = { new_key_responder->window_pos.x - WINDOW_SHADOW_SIZE,
-                         new_key_responder->window_pos.y - TITLE_BAR_HEIGHT - WINDOW_SHADOW_SIZE };
+    struct point dst = window_chrome_pos(new_key_responder->window_pos);
     struct point src = { 0, 0 };
-    struct dim dim = { new_key_responder->window_dim.w + WINDOW_SHADOW_SIZE * 2,
-                       new_key_responder->window_dim.h + TITLE_BAR_HEIGHT +
-                         WINDOW_SHADOW_SIZE * 2 };
+    struct dim dim = window_chrome_dim(new_key_responder->window_dim);
     if (clip_rect_on_screen(&dst, &src, &dim)) {
       bool redraw_cursor =
         rect_intersect(mouse_pos, (struct dim){ CURSOR_WIDTH, CURSOR_HEIGHT }, dst, dim);
@@ -1000,28 +1007,24 @@ uint32_t ui_handle_mouse_event(int32_t dx,
 
   if (key_responder) {
     if (key_responder->window_moving) {
-      const uint32_t old_window_x = key_responder->window_pos.x;
-      const uint32_t old_window_y = key_responder->window_pos.y;
+      struct point old = window_chrome_pos(key_responder->window_pos);
       key_responder->window_pos.x += mouse_pos.x - old_mouse_pos.x;
       key_responder->window_pos.y += mouse_pos.y - old_mouse_pos.y;
-      struct point old = { .x = old_window_x - WINDOW_SHADOW_SIZE,
-                           .y = old_window_y - TITLE_BAR_HEIGHT - WINDOW_SHADOW_SIZE };
-      struct point new = { .x = key_responder->window_pos.x - WINDOW_SHADOW_SIZE,
-                           .y =
-                             key_responder->window_pos.y - TITLE_BAR_HEIGHT - WINDOW_SHADOW_SIZE };
+      struct point new = window_chrome_pos(key_responder->window_pos);
       redraw_moving_objects(old, new);
       return 0;
     } else if (key_responder->window_resizing_w || key_responder->window_resizing_h) {
       const struct dim old_resize_dim = key_responder->resize_dim;
+      const struct dim window_chrome_dims = window_chrome_dim((struct dim){ 0, 0 });
       if (key_responder->window_resizing_w) {
         key_responder->resize_dim.w += mouse_pos.x - old_mouse_pos.x;
-        key_responder->resize_dim.w =
-          min(max(key_responder->resize_dim.w, TITLE_BAR_WIDTH), SCREENWIDTH);
+        key_responder->resize_dim.w = min(max(key_responder->resize_dim.w, TITLE_BAR_WIDTH),
+                                          SCREENWIDTH - window_chrome_dims.w);
       }
       if (key_responder->window_resizing_h) {
         key_responder->resize_dim.h += mouse_pos.y - old_mouse_pos.y;
         key_responder->resize_dim.h =
-          min(max(key_responder->resize_dim.h, 50), SCREENHEIGHT - TITLE_BAR_HEIGHT);
+          min(max(key_responder->resize_dim.h, 50), SCREENHEIGHT - window_chrome_dims.h);
       }
       redraw_resizing_window(
         old_mouse_pos, key_responder->window_pos, old_resize_dim, key_responder->resize_dim);
@@ -1046,21 +1049,23 @@ uint32_t ui_make_responder(process_t *p, uint32_t buf, const char *title, uint32
   uint32_t err = pipe_create(&r->event_pipe_read, &r->event_pipe_write);
   CHECK_UNLOCK_R(err, "Failed to create event pipe.", err);
 
+  const struct dim window_chrome_dims = window_chrome_dim((struct dim){ 0, 0 });
   r->process = p;
   r->window_pos.x = SCREENWIDTH >> 2;
   r->window_pos.y = SCREENHEIGHT >> 2;
-  r->window_dim.w = min(max(w, TITLE_BAR_WIDTH), SCREENWIDTH);
-  r->window_dim.h = min(max(h, 50), SCREENHEIGHT - TITLE_BAR_HEIGHT);
+  r->window_dim.w = min(max(w, TITLE_BAR_WIDTH), SCREENWIDTH - window_chrome_dims.w);
+  r->window_dim.h = min(max(h, 50), SCREENHEIGHT - window_chrome_dims.h);
   r->resize_dim = r->window_dim;
   r->window_opacity = 0xff;
   r->window_drawn = false;
   r->buf = (struct pixel_buffer){ (uint32_t *)buf, r->window_dim.w };
 
-  const unsigned bg_buf_w = r->window_dim.w + WINDOW_SHADOW_SIZE * 2;
-  const unsigned bg_buf_h = r->window_dim.h + TITLE_BAR_HEIGHT + WINDOW_SHADOW_SIZE * 2;
+  const struct dim bg_buf_dim = window_chrome_dim(r->window_dim);
+  const unsigned bg_buf_w = bg_buf_dim.w;
+  const unsigned bg_buf_h = bg_buf_dim.h;
   r->bg_buf.buf = kmalloc(bg_buf_w * bg_buf_h * sizeof(uint32_t));
   CHECK_UNLOCK_R(r->bg_buf.buf == NULL, "No memory.", ENOMEM);
-  r->bg_buf.stride = r->window_dim.w + WINDOW_SHADOW_SIZE * 2;
+  r->bg_buf.stride = bg_buf_dim.w;
 
   size_t title_len = u_strlen(title);
   u_memcpy(r->window_title, title, min(title_len, sizeof(r->window_title)));
@@ -1101,11 +1106,9 @@ uint32_t ui_kill(process_t *p)
 
   if (is_head) {
     uint32_t eflags = interrupt_save_disable();
-    struct point bg_dst = { .x = r->window_pos.x - WINDOW_SHADOW_SIZE,
-                            .y = r->window_pos.y - TITLE_BAR_HEIGHT - WINDOW_SHADOW_SIZE };
+    struct point bg_dst = window_chrome_pos(r->window_pos);
     struct point bg_src = { 0, 0 };
-    struct dim bg_dim = { .w = r->window_dim.w + WINDOW_SHADOW_SIZE * 2,
-                          .h = r->window_dim.h + TITLE_BAR_HEIGHT + WINDOW_SHADOW_SIZE * 2 };
+    struct dim bg_dim = window_chrome_dim(r->window_dim);
     if (clip_rect_on_screen(&bg_dst, &bg_src, &bg_dim)) {
       bool redraw_cursor =
         rect_intersect(mouse_pos, (struct dim){ CURSOR_WIDTH, CURSOR_HEIGHT }, bg_dst, bg_dim);
@@ -1147,11 +1150,9 @@ uint32_t ui_redraw_rect(process_t *p, uint32_t x, uint32_t y, uint32_t w, uint32
       redraw_key_responder(origin, dim);
     } else {
       r->window_drawn = true;
-      struct point dst = { r->window_pos.x - WINDOW_SHADOW_SIZE,
-                           r->window_pos.y - TITLE_BAR_HEIGHT - WINDOW_SHADOW_SIZE };
+      struct point dst = window_chrome_pos(r->window_pos);
       struct point src = { 0, 0 };
-      struct dim dim = { r->window_dim.w + WINDOW_SHADOW_SIZE * 2,
-                         r->window_dim.h + TITLE_BAR_HEIGHT + WINDOW_SHADOW_SIZE * 2 };
+      struct dim dim = window_chrome_dim(r->window_dim);
       if (clip_rect_on_screen(&dst, &src, &dim)) {
         bool redraw_mouse =
           rect_intersect(mouse_pos, (struct dim){ CURSOR_WIDTH, CURSOR_HEIGHT }, dst, dim);
@@ -1164,8 +1165,6 @@ uint32_t ui_redraw_rect(process_t *p, uint32_t x, uint32_t y, uint32_t w, uint32
       }
     }
   } else
-    // FIXME: we don't need to redraw the windows behind this one
-    // and can maybe partially redraw this window
     redraw_all();
 
   interrupt_restore(eflags);
@@ -1266,18 +1265,48 @@ uint32_t ui_resize_window(process_t *p, uint32_t buf, uint32_t w, uint32_t h)
   uint32_t eflags = interrupt_save_disable();
   kunlock(&responders_lock);
 
-  r->window_dim.w = min(max(w, TITLE_BAR_WIDTH), SCREENWIDTH);
-  r->window_dim.h = min(max(h, 50), SCREENHEIGHT - TITLE_BAR_HEIGHT);
+  struct dim old_dim = window_chrome_dim(r->window_dim);
+  if (r == responders.head->value) {
+    struct point dst = window_chrome_pos(r->window_pos);
+    struct point src = { 0, 0 };
+    if (clip_rect_on_screen(&dst, &src, &old_dim))
+      copy_rect(back_buffer, dst, r->bg_buf, src, old_dim);
+  }
+
+  const struct dim window_chrome_dims = window_chrome_dim((struct dim){ 0, 0 });
+  r->window_dim.w = min(max(w, TITLE_BAR_WIDTH), SCREENWIDTH - window_chrome_dims.w);
+  r->window_dim.h = min(max(h, 50), SCREENHEIGHT - window_chrome_dims.h);
   r->resize_dim = r->window_dim;
   r->buf = (struct pixel_buffer){ (uint32_t *)buf, r->window_dim.w };
   kfree(r->bg_buf.buf);
-  const unsigned bg_buf_w = r->window_dim.w + WINDOW_SHADOW_SIZE * 2;
-  const unsigned bg_buf_h = r->window_dim.h + TITLE_BAR_HEIGHT + WINDOW_SHADOW_SIZE * 2;
+  const struct dim bg_buf_dim = window_chrome_dim(r->window_dim);
+  const unsigned bg_buf_w = bg_buf_dim.w;
+  const unsigned bg_buf_h = bg_buf_dim.h;
   r->bg_buf.buf = kmalloc(bg_buf_w * bg_buf_h * sizeof(uint32_t));
   CHECK_RESTORE_EFLAGS(r->bg_buf.buf == NULL, "No memory.", ENOMEM);
-  r->bg_buf.stride = r->window_dim.w + WINDOW_SHADOW_SIZE * 2;
+  r->bg_buf.stride = bg_buf_dim.w;
 
-  redraw_all();
+  if (r == responders.head->value) {
+    struct point dst = window_chrome_pos(r->window_pos);
+    struct point src = { 0, 0 };
+    struct dim dim = window_chrome_dim(r->window_dim);
+    if (clip_rect_on_screen(&dst, &src, &dim)) {
+      bool redraw_cursor =
+        rect_intersect(mouse_pos, (struct dim){ CURSOR_WIDTH, CURSOR_HEIGHT }, dst, dim);
+      if (redraw_cursor)
+        clear_cursor();
+
+      blit_window(r);
+
+      if (redraw_cursor)
+        blit_cursor();
+
+      struct dim redraw_dim = { max(old_dim.w, dim.w), max(old_dim.h, dim.h) };
+      copy_rect(frame_buffer, dst, back_buffer, dst, redraw_dim);
+    }
+  } else
+    redraw_all();
+
   interrupt_restore(eflags);
   return 0;
 }
