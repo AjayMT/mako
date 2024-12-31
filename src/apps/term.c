@@ -219,6 +219,39 @@ void execute_async(const char *prog, char **args)
   close(readfd);
 }
 
+bool execute_builtin(char *cmd, char **args)
+{
+  if (strcmp(cmd, "cd") == 0) {
+    if (args[0] == NULL)
+      chdir("/home");
+    else
+      chdir(args[0]);
+
+    return true;
+  }
+
+  if (strcmp(cmd, "clear") == 0) {
+    free(view.content_buf);
+    if (!ui_scrollview_init(&view, view.window_buf, view.window_w, view.window_h))
+      exit(1);
+    cursor_x = 0;
+    cursor_y = 0;
+    line_idx = 0;
+    memset(line_buf, 0, sizeof(line_buf));
+    ui_scrollview_redraw_rect(&view, 0, 0, view.content_w, view.content_h);
+    return true;
+  }
+
+  if (strcmp(cmd, "exit") == 0) {
+    int32_t code = 0;
+    if (args[0] != NULL)
+      code = atoi(args[0]);
+    exit(code);
+  }
+
+  return false;
+}
+
 void execute_program(char *cmd_buf, size_t cmd_len)
 {
   for (unsigned i = 0; i < cmd_len; ++i)
@@ -243,6 +276,11 @@ void execute_program(char *cmd_buf, size_t cmd_len)
       break;
   }
   args[args_idx] = NULL;
+
+  if (execute_builtin(cmd_buf, args)) {
+    print_prompt();
+    return;
+  }
 
   char prog_path[SMALL_BUFFER_SIZE];
 
@@ -419,26 +457,40 @@ void resize_request_handler(uint32_t w, uint32_t h)
     return;
   }
 
-  free(view.content_buf);
+  struct ui_scrollview old_view = view;
   if (!ui_scrollview_init(&view, new_ui_buf, w, h)) {
+    free(new_ui_buf);
+    view = old_view;
     thread_unlock(&ui_lock);
     return;
   }
 
-  cursor_x = 0;
-  cursor_y = 0;
-  line_idx = 0;
-  memset(line_buf, 0, sizeof(line_buf));
+  if (!ui_scrollview_grow(&view, old_view.content_w, old_view.content_h, 0)) {
+    free(new_ui_buf);
+    free(view.content_buf);
+    view = old_view;
+    thread_unlock(&ui_lock);
+    return;
+  }
 
-  if (!executing_program)
-    print_prompt();
+  memset32(view.content_buf, background_color, view.content_w * view.content_h);
+  for (uint32_t y = 0; y < old_view.content_h; ++y)
+    memcpy32(view.content_buf + y * view.content_w,
+             old_view.content_buf + y * old_view.content_w,
+             old_view.content_w);
 
   int32_t err = ui_resize_window(new_ui_buf, w, h);
   if (err) {
+    free(new_ui_buf);
+    free(view.content_buf);
+    view = old_view;
     thread_unlock(&ui_lock);
     return;
   }
 
+  ui_scrollview_redraw_rect(&view, 0, 0, view.content_w, view.content_h);
+
+  free(old_view.content_buf);
   free(ui_buf);
   ui_buf = new_ui_buf;
   thread_unlock(&ui_lock);
