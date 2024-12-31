@@ -1061,8 +1061,8 @@ uint32_t ui_make_responder(process_t *p, uint32_t buf, const char *title, uint32
   r->buf = (struct pixel_buffer){ (uint32_t *)buf, r->window_dim.w };
 
   const struct dim bg_buf_dim = window_chrome_dim(r->window_dim);
-  const unsigned bg_buf_w = bg_buf_dim.w;
-  const unsigned bg_buf_h = bg_buf_dim.h;
+  const uint32_t bg_buf_w = bg_buf_dim.w;
+  const uint32_t bg_buf_h = bg_buf_dim.h;
   r->bg_buf.buf = kmalloc(bg_buf_w * bg_buf_h * sizeof(uint32_t));
   CHECK_UNLOCK_R(r->bg_buf.buf == NULL, "No memory.", ENOMEM);
   r->bg_buf.stride = bg_buf_dim.w;
@@ -1269,8 +1269,15 @@ uint32_t ui_resize_window(process_t *p, uint32_t buf, uint32_t w, uint32_t h)
   if (r == responders.head->value) {
     struct point dst = window_chrome_pos(r->window_pos);
     struct point src = { 0, 0 };
-    if (clip_rect_on_screen(&dst, &src, &old_dim))
+    if (clip_rect_on_screen(&dst, &src, &old_dim)) {
+      bool redraw_cursor =
+        rect_intersect(mouse_pos, (struct dim){ CURSOR_WIDTH, CURSOR_HEIGHT }, dst, old_dim);
+      if (redraw_cursor)
+        clear_cursor();
       copy_rect(back_buffer, dst, r->bg_buf, src, old_dim);
+      if (redraw_cursor)
+        blit_cursor();
+    }
   }
 
   const struct dim window_chrome_dims = window_chrome_dim((struct dim){ 0, 0 });
@@ -1280,8 +1287,8 @@ uint32_t ui_resize_window(process_t *p, uint32_t buf, uint32_t w, uint32_t h)
   r->buf = (struct pixel_buffer){ (uint32_t *)buf, r->window_dim.w };
   kfree(r->bg_buf.buf);
   const struct dim bg_buf_dim = window_chrome_dim(r->window_dim);
-  const unsigned bg_buf_w = bg_buf_dim.w;
-  const unsigned bg_buf_h = bg_buf_dim.h;
+  const uint32_t bg_buf_w = bg_buf_dim.w;
+  const uint32_t bg_buf_h = bg_buf_dim.h;
   r->bg_buf.buf = kmalloc(bg_buf_w * bg_buf_h * sizeof(uint32_t));
   CHECK_RESTORE_EFLAGS(r->bg_buf.buf == NULL, "No memory.", ENOMEM);
   r->bg_buf.stride = bg_buf_dim.w;
@@ -1295,13 +1302,15 @@ uint32_t ui_resize_window(process_t *p, uint32_t buf, uint32_t w, uint32_t h)
         rect_intersect(mouse_pos, (struct dim){ CURSOR_WIDTH, CURSOR_HEIGHT }, dst, dim);
       if (redraw_cursor)
         clear_cursor();
-
       blit_window(r);
-
-      if (redraw_cursor)
-        blit_cursor();
-
       struct dim redraw_dim = { max(old_dim.w, dim.w), max(old_dim.h, dim.h) };
+      if (redraw_cursor) {
+        blit_cursor();
+        const uint32_t cursor_rect_w = mouse_pos.x + CURSOR_WIDTH - dst.x;
+        redraw_dim.w = max(redraw_dim.w, cursor_rect_w);
+        const uint32_t cursor_rect_h = mouse_pos.y + CURSOR_HEIGHT - dst.y;
+        redraw_dim.h = max(redraw_dim.h, cursor_rect_h);
+      }
       copy_rect(frame_buffer, dst, back_buffer, dst, redraw_dim);
     }
   } else
