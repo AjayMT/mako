@@ -240,6 +240,7 @@ bool execute_builtin(char *cmd, char **args)
     cursor_y = 0;
     line_idx = 0;
     memset(line_buf, 0, sizeof(line_buf));
+    flip_cursor();
     ui_scrollview_redraw_rect(&view, 0, 0, view.content_w, view.content_h);
     return true;
   }
@@ -523,6 +524,7 @@ int main(int argc, char *argv[])
   if (!ui_scrollview_init(&view, ui_buf, ev.width, ev.height))
     return 1;
 
+  flip_cursor();
   print_prompt();
 
   while (1) {
