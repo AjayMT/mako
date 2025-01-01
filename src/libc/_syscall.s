@@ -64,7 +64,7 @@ _syscall4:
     mov ebx, [ebp + 12]
     mov eax, [ebp + 8]
     int 0x80
-    pop ebx
     pop edi
+    pop ebx
     leave
     ret
