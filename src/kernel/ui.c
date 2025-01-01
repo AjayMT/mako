@@ -992,7 +992,6 @@ uint32_t ui_handle_mouse_event(int32_t dx,
     if (mouse_left_clicked)
       handle_mouse_click();
     else if (key_responder) {
-      key_responder->window_moving = false;
       if (key_responder->window_resizing_w || key_responder->window_resizing_h) {
         key_responder->window_resizing_w = false;
         key_responder->window_resizing_h = false;
@@ -1005,10 +1004,7 @@ uint32_t ui_handle_mouse_event(int32_t dx,
         }
         dispatch_window_event(key_responder, UI_EVENT_RESIZE_REQUEST);
         key_responder->resize_dim = key_responder->window_dim;
-      } else if (mouse_in_rect(key_responder->window_pos.x,
-                               key_responder->window_pos.y,
-                               key_responder->window_dim.w,
-                               key_responder->window_dim.h)) {
+      } else if (!key_responder->window_moving) {
         ui_event_t ev;
         ev.type = UI_EVENT_MOUSE_UNCLICK;
         ev.x = mouse_pos.x - key_responder->window_pos.x;
@@ -1018,6 +1014,7 @@ uint32_t ui_handle_mouse_event(int32_t dx,
         if (written != sizeof(ui_event_t))
           log_error("ui", "Failed to dispatch unclick event.");
       }
+      key_responder->window_moving = false;
     }
     return 0;
   }

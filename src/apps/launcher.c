@@ -119,7 +119,7 @@ void handle_mouse_move(int32_t x, int32_t y)
              text_height * window_w);
   }
 
-  if (new_hovered_app != -1) {
+  if (new_hovered_app != -1 && hovered_app != new_hovered_app) {
     for (uint32_t y = 0; y < hover_box_height; ++y) {
       uint32_t *bufptr =
         ui_buf + y * window_w + hover_box_width * new_hovered_app + (icon_h_padding / 2);
@@ -188,7 +188,7 @@ int main(int argc, char *argv[])
     if (err < 0)
       return 1;
     switch (ev.type) {
-      case UI_EVENT_MOUSE_UNCLICK:
+      case UI_EVENT_MOUSE_CLICK:
         handle_mouse_click(ev.x, ev.y);
         break;
       case UI_EVENT_MOUSE_MOVE:
