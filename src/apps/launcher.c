@@ -72,17 +72,21 @@ void launch(const struct app *app)
 {
   if (fork() == 0) {
     char app_path[256];
-    snprintf(app_path, sizeof(app_path), "/apps/%s", app->name);
+    snprintf(app_path, sizeof(app_path), "%s/%s", getenv("APPS_PATH"), app->name);
     char *args[] = { NULL };
     execve(app_path, args, environ);
+    exit(1);
   }
 }
 
 void launch_doom(const struct app *app)
 {
   if (fork() == 0) {
+    char app_path[256];
+    snprintf(app_path, sizeof(app_path), "%s/doomgeneric", getenv("APPS_PATH"));
     char *args[] = { "-iwad", "/home/doom1.wad", NULL };
-    execve("/apps/doomgeneric", args, environ);
+    execve(app_path, args, environ);
+    exit(1);
   }
 }
 
