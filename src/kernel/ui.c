@@ -1087,8 +1087,14 @@ uint32_t ui_make_responder(process_t *p, uint32_t buf, const char *title, uint32
 
   const struct dim window_chrome_dims = window_chrome_dim((struct dim){ 0, 0 });
   r->process = p;
-  r->window_pos.x = SCREENWIDTH >> 2;
-  r->window_pos.y = SCREENHEIGHT >> 2;
+  if (responders.head) {
+    struct responder *key_responder = responders.head->value;
+    r->window_pos.x = (key_responder->window_pos.x % 800) + 20;
+    r->window_pos.y = (key_responder->window_pos.y % 600) + 20;
+  } else {
+    r->window_pos.x = 20;
+    r->window_pos.y = 30;
+  }
   r->window_dim.w = min(max(w, TITLE_BAR_WIDTH), SCREENWIDTH - window_chrome_dims.w);
   r->window_dim.h = min(max(h, 50), SCREENHEIGHT - window_chrome_dims.h);
   r->resize_dim = r->window_dim;
