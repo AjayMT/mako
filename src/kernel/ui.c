@@ -66,7 +66,6 @@ struct pixel_buffer
 struct responder
 {
   process_t *process;
-  char window_title[20];
   struct point window_pos;
   struct dim window_dim;
   struct dim resize_dim;
@@ -830,7 +829,7 @@ static void handle_mouse_click()
     return;
 
   struct responder *old_key_responder = responders.head->value;
-  bool changed_key_responder = old_key_responder != new_key_responder;
+  const bool changed_key_responder = old_key_responder != new_key_responder;
 
   if (changed_opacity && !changed_key_responder) {
     struct point dst = window_chrome_pos(new_key_responder->window_pos);
@@ -1067,14 +1066,12 @@ uint32_t ui_make_responder(process_t *p, uint32_t buf, const char *title, uint32
   CHECK_UNLOCK_R(r->bg_buf.buf == NULL, "No memory.", ENOMEM);
   r->bg_buf.stride = bg_buf_dim.w;
 
-  size_t title_len = u_strlen(title);
-  u_memcpy(r->window_title, title, min(title_len, sizeof(r->window_title)));
   r->title_bar_buf.buf = kmalloc(TITLE_BAR_WIDTH * TITLE_BAR_HEIGHT * sizeof(uint32_t));
   CHECK_UNLOCK_R(r->title_bar_buf.buf == NULL, "No memory.", ENOMEM);
   r->title_bar_buf.stride = TITLE_BAR_WIDTH;
   u_memcpy32(r->title_bar_buf.buf, TITLE_BAR_PIXELS, TITLE_BAR_WIDTH * TITLE_BAR_HEIGHT);
   const struct point title_dst = { TITLE_BAR_BUTTON_WIDTH + 4, 2 };
-  render_text(r->title_bar_buf, title_dst, r->window_title);
+  render_text(r->title_bar_buf, title_dst, title);
 
   list_push_front(&responders, r);
   r->list_node = responders.head;
