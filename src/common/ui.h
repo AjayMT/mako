@@ -16,7 +16,10 @@
 typedef enum
 {
   UI_EVENT_KEYBOARD,
-  UI_EVENT_SCROLL,
+  UI_EVENT_MOUSE_SCROLL,
+  UI_EVENT_MOUSE_CLICK,
+  UI_EVENT_MOUSE_UNCLICK,
+  UI_EVENT_MOUSE_MOVE,
   UI_EVENT_RESIZE_REQUEST,
   UI_EVENT_WAKE,
   UI_EVENT_SLEEP
@@ -29,6 +32,10 @@ typedef struct ui_event_s
   uint8_t code;
   uint32_t width;
   uint32_t height;
+  int32_t x;
+  int32_t y;
+  int32_t dx;
+  int32_t dy;
   ui_event_type_t type;
 } ui_event_t;
 

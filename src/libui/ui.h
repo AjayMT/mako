@@ -17,6 +17,7 @@ int32_t ui_acquire_window(uint32_t *buf, const char *title, uint32_t w, uint32_t
 int32_t ui_resize_window(uint32_t *buf, uint32_t w, uint32_t h);
 int32_t ui_redraw_rect(uint32_t, uint32_t, uint32_t, uint32_t);
 int32_t ui_next_event(ui_event_t *);
+int32_t ui_enable_mouse_move_events();
 int32_t ui_yield();
 uint32_t ui_poll_events();
 int32_t ui_set_wallpaper(const char *);
@@ -28,12 +29,13 @@ enum ui_font
   UI_FONT_CONSOLAS,
 };
 
+uint32_t ui_blend_alpha(uint32_t bg, uint32_t fg);
 void ui_render_text(uint32_t *buf,
                     size_t buf_stride,
                     const char *str,
                     size_t len,
-                    enum ui_font font);
-
+                    enum ui_font font,
+                    uint32_t color);
 void ui_measure_text(uint32_t *w, uint32_t *h, const char *str, size_t len, enum ui_font font);
 
 struct ui_scrollview

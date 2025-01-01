@@ -42,7 +42,7 @@ def main():
     elif opts.alpha:
         encode = lambda p: hex(p[3])
     else:
-        encode = lambda p: hex(p[0] | (p[1] << 8) | (p[2] << 16) | (p[3] << 24))
+        encode = lambda p: hex(p[2] | (p[1] << 8) | (p[0] << 16) | (p[3] << 24))
 
     print(", ".join(encode(p) for p in image.getdata()))
     print("};")

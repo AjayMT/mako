@@ -58,6 +58,16 @@ int32_t ui_next_event(ui_event_t *buf)
   return res;
 }
 
+int32_t ui_enable_mouse_move_events()
+{
+  int32_t err = _syscall0(SYSCALL_UI_ENABLE_MOUSE_MOVE_EVENTS);
+  if (err < 0) {
+    errno = -err;
+    err = -1;
+  }
+  return err;
+}
+
 int32_t ui_yield()
 {
   int32_t res = _syscall0(SYSCALL_UI_YIELD);
@@ -83,16 +93,41 @@ int32_t ui_set_wallpaper(const char *path)
   return res;
 }
 
+uint32_t ui_blend_alpha(uint32_t bg, uint32_t fg)
+{
+  const uint8_t opacity = fg >> 24;
+  if (opacity == 0)
+    return bg;
+  if (opacity == 0xff)
+    return fg;
+
+  const uint8_t fg_b = ((fg & 0xff) * opacity) / 0xff;
+  const uint8_t fg_g = (((fg >> 8) & 0xff) * opacity) / 0xff;
+  const uint8_t fg_r = (((fg >> 16) & 0xff) * opacity) / 0xff;
+  const uint32_t bg_b = bg & 0xff;
+  const uint32_t bg_g = (bg >> 8) & 0xff;
+  const uint32_t bg_r = (bg >> 16) & 0xff;
+
+  const uint16_t t = 0xff ^ opacity;
+  const uint32_t blend_g = fg_g + (((bg_g * t + 0x80) * 0x101) >> 16);
+  const uint32_t blend_b = fg_b + (((bg_b * t + 0x80) * 0x101) >> 16);
+  const uint32_t blend_r = fg_r + (((bg_r * t + 0x80) * 0x101) >> 16);
+
+  return blend_b | (blend_g << 8) | (blend_r << 16);
+}
+
 static void render_char(uint32_t *buf,
                         size_t buf_stride,
                         struct font_char_info c,
                         const uint8_t *font_data,
-                        unsigned font_height)
+                        unsigned font_height,
+                        uint32_t color)
 {
   for (size_t y = 0; y < font_height; ++y) {
     for (size_t x = 0; x < c.width; ++x) {
-      uint8_t byte = 0xff - font_data[c.data_offset + y * c.width + x];
-      buf[y * buf_stride + x] = (byte << 16) | (byte << 8) | byte;
+      uint8_t opacity = font_data[c.data_offset + y * c.width + x];
+      buf[y * buf_stride + x] =
+        ui_blend_alpha(buf[y * buf_stride + x], (opacity << 24) | (color & 0xffffff));
     }
   }
 }
@@ -125,7 +160,8 @@ void ui_render_text(uint32_t *buf,
                     size_t buf_stride,
                     const char *str,
                     size_t len,
-                    enum ui_font font)
+                    enum ui_font font,
+                    uint32_t color)
 {
   struct font_char_info *font_char_info;
   uint8_t *font_data;
@@ -156,7 +192,7 @@ void ui_render_text(uint32_t *buf,
 
     uint32_t *p = buf + (y * buf_stride) + x;
     const struct font_char_info char_info = font_char_info[c - 32];
-    render_char(p, buf_stride, char_info, font_data, font_height);
+    render_char(p, buf_stride, char_info, font_data, font_height, color);
     x += char_info.width;
   }
 }

@@ -16,9 +16,9 @@
 /xed
 /pie
 /term
+/launcher
 /lua
 /doomgeneric
 /nanoc
-/img
 /mnt/*
 .DS_Store

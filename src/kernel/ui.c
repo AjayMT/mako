@@ -74,6 +74,7 @@ struct responder
   bool window_moving;
   bool window_resizing_w;
   bool window_resizing_h;
+  bool mouse_move_events_enabled;
   struct pixel_buffer buf;
   struct pixel_buffer bg_buf;
   struct pixel_buffer title_bar_buf;
@@ -881,6 +882,22 @@ static void handle_mouse_click()
 
   if (changed_key_responder)
     redraw_all();
+
+  bool dispatch_click_event = !changed_key_responder && !new_key_responder->window_moving &&
+                              !new_key_responder->window_resizing_w &&
+                              !new_key_responder->window_resizing_h;
+  if (dispatch_click_event) {
+    int32_t click_x = mouse_pos.x - new_key_responder->window_pos.x;
+    int32_t click_y = mouse_pos.y - new_key_responder->window_pos.y;
+    ui_event_t ev;
+    ev.type = UI_EVENT_MOUSE_CLICK;
+    ev.x = click_x;
+    ev.y = click_y;
+    uint32_t written =
+      fs_write(&new_key_responder->event_pipe_write, 0, sizeof(ui_event_t), (uint8_t *)&ev);
+    if (written != sizeof(ui_event_t))
+      log_error("ui", "Failed to dispatch click event.");
+  }
 }
 
 static void handle_mouse_scroll(int8_t vscroll, int8_t hscroll)
@@ -890,7 +907,7 @@ static void handle_mouse_scroll(int8_t vscroll, int8_t hscroll)
     struct responder *r = node->value;
     if (mouse_in_rect(r->window_pos.x, r->window_pos.y, r->window_dim.w, r->window_dim.h)) {
       ui_event_t ev;
-      ev.type = UI_EVENT_SCROLL;
+      ev.type = UI_EVENT_MOUSE_SCROLL;
       if (key_lshift_pressed || key_rshift_pressed) {
         ev.vscroll = hscroll;
         ev.hscroll = vscroll;
@@ -988,6 +1005,18 @@ uint32_t ui_handle_mouse_event(int32_t dx,
         }
         dispatch_window_event(key_responder, UI_EVENT_RESIZE_REQUEST);
         key_responder->resize_dim = key_responder->window_dim;
+      } else if (mouse_in_rect(key_responder->window_pos.x,
+                               key_responder->window_pos.y,
+                               key_responder->window_dim.w,
+                               key_responder->window_dim.h)) {
+        ui_event_t ev;
+        ev.type = UI_EVENT_MOUSE_UNCLICK;
+        ev.x = mouse_pos.x - key_responder->window_pos.x;
+        ev.y = mouse_pos.y - key_responder->window_pos.y;
+        uint32_t written =
+          fs_write(&key_responder->event_pipe_write, 0, sizeof(ui_event_t), (uint8_t *)&ev);
+        if (written != sizeof(ui_event_t))
+          log_error("ui", "Failed to dispatch unclick event.");
       }
     }
     return 0;
@@ -1028,6 +1057,17 @@ uint32_t ui_handle_mouse_event(int32_t dx,
       redraw_resizing_window(
         old_mouse_pos, key_responder->window_pos, old_resize_dim, key_responder->resize_dim);
       return 0;
+    } else if (key_responder->mouse_move_events_enabled) {
+      ui_event_t ev;
+      ev.type = UI_EVENT_MOUSE_MOVE;
+      ev.x = mouse_pos.x - key_responder->window_pos.x;
+      ev.y = mouse_pos.y - key_responder->window_pos.y;
+      ev.dx = dx;
+      ev.dy = dy;
+      uint32_t written =
+        fs_write(&key_responder->event_pipe_write, 0, sizeof(ui_event_t), (uint8_t *)&ev);
+      if (written != sizeof(ui_event_t))
+        log_error("ui", "Failed to dispatch move event.");
     }
   }
 
@@ -1314,5 +1354,15 @@ uint32_t ui_resize_window(process_t *p, uint32_t buf, uint32_t w, uint32_t h)
     redraw_all();
 
   interrupt_restore(eflags);
+  return 0;
+}
+
+uint32_t ui_enable_mouse_move_events(process_t *p)
+{
+  klock(&responders_lock);
+  struct responder *r = responders_by_gid[p->gid];
+  CHECK_UNLOCK_R(r == NULL, "Process does not have window.", 1);
+  r->mouse_move_events_enabled = true;
+  kunlock(&responders_lock);
   return 0;
 }

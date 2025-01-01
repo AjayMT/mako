@@ -88,7 +88,7 @@ static void render_text(const char *text, uint32_t x, uint32_t y)
 {
   size_t len = strlen(text);
   uint32_t *p = ui_buf + (y * window_w) + x;
-  ui_render_text(p, window_w, text, len, UI_FONT_MONACO);
+  ui_render_text(p, window_w, text, len, UI_FONT_MONACO, 0);
 }
 
 static void render_path()

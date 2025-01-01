@@ -70,7 +70,8 @@ void print(const char *text)
                  view.content_w,
                  text,
                  text_len,
-                 UI_FONT_MONACO);
+                 UI_FONT_MONACO,
+                 text_color);
 
   cursor_x += w;
   flip_cursor();
@@ -90,7 +91,8 @@ void print_line(const char *text)
                  view.content_w,
                  text,
                  text_len,
-                 UI_FONT_MONACO);
+                 UI_FONT_MONACO,
+                 text_color);
 
   cursor_y += h;
   uint32_t old_cursor_x = cursor_x;
@@ -506,6 +508,9 @@ int main(int argc, char *argv[])
     chdir(argv[1]);
 
   ui_buf = malloc((SCREENWIDTH >> 1) * (SCREENHEIGHT >> 1) * sizeof(uint32_t));
+  if (ui_buf == NULL)
+    return 1;
+
   int32_t err = ui_acquire_window(ui_buf, "term", SCREENWIDTH >> 1, SCREENHEIGHT >> 1);
   if (err < 0)
     return 1;
@@ -521,7 +526,6 @@ int main(int argc, char *argv[])
   print_prompt();
 
   while (1) {
-    ui_event_t ev;
     err = ui_next_event(&ev);
     if (err < 0)
       return 1;
@@ -529,7 +533,7 @@ int main(int argc, char *argv[])
       case UI_EVENT_KEYBOARD:
         keyboard_handler(ev.code);
         break;
-      case UI_EVENT_SCROLL:
+      case UI_EVENT_MOUSE_SCROLL:
         thread_lock(&ui_lock);
         ui_scrollview_scroll(&view, ev.hscroll * 10, ev.vscroll * 10);
         thread_unlock(&ui_lock);
