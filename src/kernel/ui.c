@@ -708,6 +708,14 @@ uint32_t ui_handle_keyboard_event(uint8_t code)
     // Rotate responders list
     if (responders.size > 1) {
       struct responder *key_responder = responders.head->value;
+      if (key_responder->window_resizing_w || key_responder->window_resizing_h) {
+        interrupt_restore(eflags);
+        return 0;
+      }
+
+      if (key_responder->window_moving)
+        key_responder->window_moving = false;
+
       list_remove(&responders, responders.head, 0);
       key_responder->list_node->prev = responders.tail;
       key_responder->list_node->next = NULL;
@@ -762,7 +770,10 @@ uint32_t ui_handle_keyboard_event(uint8_t code)
 
 static void handle_mouse_click()
 {
-  struct responder *new_key_responder = NULL;
+  if (responders.size == 0)
+    return;
+
+  struct responder *new_key_responder = responders.head->value;
   bool changed_opacity = false;
   list_foreach(node, &responders)
   {
@@ -825,9 +836,6 @@ static void handle_mouse_click()
       break;
     }
   }
-
-  if (new_key_responder == NULL)
-    return;
 
   struct responder *old_key_responder = responders.head->value;
   const bool changed_key_responder = old_key_responder != new_key_responder;
@@ -992,7 +1000,9 @@ uint32_t ui_handle_mouse_event(int32_t dx,
     if (mouse_left_clicked)
       handle_mouse_click();
     else if (key_responder) {
-      if (key_responder->window_resizing_w || key_responder->window_resizing_h) {
+      if (key_responder->window_moving)
+        key_responder->window_moving = false;
+      else if (key_responder->window_resizing_w || key_responder->window_resizing_h) {
         key_responder->window_resizing_w = false;
         key_responder->window_resizing_h = false;
         struct point invert_dst = key_responder->window_pos;
@@ -1004,7 +1014,7 @@ uint32_t ui_handle_mouse_event(int32_t dx,
         }
         dispatch_window_event(key_responder, UI_EVENT_RESIZE_REQUEST);
         key_responder->resize_dim = key_responder->window_dim;
-      } else if (!key_responder->window_moving) {
+      } else {
         ui_event_t ev;
         ev.type = UI_EVENT_MOUSE_UNCLICK;
         ev.x = mouse_pos.x - key_responder->window_pos.x;
@@ -1014,7 +1024,6 @@ uint32_t ui_handle_mouse_event(int32_t dx,
         if (written != sizeof(ui_event_t))
           log_error("ui", "Failed to dispatch unclick event.");
       }
-      key_responder->window_moving = false;
     }
     return 0;
   }
