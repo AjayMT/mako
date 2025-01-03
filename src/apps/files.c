@@ -28,10 +28,10 @@ const uint32_t button_width = 50;
 
 enum item_type
 {
+  ITEM_UNKNOWN = 0,
   ITEM_FILE,
   ITEM_DIRECTORY,
   ITEM_APP,
-  ITEM_UNKNOWN,
 };
 
 struct item
@@ -42,7 +42,7 @@ struct item
 
 #define BUFSIZE 256
 
-struct item items[BUFSIZE];
+static struct item items[BUFSIZE];
 static uint32_t num_items = 0;
 static int32_t selected_item = -1;
 
@@ -74,6 +74,7 @@ void load_items()
   if (d == NULL)
     return;
 
+  memset(&items, 0, sizeof(items));
   uint32_t item_idx = 0;
   struct dirent *ent = readdir(d);
   for (; ent != NULL && item_idx < BUFSIZE; free(ent), ent = readdir(d), ++item_idx) {
@@ -214,8 +215,7 @@ void handle_mouse_click(int32_t x, int32_t y)
       if (fork() == 0) {
         char *args[] = { items[item_idx].dirent.d_name, NULL };
         char write_path[BUFSIZE];
-        // FIXME replace xed with write
-        snprintf(write_path, BUFSIZE, "%s/xed", getenv("APPS_PATH"));
+        snprintf(write_path, BUFSIZE, "%s/write", getenv("APPS_PATH"));
         execve(write_path, args, environ);
         exit(1);
       }
