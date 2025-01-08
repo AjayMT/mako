@@ -53,12 +53,12 @@ enum item_type get_item_type(const char *cwd, const char *name)
   if (err)
     return ITEM_UNKNOWN;
 
-  if (st.st_dev & 1) {
+  if (S_ISREG(st.st_mode)) {
     if (strcmp(cwd, getenv("APPS_PATH")) == 0 || strcmp(cwd, getenv("PATH")) == 0)
       return ITEM_APP;
 
     return ITEM_FILE;
-  } else if (st.st_dev & 2)
+  } else if (S_ISDIR(st.st_mode))
     return ITEM_DIRECTORY;
 
   return ITEM_UNKNOWN;
@@ -118,7 +118,7 @@ void render_item(uint32_t idx)
                  view.content_w,
                  items[idx].dirent.d_name,
                  strlen(items[idx].dirent.d_name),
-                 UI_FONT_LUCIDA_GRANDE,
+                 UI_FONT_TWINLEAF,
                  text_color);
 }
 
@@ -135,7 +135,7 @@ void render_buttons()
                  view.window_w,
                  cur_path,
                  strlen(cur_path),
-                 UI_FONT_LUCIDA_GRANDE,
+                 UI_FONT_TWINLEAF,
                  text_color);
 
   ui_redraw_rect(0, view.window_h, view.window_w, item_height);

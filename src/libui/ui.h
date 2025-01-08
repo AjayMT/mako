@@ -24,6 +24,7 @@ int32_t ui_set_wallpaper(const char *);
 
 enum ui_font
 {
+  UI_FONT_TWINLEAF,
   UI_FONT_LUCIDA_GRANDE,
   UI_FONT_MONACO,
   UI_FONT_CONSOLAS,

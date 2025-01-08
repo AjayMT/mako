@@ -138,6 +138,11 @@ static void select_font(struct font_char_info **char_info,
                         enum ui_font font)
 {
   switch (font) {
+    case UI_FONT_TWINLEAF:
+      *char_info = twinleaf_char_info;
+      *data = twinleaf_data;
+      *height = TWINLEAF_HEIGHT;
+      break;
     case UI_FONT_LUCIDA_GRANDE:
       *char_info = lucida_grande_char_info;
       *data = lucida_grande_data;

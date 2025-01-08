@@ -21,14 +21,13 @@ def main():
     data_offset = 0
 
     print(f"#define {opts.font_name.upper()}_HEIGHT {height}")
-    print(f"\nstatic uint8_t {opts.font_name.lower()}_data[] = {{")
+    print(f"static uint8_t {opts.font_name.lower()}_data[] = {{")
     for i in range(32, 127):
         glyph = font.glyphbycp(i)
         bitmap = glyph.draw()
         char_info.append({"width": bitmap.width(), "data_offset": data_offset})
-        print(f"  // '{chr(i)}'")
         chrbytes = bitmap.tobytes("L")
-        print("  " + ", ".join(str(0xFF - byte) for byte in chrbytes) + ",")
+        print(", ".join(hex(0xFF - b) for b in chrbytes) + ",")
         data_offset += len(chrbytes)
 
     print("};")

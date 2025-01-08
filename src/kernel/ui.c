@@ -103,6 +103,11 @@ static volatile uint32_t responders_lock = 0;
 
 static struct responder *responders_by_gid[MAX_PROCESS_COUNT];
 
+#define A(p) (((p) >> 24) & 0xff)
+#define R(p) (((p) >> 16) & 0xff)
+#define G(p) (((p) >> 8) & 0xff)
+#define B(p) ((p) & 0xff)
+
 static inline uint32_t blend_alpha(uint32_t bg, uint32_t fg, uint8_t opacity)
 {
   if (opacity == 0)
@@ -110,12 +115,12 @@ static inline uint32_t blend_alpha(uint32_t bg, uint32_t fg, uint8_t opacity)
   if (opacity == 0xff)
     return fg;
 
-  const uint8_t fg_b = ((fg & 0xff) * opacity) / 0xff;
-  const uint8_t fg_g = (((fg >> 8) & 0xff) * opacity) / 0xff;
-  const uint8_t fg_r = (((fg >> 16) & 0xff) * opacity) / 0xff;
-  const uint32_t bg_b = bg & 0xff;
-  const uint32_t bg_g = (bg >> 8) & 0xff;
-  const uint32_t bg_r = (bg >> 16) & 0xff;
+  const uint8_t fg_b = (B(fg) * opacity) / 0xff;
+  const uint8_t fg_g = (G(fg) * opacity) / 0xff;
+  const uint8_t fg_r = (R(fg) * opacity) / 0xff;
+  const uint32_t bg_b = B(bg);
+  const uint32_t bg_g = G(bg);
+  const uint32_t bg_r = R(bg);
 
   const uint16_t t = 0xff ^ opacity;
   const uint32_t blend_g = fg_g + (((bg_g * t + 0x80) * 0x101) >> 16);
@@ -123,6 +128,18 @@ static inline uint32_t blend_alpha(uint32_t bg, uint32_t fg, uint8_t opacity)
   const uint32_t blend_r = fg_r + (((bg_r * t + 0x80) * 0x101) >> 16);
 
   return blend_b | (blend_g << 8) | (blend_r << 16);
+}
+
+static inline uint32_t blur(uint32_t *pixel, uint32_t stride)
+{
+  uint32_t b =
+    B(*pixel) + B(*(pixel + 1)) + B(*(pixel - 1)) + B(*(pixel + stride)) + B(*(pixel - stride));
+  uint32_t g =
+    G(*pixel) + G(*(pixel + 1)) + G(*(pixel - 1)) + G(*(pixel + stride)) + G(*(pixel - stride));
+  uint32_t r =
+    G(*pixel) + R(*(pixel + 1)) + R(*(pixel - 1)) + R(*(pixel + stride)) + R(*(pixel - stride));
+
+  return ((b / 5) & 0xff) | (((g / 5) & 0xff) << 8) | (((r / 5) & 0xff) << 16);
 }
 
 static void copy_rect_alpha(struct pixel_buffer dst,
@@ -142,9 +159,10 @@ static void copy_rect_alpha(struct pixel_buffer dst,
     if (opacity == 0xff)
       u_memcpy32(dst.buf + dst_offset, src.buf + src_offset, dim.w);
     else
-      for (uint32_t x = 0; x < dim.w; ++x)
-        dst.buf[dst_offset + x] =
-          blend_alpha(src_alpha_bg.buf[bg_offset + x], src.buf[src_offset + x], opacity);
+      for (uint32_t x = 0; x < dim.w; ++x) {
+        uint32_t bg = blur(&src_alpha_bg.buf[bg_offset + x], src_alpha_bg.stride);
+        dst.buf[dst_offset + x] = blend_alpha(bg, src.buf[src_offset + x], opacity);
+      }
   }
 }
 
@@ -343,9 +361,9 @@ static void render_char(struct pixel_buffer buf,
 
 static void render_text(struct pixel_buffer buf, struct point dst, const char *str)
 {
-  const struct font_char_info *font_char_info = lucida_grande_char_info;
-  const uint8_t *font_data = lucida_grande_data;
-  const unsigned font_height = LUCIDA_GRANDE_HEIGHT;
+  const struct font_char_info *font_char_info = twinleaf_char_info;
+  const uint8_t *font_data = twinleaf_data;
+  const unsigned font_height = TWINLEAF_HEIGHT;
 
   int32_t x = dst.x;
   int32_t y = dst.y;
@@ -663,10 +681,10 @@ uint32_t ui_init(uint32_t video_vaddr)
   CHECK(wallpaper_dirent == NULL, "Failed to read entry in /wallpapers", ENOTDIR);
 
   const size_t path_strlen = u_strlen("/wallpapers/");
-  const size_t dirent_strlen = u_strlen(wallpaper_dirent->name);
+  const size_t dirent_strlen = u_strlen(wallpaper_dirent->d_name);
   char name_buf[path_strlen + dirent_strlen + 1];
   u_memcpy(name_buf, "/wallpapers/", path_strlen);
-  u_memcpy(name_buf + path_strlen, wallpaper_dirent->name, dirent_strlen + 1);
+  u_memcpy(name_buf + path_strlen, wallpaper_dirent->d_name, dirent_strlen + 1);
   err = ui_set_wallpaper(name_buf);
   CHECK(err, "Failed to set wallpaper", err);
   kfree(wallpaper_dirent);
@@ -1122,7 +1140,7 @@ uint32_t ui_make_responder(process_t *p, uint32_t buf, const char *title, uint32
   CHECK_UNLOCK_R(r->title_bar_buf.buf == NULL, "No memory.", ENOMEM);
   r->title_bar_buf.stride = TITLE_BAR_WIDTH;
   u_memcpy32(r->title_bar_buf.buf, TITLE_BAR_PIXELS, TITLE_BAR_WIDTH * TITLE_BAR_HEIGHT);
-  const struct point title_dst = { TITLE_BAR_BUTTON_WIDTH + 4, 2 };
+  const struct point title_dst = { TITLE_BAR_BUTTON_WIDTH + 4, 4 };
   render_text(r->title_bar_buf, title_dst, title);
 
   list_push_front(&responders, r);
@@ -1285,7 +1303,7 @@ uint32_t ui_poll_events(process_t *p)
   struct responder *r = responders_by_gid[p->gid];
   uint32_t count = 0;
   if (r != NULL)
-    count = r->event_pipe_read.length / sizeof(ui_event_t);
+    count = r->event_pipe_read.size / sizeof(ui_event_t);
   kunlock(&responders_lock);
   return count;
 }
@@ -1297,7 +1315,7 @@ uint32_t ui_set_wallpaper(const char *path)
   uint32_t err = fs_open_node(&wallpaper_node, path, 0);
   CHECK_RESTORE_EFLAGS(err, "Failed to open wallpaper file", err);
 
-  uint32_t n = fs_read(&wallpaper_node, 0, wallpaper_node.length, (uint8_t *)wallpaper);
+  uint32_t n = fs_read(&wallpaper_node, 0, wallpaper_node.size, (uint8_t *)wallpaper);
   CHECK_RESTORE_EFLAGS(n != (frame_size * sizeof(uint32_t)), "Failed to read wallpaper file", n);
 
   redraw_all();

@@ -57,14 +57,14 @@ void draw_app_icon(const struct app *app, uint32_t x, uint32_t y)
   }
   uint32_t w, h;
   const size_t name_len = strlen(app->name);
-  ui_measure_text(&w, &h, app->name, name_len, UI_FONT_LUCIDA_GRANDE);
+  ui_measure_text(&w, &h, app->name, name_len, UI_FONT_TWINLEAF);
   uint32_t offset = (ICON_WIDTH + icon_h_padding - w) / 2;
   uint32_t *bufptr = ui_buf + (y + ICON_HEIGHT + icon_v_padding + text_height - h) * window_w;
   ui_render_text(bufptr + x + (icon_h_padding / 2) + offset,
                  window_w,
                  app->name,
                  name_len,
-                 UI_FONT_LUCIDA_GRANDE,
+                 UI_FONT_TWINLEAF,
                  text_color);
 }
 
@@ -136,13 +136,13 @@ void handle_mouse_move(int32_t x, int32_t y)
 
     size_t desc_len = strlen(app->description);
     uint32_t w, h;
-    ui_measure_text(&w, &h, app->description, desc_len, UI_FONT_LUCIDA_GRANDE);
+    ui_measure_text(&w, &h, app->description, desc_len, UI_FONT_TWINLEAF);
     uint32_t offset = (window_w - w) / 2;
     ui_render_text(ui_buf + (hover_box_height + icon_v_padding) * window_w + offset,
                    window_w,
                    app->description,
                    desc_len,
-                   UI_FONT_LUCIDA_GRANDE,
+                   UI_FONT_TWINLEAF,
                    text_color);
   }
 
