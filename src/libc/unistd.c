@@ -131,7 +131,7 @@ int32_t isatty(uint32_t fd)
   int32_t res = fstat(fd, &st);
   if (res == -1)
     return 0;
-  return st.st_dev & 0x80;
+  return S_ISFIFO(st.st_mode);
 }
 
 off_t lseek(uint32_t fd, off_t offset, int32_t whence)

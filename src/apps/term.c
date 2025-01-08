@@ -116,7 +116,7 @@ bool is_path_executable(const char *p)
   int32_t err = stat(p, &st);
   if (err)
     return 0;
-  if ((st.st_dev & 1) == 0)
+  if (!S_ISREG(st.st_mode))
     return 0;
   return 1;
 }

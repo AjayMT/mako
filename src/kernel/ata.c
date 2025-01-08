@@ -28,7 +28,7 @@
 #define CHECK_UNLOCK(err, msg, code)                                                               \
   if ((err)) {                                                                                     \
     log_error("ata", msg "\n");                                                                    \
-    kunlock(&ata_lock);                                                                            \
+    kunlock(&dev->lock);                                                                           \
     return (code);                                                                                 \
   }
 
@@ -57,15 +57,13 @@ static ata_dev_t primary_master;
 static ata_dev_t primary_slave;
 static ata_dev_t secondary_master;
 static ata_dev_t secondary_slave;
-static char ata_drive_char = 'a';
-static volatile uint32_t ata_lock = 0;
 
 static void wait_io(ata_dev_t *);
 static uint8_t wait_status(ata_dev_t *, int32_t);
 
 static uint8_t ata_read_sector(ata_dev_t *dev, uint32_t block, uint8_t *buf)
 {
-  klock(&ata_lock);
+  klock(&dev->lock);
 
   wait_io(dev);
   CHECK_UNLOCK(wait_status(dev, -1) & STATUS_ERR, "Error status.", 1);
@@ -129,7 +127,7 @@ static uint8_t ata_read_sector(ata_dev_t *dev, uint32_t block, uint8_t *buf)
   busmaster_status = inb(dev->ports.busmaster_status);
   outb(dev->ports.busmaster_status, busmaster_status | 4 | 2);
 
-  kunlock(&ata_lock);
+  kunlock(&dev->lock);
   return 0;
 }
 
@@ -178,7 +176,7 @@ static uint32_t ata_read(fs_node_t *node, uint32_t offset, uint32_t size, uint8_
 
 static uint8_t ata_write_sector(ata_dev_t *dev, uint32_t block, uint8_t *buf)
 {
-  klock(&ata_lock);
+  klock(&dev->lock);
 
   u_memcpy(dev->buf, buf, SECTOR_SIZE);
   wait_io(dev);
@@ -235,7 +233,7 @@ static uint8_t ata_write_sector(ata_dev_t *dev, uint32_t block, uint8_t *buf)
   busmaster_status = inb(dev->ports.busmaster_status);
   outb(dev->ports.busmaster_status, busmaster_status | 4 | 2);
 
-  kunlock(&ata_lock);
+  kunlock(&dev->lock);
   return 0;
 }
 
@@ -363,7 +361,7 @@ static void soft_reset(ata_dev_t *dev)
   outb(dev->ports.control_alt_status, 0);
 }
 
-static uint8_t ata_dev_setup(ata_dev_t *dev, uint8_t is_primary)
+static uint8_t ata_dev_setup(ata_dev_t *dev, fs_node_t *node, uint8_t is_primary)
 {
   CHECK(ata_dev_init(dev, is_primary), "Failed to initialize device.", 1);
   soft_reset(dev);
@@ -396,21 +394,14 @@ static uint8_t ata_dev_setup(ata_dev_t *dev, uint8_t is_primary)
     pci_config_write(ata_pci_device, PCI_COMMAND, command_reg);
   }
 
-  fs_node_t *node = kmalloc(sizeof(fs_node_t));
-  CHECK(node == NULL, "No memory.", 1);
   u_memset(node, 0, sizeof(fs_node_t));
   u_memcpy(node->name, "atadev", 7);
   node->mask = 0660;
-  node->flags = FS_BLOCKDEVICE;
-  node->length = dev->identity.sectors_28 * SECTOR_SIZE;
+  node->type = FS_BLOCKDEVICE;
+  node->size = dev->identity.sectors_28 * SECTOR_SIZE;
   node->device = dev;
   node->read = ata_read;
   node->write = ata_write;
-
-  char mountpoint[9] = "/dev/hda";
-  mountpoint[7] = ata_drive_char++;
-  uint32_t res = fs_mount(node, mountpoint);
-  CHECK(res, "Failed to mount filesystem node.", 1);
 
   return 0;
 }
@@ -429,7 +420,7 @@ void ata_secondary_interrupt_handler()
   outb(secondary_master.ports.busmaster_command, 0);
 }
 
-uint8_t ata_init()
+uint8_t ata_init(fs_node_t *node)
 {
   ata_pci_device = pci_find_device(ATA_VENDOR_ID, ATA_DEVICE_ID, -1);
   CHECK(!ata_pci_device.bits, "PCI device not found.", 1);
@@ -442,7 +433,7 @@ uint8_t ata_init()
   secondary_master.is_slave = 0;
   secondary_slave.is_slave = 1;
 
-  CHECK(ata_dev_setup(&primary_master, 1), "Failed to setup primary master drive.", 1);
+  CHECK(ata_dev_setup(&primary_master, node, 1), "Failed to setup primary master drive.", 1);
   /* log_info("ata", "Attempting to set up primary slave.\n"); */
   /* if (ata_dev_setup(&primary_slave, 1)) */
   /*   log_info("ata", "Could not set up primary slave.\n"); */

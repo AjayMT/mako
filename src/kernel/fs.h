@@ -9,27 +9,23 @@
 #define _FS_H_
 
 #include "../common/stdint.h"
+#include "../libc/dirent.h"
 #include "ds.h"
 #include <stddef.h>
 
-// The maximum length of a file name.
 #define FS_NAME_LEN 256
-
-// Path constants.
 #define FS_DIR_SELF "."
 #define FS_DIR_UP ".."
 #define FS_PATH_SEP '/'
-#define FS_PATH_SEP_STR "/"
 
-// fs_node_t flags.
-#define FS_FILE 1
-#define FS_DIRECTORY 2
-#define FS_CHARDEVICE 4
-#define FS_BLOCKDEVICE 8
-#define FS_PIPE 0x10
-#define FS_SYMLINK 0x20
-#define FS_MOUNTPOINT 0x40
-#define FS_TTY 0x80
+enum fs_node_type
+{
+  FS_FILE = 0,
+  FS_DIRECTORY = 1,
+  FS_SYMLINK = 2,
+  FS_BLOCKDEVICE = 3,
+  FS_PIPE = 4,
+};
 
 // fs_open flags.
 #define O_RDONLY 0
@@ -45,7 +41,6 @@
 #define O_DIRECTORY 0x8000
 
 struct fs_node_s;
-struct dirent;
 
 // File operations: open, close, etc.
 typedef void (*open_type_t)(struct fs_node_s *, uint32_t);
@@ -66,15 +61,16 @@ typedef int32_t (*rename_type_t)(struct fs_node_s *, char *, char *);
 typedef struct fs_node_s
 {
   char name[FS_NAME_LEN]; // File name.
-  uint32_t mask;          // Permissions mask (rwx).
-  uint32_t uid;           // User ID.
-  uint32_t gid;           // Group ID.
-  uint32_t flags;         // Flags (see above).
-  uint32_t inode;         // Inode number.
-  uint32_t length;        // File size in bytes.
-  void *device;           // Device object.
-  tree_node_t *tree_node; // (Optional) mount point tree node.
+  uint32_t size;          // File size in bytes.
+  enum fs_node_type type; // Node type (see above).
+  uint32_t inode;         // Inode number; de-facto the offset in the underlying block device.
+  void *device;           // Implementation-defined pointer to a block device / other object.
+  tree_node_t *tree_node; // Mount point tree node; non-NULL if and only
+                          // if this node is a mount point.
 
+  uint32_t mask;  // Permissions mask (rwx).
+  uint32_t uid;   // User ID.
+  uint32_t gid;   // Group ID.
   uint32_t atime; // Accessed time.
   uint32_t ctime; // Created time.
   uint32_t mtime; // Modified time.
@@ -95,14 +91,8 @@ typedef struct fs_node_s
   rename_type_t rename;
 } fs_node_t;
 
-// A single directory entry.
-struct dirent
-{
-  uint32_t ino;
-  char name[FS_NAME_LEN];
-};
-
-// Interface for all filesystems.
+// Filesystem interface {
+// These are simple wrappers around the corresponding fs_node_t functions.
 void fs_open(fs_node_t *, uint32_t);
 void fs_close(fs_node_t *);
 int32_t fs_read(fs_node_t *, uint32_t, uint32_t, uint8_t *);
@@ -112,14 +102,15 @@ fs_node_t *fs_finddir(fs_node_t *, char *);
 int32_t fs_chmod(fs_node_t *, int32_t);
 int32_t fs_readlink(fs_node_t *, char *, size_t);
 
-// Non-trivial wrappers around internal functions.
+// These are non-trivial operations that use fs_node_t functions.
 int32_t fs_symlink(char *, char *);
 int32_t fs_mkdir(char *, uint16_t);
 int32_t fs_create(char *, uint16_t);
 int32_t fs_unlink(char *);
 int32_t fs_rename(char *, char *);
+// }
 
-// Initialize the filesystem interface.
+// Initialize the filesystem interface and VFS.
 uint32_t fs_init();
 
 // Mount a filesystem.

@@ -24,13 +24,13 @@
 #define CHECK_UNLOCK(err, msg, code)                                                               \
   if ((err)) {                                                                                     \
     log_error("fs", msg "\n");                                                                     \
-    kunlock(&fs_lock);                                                                             \
+    kunlock(&fs_tree_lock);                                                                        \
     return (code);                                                                                 \
   }
 
 // Filesystem mountpoint tree.
 static tree_node_t *fs_tree = NULL;
-static volatile uint32_t fs_lock = 0;
+static volatile uint32_t fs_tree_lock = 0;
 
 void fs_open(fs_node_t *node, uint32_t flags)
 {
@@ -56,7 +56,7 @@ int32_t fs_write(fs_node_t *node, uint32_t offset, uint32_t size, uint8_t *buffe
 }
 struct dirent *fs_readdir(fs_node_t *node, uint32_t index)
 {
-  if (node == NULL || (node->flags & FS_DIRECTORY) == 0)
+  if (node == NULL || node->type != FS_DIRECTORY)
     return NULL;
 
   if (node->tree_node) {
@@ -66,31 +66,33 @@ struct dirent *fs_readdir(fs_node_t *node, uint32_t index)
         struct dirent *ent = kmalloc(sizeof(struct dirent));
         if (ent == NULL)
           return NULL;
-        char *name = index == 0 ? "." : "..";
-        u_memcpy(ent->name, name, u_strlen(name) + 1);
-        ent->ino = index;
+        char *name = index == 0 ? FS_DIR_SELF : FS_DIR_UP;
+        u_memcpy(ent->d_name, name, u_strlen(name) + 1);
+        ent->d_ino = index;
         return ent;
       }
       index -= 2;
     }
 
     if (index < tnode->children->size) {
+      fs_node_t *child = NULL;
       list_foreach(lchild, tnode->children)
       {
         tree_node_t *tchild = lchild->value;
-        fs_node_t *fschild = tchild->value;
-        if (index == 0) {
-          struct dirent *ent = kmalloc(sizeof(struct dirent));
-          if (ent == NULL)
-            return NULL;
-          u_memcpy(ent->name, fschild->name, u_strlen(fschild->name) + 1);
-          ent->ino = fschild->inode;
-          return ent;
-        }
+        child = tchild->value;
+        if (index == 0)
+          break;
         --index;
       }
-    } else
-      index -= tnode->children->size;
+      struct dirent *ent = kmalloc(sizeof(struct dirent));
+      if (ent == NULL)
+        return NULL;
+      u_memcpy(ent->d_name, child->name, u_strlen(child->name) + 1);
+      ent->d_ino = child->inode;
+      return ent;
+    }
+
+    index -= tnode->children->size;
   }
 
   if (node->readdir)
@@ -99,7 +101,7 @@ struct dirent *fs_readdir(fs_node_t *node, uint32_t index)
 }
 fs_node_t *fs_finddir(fs_node_t *node, char *name)
 {
-  if (node == NULL || (node->flags & FS_DIRECTORY) == 0)
+  if (node == NULL || node->type != FS_DIRECTORY)
     return NULL;
 
   if (node->tree_node) {
@@ -125,7 +127,7 @@ int32_t fs_chmod(fs_node_t *node, int32_t mask)
 }
 int32_t fs_readlink(fs_node_t *node, char *buf, size_t bufsize)
 {
-  if (node && (node->flags & FS_SYMLINK) == 0)
+  if (node && node->type != FS_SYMLINK)
     return -ENOTDIR;
   if (node && node->readlink)
     return node->readlink(node, buf, bufsize);
@@ -348,7 +350,7 @@ static fs_node_t *vfs_node_create()
   CHECK(node == NULL, "No memory.", NULL);
   u_memset(node, 0, sizeof(fs_node_t));
   node->mask = 0555;
-  node->flags = FS_DIRECTORY;
+  node->type = FS_DIRECTORY;
   return node;
 }
 
@@ -367,7 +369,7 @@ uint32_t fs_mount(fs_node_t *local_root, const char *path)
 {
   CHECK(fs_tree == NULL, "Attempted to mount before initializing filesystem.", ENXIO);
 
-  klock(&fs_lock);
+  klock(&fs_tree_lock);
 
   char *mpath;
   uint32_t res = fs_resolve_path(&mpath, path);
@@ -413,7 +415,7 @@ uint32_t fs_mount(fs_node_t *local_root, const char *path)
   }
 
   kfree(mpath);
-  kunlock(&fs_lock);
+  kunlock(&fs_tree_lock);
   return 0;
 }
 
@@ -471,19 +473,9 @@ uint32_t fs_open_node(fs_node_t *out_node, const char *path, uint32_t flags)
 
   fs_node_t *node = mount_point;
   while (path_idx < path_len) {
-    fs_node_t *next_node = fs_finddir(node, path_segments + path_idx);
-    if (node != mount_point) {
-      fs_close(node);
-      kfree(node);
-    }
-    node = next_node;
-    if (node == NULL) {
-      kfree(path_segments);
-      return ENOENT;
-    }
-    path_idx += u_strlen(path_segments + path_idx) + 1;
+    fs_open(node, 0);
 
-    if ((node->flags & FS_SYMLINK) && (flags & O_NOFOLLOW) == 0) {
+    if (node->type == FS_SYMLINK && (flags & O_NOFOLLOW) == 0) {
       kfree(path_segments);
 
       char link_target[128];
@@ -491,12 +483,31 @@ uint32_t fs_open_node(fs_node_t *out_node, const char *path, uint32_t flags)
       if (err < 0)
         return -err;
 
+      fs_close(node);
+      if (node->tree_node == NULL)
+        kfree(node);
       return fs_open_node(out_node, link_target, flags);
     }
+
+    fs_node_t *next_node = fs_finddir(node, path_segments + path_idx);
+    fs_close(node);
+    if (node->tree_node == NULL)
+      kfree(node);
+
+    if (next_node == NULL) {
+      kfree(path_segments);
+      return ENOENT;
+    }
+
+    path_idx += u_strlen(path_segments + path_idx) + 1;
+    node = next_node;
   }
 
   kfree(path_segments);
-  fs_open(node, flags & (~O_CREAT));
+  fs_open(node, flags);
   u_memcpy(out_node, node, sizeof(fs_node_t));
+  if (node->tree_node == NULL)
+    kfree(node);
+
   return 0;
 }

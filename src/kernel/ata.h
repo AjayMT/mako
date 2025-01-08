@@ -9,6 +9,7 @@
 #define _ATA_H_
 
 #include "../common/stdint.h"
+#include "fs.h"
 #include "pci.h"
 
 // This is always the last PRDT entry.
@@ -69,8 +70,9 @@ typedef struct
   uint32_t prdt_paddr;
   uint8_t *buf;
   ata_identify_t identity;
+  volatile uint32_t lock;
 } ata_dev_t;
 
-uint8_t ata_init();
+uint8_t ata_init(fs_node_t *node);
 
 #endif /* _ATA_H_ */

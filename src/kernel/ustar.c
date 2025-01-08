@@ -54,6 +54,8 @@ struct ustar_metadata_s
 } __attribute__((packed));
 typedef struct ustar_metadata_s ustar_metadata_t;
 
+#define USTAR_ROOT "/"
+
 #define NORMAL 0
 #define NORMAL_ '0'
 #define HARDLINK '1'
@@ -330,8 +332,8 @@ struct dirent *ustar_readdir(fs_node_t *node, uint32_t idx)
   if (node->inode != 0) {
     if (idx < 2) {
       char *name = idx == 0 ? "." : "..";
-      u_memcpy(ent->name, name, u_strlen(name) + 1);
-      ent->ino = idx == 0 ? node->inode : 0;
+      u_memcpy(ent->d_name, name, u_strlen(name) + 1);
+      ent->d_ino = idx == 0 ? node->inode : 0;
       return ent;
     }
     idx -= 2;
@@ -374,8 +376,8 @@ struct dirent *ustar_readdir(fs_node_t *node, uint32_t idx)
     if (i <= idx)
       continue;
 
-    u_memcpy(ent->name, data.name + basename_idx, end_idx - basename_idx);
-    ent->ino = ent_offset;
+    u_memcpy(ent->d_name, data.name + basename_idx, end_idx - basename_idx);
+    ent->d_ino = ent_offset;
     return ent;
   }
 
@@ -559,14 +561,14 @@ static void make_ustar_node(ustar_fs_t *self,
   u_memcpy(out->name, data.name, u_strlen(data.name) + 1);
   out->inode = disk_offset;
   out->device = self;
-  out->length = file_size;
+  out->size = file_size;
   out->open = ustar_open;
   if (data.type == NORMAL || data.type == NORMAL_) {
-    out->flags |= FS_FILE;
+    out->type = FS_FILE;
     out->read = ustar_read;
     out->write = ustar_write;
   } else if (data.type == DIR) {
-    out->flags |= FS_DIRECTORY;
+    out->type = FS_DIRECTORY;
     out->readdir = ustar_readdir;
     out->finddir = ustar_finddir;
     out->create = ustar_create;
@@ -574,22 +576,18 @@ static void make_ustar_node(ustar_fs_t *self,
     out->unlink = ustar_unlink;
     out->symlink = ustar_symlink;
   } else if (data.type == SYMLINK) {
-    out->flags |= FS_SYMLINK;
+    out->type = FS_SYMLINK;
     out->readlink = ustar_readlink;
   }
   out->rename = ustar_rename;
 }
 
-uint32_t ustar_init(const char *dev_path)
+uint32_t ustar_init(fs_node_t *block_device)
 {
   ustar_fs_t *fs = kmalloc(sizeof(ustar_fs_t));
   CHECK(fs == NULL, "No memory", ENOMEM);
   u_memset(fs, 0, sizeof(ustar_fs_t));
-
-  fs->block_device = kmalloc(sizeof(fs_node_t));
-  CHECK(fs->block_device == NULL, "No memory.", ENOMEM);
-  uint32_t res = fs_open_node(fs->block_device, dev_path, 0);
-  CHECK(res, "Failed to open block device.", res);
+  fs->block_device = block_device;
 
   ustar_metadata_t data;
   uint32_t read_size = fs_read(fs->block_device, 0, BLOCK_SIZE, (uint8_t *)&data);
@@ -599,8 +597,8 @@ uint32_t ustar_init(const char *dev_path)
   CHECK(node == NULL, "No memory.", ENOMEM);
   make_ustar_node(fs, 0, data, node);
 
-  res = fs_mount(node, USTAR_ROOT);
-  CHECK(res, "Failed to mount at " USTAR_ROOT, res);
+  uint32_t err = fs_mount(node, USTAR_ROOT);
+  CHECK(err, "Failed to mount at " USTAR_ROOT, err);
 
   return 0;
 }

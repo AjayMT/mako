@@ -84,9 +84,9 @@ static uint32_t pipe_read(fs_node_t *node, uint32_t offset, uint32_t size, uint8
     self->head = (self->head + 1) % self->size;
   }
   self->count -= size;
-  self->read_node->length = self->count;
+  self->read_node->size = self->count;
   if (self->write_node)
-    self->write_node->length = self->count;
+    self->write_node->size = self->count;
   interrupt_restore(eflags);
   kunlock(&self->reader_lock);
 
@@ -114,8 +114,8 @@ static uint32_t pipe_write(fs_node_t *node, uint32_t offset, uint32_t size, uint
     self->buf[buf_idx] = buf[i];
   }
   self->count += size;
-  self->read_node->length = self->count;
-  self->write_node->length = self->count;
+  self->read_node->size = self->count;
+  self->write_node->size = self->count;
 
   uint32_t remaining_size = size;
   for (uint32_t i = 0; i < MAX_READERS; ++i) {
@@ -146,7 +146,7 @@ static void pipe_close_read(fs_node_t *node)
   self->read_node->device = NULL;
   self->read_node->read = NULL;
   self->read_node->close = NULL;
-  self->read_node->length = 0;
+  self->read_node->size = 0;
   self->read_node = NULL;
   if (self->write_node == NULL)
     kfree(self);
@@ -160,7 +160,7 @@ static void pipe_close_write(fs_node_t *node)
   self->write_node->device = NULL;
   self->write_node->write = NULL;
   self->write_node->close = NULL;
-  self->write_node->length = 0;
+  self->write_node->size = 0;
   self->write_node = NULL;
   if (self->buf == NULL) {
     kfree(self);
@@ -190,10 +190,12 @@ uint32_t pipe_create(fs_node_t *read_node, fs_node_t *write_node)
   pipe->read_node = read_node;
   pipe->write_node = write_node;
 
+  read_node->type = FS_PIPE;
   read_node->device = pipe;
   read_node->read = pipe_read;
   read_node->close = pipe_close_read;
 
+  write_node->type = FS_PIPE;
   write_node->device = pipe;
   write_node->write = pipe_write;
   write_node->close = pipe_close_write;

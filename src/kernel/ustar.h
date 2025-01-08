@@ -9,9 +9,8 @@
 #define _USTAR_H_
 
 #include "../common/stdint.h"
+#include "fs.h"
 
-#define USTAR_ROOT "/"
-
-uint32_t ustar_init(const char *);
+uint32_t ustar_init(fs_node_t *);
 
 #endif /* _USTAR_H_ */

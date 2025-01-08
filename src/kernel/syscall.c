@@ -88,13 +88,13 @@ static void syscall_execve(char *path, char *argv[], char *envp[])
     current->uregs.eax = -res;
     return;
   }
-  uint8_t *buf = kmalloc(node.length);
+  uint8_t *buf = kmalloc(node.size);
   if (buf == NULL) {
     current->uregs.eax = -ENOMEM;
     return;
   }
-  uint32_t rsize = fs_read(&node, 0, node.length, buf);
-  if (rsize != node.length) {
+  uint32_t rsize = fs_read(&node, 0, node.size, buf);
+  if (rsize != node.size) {
     current->uregs.eax = -EAGAIN;
     return;
   }
@@ -573,7 +573,7 @@ static void syscall_chdir(char *path)
     current->uregs.eax = -res;
     return;
   }
-  if ((node.flags & FS_DIRECTORY) == 0) {
+  if (node.type != FS_DIRECTORY) {
     current->uregs.eax = -ENOTDIR;
     return;
   }
@@ -617,13 +617,28 @@ static void syscall_fstat(uint32_t fdnum, struct stat *st)
   CHECK_FDNUM;
   process_fd_t *fd = current->fds[fdnum];
   u_memset(st, 0, sizeof(struct stat));
-  st->st_dev = fd->node.flags;
   st->st_ino = fd->node.inode;
-  st->st_mode = fd->node.mask;
+  switch (fd->node.type) {
+    case FS_FILE:
+      st->st_mode = S_IFREG;
+      break;
+    case FS_DIRECTORY:
+      st->st_mode = S_IFDIR;
+      break;
+    case FS_SYMLINK:
+      st->st_mode = S_IFLNK;
+      break;
+    case FS_BLOCKDEVICE:
+      st->st_mode = S_IFBLK;
+      break;
+    case FS_PIPE:
+      st->st_mode = S_IFIFO;
+      break;
+  }
   st->st_nlink = 1;
   st->st_uid = fd->node.uid;
   st->st_gid = fd->node.gid;
-  st->st_size = fd->node.length;
+  st->st_size = fd->node.size;
   st->st_atime = fd->node.atime;
   st->st_mtime = fd->node.mtime;
   st->st_ctime = fd->node.ctime;
@@ -643,17 +658,31 @@ static void syscall_lstat(char *path, struct stat *st)
     return;
   }
   u_memset(st, 0, sizeof(struct stat));
-  st->st_dev = node.flags;
   st->st_ino = node.inode;
-  st->st_mode = node.mask;
+  switch (node.type) {
+    case FS_FILE:
+      st->st_mode = S_IFREG;
+      break;
+    case FS_DIRECTORY:
+      st->st_mode = S_IFDIR;
+      break;
+    case FS_SYMLINK:
+      st->st_mode = S_IFLNK;
+      break;
+    case FS_BLOCKDEVICE:
+      st->st_mode = S_IFBLK;
+      break;
+    case FS_PIPE:
+      st->st_mode = S_IFIFO;
+      break;
+  }
   st->st_nlink = 1;
   st->st_uid = node.uid;
   st->st_gid = node.gid;
-  st->st_size = node.length;
+  st->st_size = node.size;
   st->st_atime = node.atime;
   st->st_mtime = node.mtime;
   st->st_ctime = node.ctime;
-  st->st_blksize = 1024;
   current->uregs.eax = 0;
 }
 
@@ -666,7 +695,7 @@ static void syscall_lseek(uint32_t fdnum, int32_t offset, uint32_t whence)
   if (whence == 1)
     pfd->offset += offset;
   else if (whence == 2)
-    pfd->offset = pfd->node.length + offset;
+    pfd->offset = pfd->node.size + offset;
   else
     pfd->offset = offset;
   kunlock(&current->fd_lock);

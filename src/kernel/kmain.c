@@ -104,9 +104,11 @@ void kmain(uint32_t mb_info_addr,
 
   err = fs_init();
   CHECK(err, "fs");
-  err = ata_init();
+
+  static fs_node_t hda_node;
+  err = ata_init(&hda_node);
   CHECK(err, "ata");
-  err = ustar_init("/dev/hda");
+  err = ustar_init(&hda_node);
   CHECK(err, "ustar");
   err = ps2_init();
   CHECK(err, "ps2");
@@ -143,8 +145,8 @@ void kmain(uint32_t mb_info_addr,
   fs_node_t init_node;
   err = fs_open_node(&init_node, "/bin/init", 0);
   CHECK(err, "init");
-  uint8_t *init_text = kmalloc(init_node.length);
-  fs_read(&init_node, 0, init_node.length, init_text);
+  uint8_t *init_text = kmalloc(init_node.size);
+  fs_read(&init_node, 0, init_node.size, init_text);
 
   unregister_interrupt_handler(14);
   err = process_init();
