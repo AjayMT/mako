@@ -153,10 +153,10 @@ static void select_font(struct font_char_info **char_info,
       *data = monaco_data;
       *height = MONACO_HEIGHT;
       break;
-    case UI_FONT_CONSOLAS:
-      *char_info = consolas_char_info;
-      *data = consolas_data;
-      *height = CONSOLAS_HEIGHT;
+    case UI_FONT_X_FIXED:
+      *char_info = x_fixed_char_info;
+      *data = x_fixed_data;
+      *height = X_FIXED_HEIGHT;
       break;
   }
 }

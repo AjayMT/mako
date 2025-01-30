@@ -63,14 +63,14 @@ void print(const char *text)
   flip_cursor();
 
   uint32_t w, h;
-  ui_measure_text(&w, &h, text, text_len, UI_FONT_MONACO);
+  ui_measure_text(&w, &h, text, text_len, UI_FONT_X_FIXED);
 
   ui_scrollview_grow(&view, cursor_x + w + cursor_w, cursor_y + h, 20);
   ui_render_text(view.content_buf + (cursor_y * view.content_w) + cursor_x,
                  view.content_w,
                  text,
                  text_len,
-                 UI_FONT_MONACO,
+                 UI_FONT_X_FIXED,
                  text_color);
 
   cursor_x += w;
@@ -84,14 +84,14 @@ void print_line(const char *text)
   flip_cursor();
 
   uint32_t w, h;
-  ui_measure_text(&w, &h, text, text_len, UI_FONT_MONACO);
+  ui_measure_text(&w, &h, text, text_len, UI_FONT_X_FIXED);
 
   ui_scrollview_grow(&view, cursor_x + w + cursor_w, cursor_y + h + line_height, view.window_h);
   ui_render_text(view.content_buf + (cursor_y * view.content_w) + cursor_x,
                  view.content_w,
                  text,
                  text_len,
-                 UI_FONT_MONACO,
+                 UI_FONT_X_FIXED,
                  text_color);
 
   cursor_y += h;
@@ -421,7 +421,7 @@ void keyboard_handler(uint8_t code)
       char deleted = line_buf[line_idx];
       line_buf[line_idx] = 0;
       uint32_t w, h;
-      ui_measure_text(&w, &h, &deleted, 1, UI_FONT_MONACO);
+      ui_measure_text(&w, &h, &deleted, 1, UI_FONT_X_FIXED);
       cursor_x -= w;
       fill_rect(cursor_x, cursor_y, w + cursor_w, line_height, background_color);
       flip_cursor();

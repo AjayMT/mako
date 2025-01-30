@@ -27,7 +27,7 @@ enum ui_font
   UI_FONT_TWINLEAF,
   UI_FONT_LUCIDA_GRANDE,
   UI_FONT_MONACO,
-  UI_FONT_CONSOLAS,
+  UI_FONT_X_FIXED,
 };
 
 uint32_t ui_blend_alpha(uint32_t bg, uint32_t fg);
