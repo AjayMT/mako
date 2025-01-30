@@ -23,8 +23,8 @@ static struct ui_scrollview view;
 static const uint32_t background_color = 0xffffff;
 static const uint32_t text_color = 0;
 static const uint32_t cursor_w = 2;
-static const uint32_t cursor_h = 13;
-static const uint32_t line_height = 13;
+static const uint32_t cursor_h = 14;
+static const uint32_t line_height = 14;
 
 static uint32_t cursor_x = 0;
 static uint32_t cursor_y = 0;

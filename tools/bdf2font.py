@@ -13,10 +13,25 @@ def get_options():
     return parser.parse_args()
 
 
+def shadows(data, w, h):
+    new_data = [0] * ((w + 1) * (h + 1))
+    for y in range(h):
+        for x in range(w):
+            new_data[y * (w + 1) + x] = max(new_data[y * (w + 1) + x], data[y * w + x])
+            if data[y * w + x] == 0:
+                continue
+
+            new_data[y * (w + 1) + x + 1] = max(new_data[y * (w + 1) + x + 1], 64)
+            new_data[(y + 1) * (w + 1) + x] = max(new_data[(y + 1) * (w + 1) + x], 64)
+            new_data[(y + 1) * (w + 1) + x + 1] = max(new_data[(y + 1) * (w + 1) + x + 1], 64)
+
+    return new_data
+
+
 def main():
     opts = get_options()
     font = bdfparser.Font(opts.font_filename)
-    height = font.headers["fbby"]
+    height = font.headers["fbby"] + 1
     char_info = []
     data_offset = 0
 
@@ -25,9 +40,9 @@ def main():
     for i in range(32, 127):
         glyph = font.glyphbycp(i)
         bitmap = glyph.draw()
-        char_info.append({"width": bitmap.width(), "data_offset": data_offset})
-        chrbytes = bitmap.tobytes("L")
-        print(", ".join(hex(0xFF - b) for b in chrbytes) + ",")
+        chrbytes = shadows([0xFF - b for b in bitmap.tobytes("L")], bitmap.width(), height - 1)
+        print(", ".join(hex(b) for b in chrbytes) + ",")
+        char_info.append({"width": bitmap.width() + 1, "data_offset": data_offset})
         data_offset += len(chrbytes)
 
     print("};")
