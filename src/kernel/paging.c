@@ -395,16 +395,11 @@ uint32_t paging_get_paddr(uint32_t vaddr)
   page_directory_t pd = (page_directory_t)PD_VADDR;
   if (pd[pd_idx].present == 0)
     return 0;
-  if (pd[pd_idx].page_size == 1) {
-    uint32_t aligned_down = vaddr & 0xFFFFF000000;
-    uint32_t diff = vaddr - aligned_down;
-    return (pd[pd_idx].table_addr << PHYS_ADDR_OFFSET) + diff;
-  }
+  if (pd[pd_idx].page_size == 1)
+    return (pd[pd_idx].table_addr << PHYS_ADDR_OFFSET) + (vaddr & 0x3fffff);
 
   page_table_t pt = (page_table_t)pd_idx_to_pt_vaddr(pd_idx);
   if (pt[pt_idx].present == 0)
     return 0;
-  uint32_t aligned_down = vaddr & 0xFFFFF000;
-  uint32_t diff = vaddr - aligned_down;
-  return (pt[pt_idx].frame_addr << PHYS_ADDR_OFFSET) + diff;
+  return (pt[pt_idx].frame_addr << PHYS_ADDR_OFFSET) + (vaddr & 0xfff);
 }
