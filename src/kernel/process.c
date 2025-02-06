@@ -457,7 +457,7 @@ uint32_t process_load(process_t *process, process_image_t img)
 
   uint32_t npages =
     (u_page_align_up(img.text_vaddr + img.text_len) - u_page_align_down(img.text_vaddr)) >>
-    PHYS_ADDR_OFFSET;
+    PAGE_SIZE_SHIFT;
   page_table_entry_t flags;
   u_memset(&flags, 0, sizeof(flags));
   flags.user = 1;
@@ -466,19 +466,19 @@ uint32_t process_load(process_t *process, process_image_t img)
     uint32_t paddr = pmm_alloc(1);
     CHECK_RESTORE_EFLAGS_CR3(paddr == 0, "No memory.", ENOMEM);
     paging_result_t res =
-      paging_map((uint32_t)img.text_vaddr + (i << PHYS_ADDR_OFFSET), paddr, flags);
+      paging_map((uint32_t)img.text_vaddr + (i << PAGE_SIZE_SHIFT), paddr, flags);
     CHECK_RESTORE_EFLAGS_CR3(res != PAGING_OK, "Failed to map text pages.", res);
   }
 
   u_memcpy((uint8_t *)img.text_vaddr, img.text, img.text_len);
 
   npages = (u_page_align_up(img.data_vaddr + img.data_len) - u_page_align_down(img.data_vaddr)) >>
-           PHYS_ADDR_OFFSET;
+           PAGE_SIZE_SHIFT;
   for (uint32_t i = 0; i < npages; ++i) {
     uint32_t paddr = pmm_alloc(1);
     CHECK_RESTORE_EFLAGS_CR3(paddr == 0, "No memory.", ENOMEM);
     paging_result_t res =
-      paging_map((uint32_t)img.data_vaddr + (i << PHYS_ADDR_OFFSET), paddr, flags);
+      paging_map((uint32_t)img.data_vaddr + (i << PAGE_SIZE_SHIFT), paddr, flags);
     CHECK_RESTORE_EFLAGS_CR3(res != PAGING_OK, "Failed to map data pages.", res);
   }
 

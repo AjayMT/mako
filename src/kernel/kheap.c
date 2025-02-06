@@ -104,7 +104,7 @@ static void alloc_pages(size_t size)
 {
   size = u_page_align_up(size + sizeof(block_t));
 
-  uint32_t npages = size >> PHYS_ADDR_OFFSET;
+  uint32_t npages = size >> PAGE_SIZE_SHIFT;
   uint32_t vaddr = paging_next_vaddr(npages, KERNEL_START_VADDR);
   if (vaddr == 0)
     return;

@@ -68,8 +68,8 @@ static void bitmap_init(memory_map_t mmap)
     memory_map_entry_t entry = mmap.entries[i];
     uint32_t start_addr = u_page_align_up(entry.addr);
     uint32_t end_addr = u_page_align_down(entry.addr + entry.len);
-    uint32_t page_number = start_addr >> PHYS_ADDR_OFFSET;
-    uint32_t end_number = end_addr >> PHYS_ADDR_OFFSET;
+    uint32_t page_number = start_addr >> PAGE_SIZE_SHIFT;
+    uint32_t end_number = end_addr >> PAGE_SIZE_SHIFT;
     for (; page_number < end_number; ++page_number)
       mark_page_free(page_number);
   }
@@ -164,7 +164,7 @@ uint32_t pmm_alloc(uint32_t size)
       if (found >= size) {
         for (uint32_t allocated = 0; allocated < size; ++allocated)
           mark_page_used(current + allocated);
-        return current << PHYS_ADDR_OFFSET;
+        return current << PAGE_SIZE_SHIFT;
       }
       if ((value & (1 << bit)) == 0)
         break;
@@ -179,5 +179,5 @@ void pmm_free(uint32_t addr, uint32_t size)
 {
   addr = u_page_align_down(addr);
   for (uint32_t i = 0; i < size; ++i, addr += PAGE_SIZE)
-    mark_page_free(addr >> PHYS_ADDR_OFFSET);
+    mark_page_free(addr >> PAGE_SIZE_SHIFT);
 }

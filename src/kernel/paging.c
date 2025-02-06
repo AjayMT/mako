@@ -61,7 +61,7 @@ uint32_t paging_init(page_directory_t pd, uint32_t phys_addr)
   u_memset(&self_pde, 0, sizeof(self_pde));
   self_pde.present = 1;
   self_pde.rw = 1;
-  self_pde.table_addr = phys_addr >> PHYS_ADDR_OFFSET;
+  self_pde.table_addr = phys_addr >> PAGE_SIZE_SHIFT;
   pd[vaddr_to_pd_idx(PD_VADDR)] = self_pde;
 
   // Map the kernel (i.e first 4MB of the physical address space)
@@ -124,7 +124,7 @@ uint32_t paging_copy_kernel_space(uint32_t cr3)
   u_memset(&self_pde, 0, sizeof(self_pde));
   self_pde.present = 1;
   self_pde.rw = 1;
-  self_pde.table_addr = cr3 >> PHYS_ADDR_OFFSET;
+  self_pde.table_addr = cr3 >> PAGE_SIZE_SHIFT;
   pd[vaddr_to_pd_idx(PD_VADDR)] = self_pde;
 
   res = paging_unmap(pd_vaddr);
@@ -178,7 +178,7 @@ uint32_t paging_clone_process_directory(uint32_t *out_cr3, uint32_t process_cr3)
     page_table_t pt = (page_table_t)pt_vaddr;
     res = paging_map(pt_vaddr, pt_paddr, flags);
     CHECK_RESTORE(res != PAGING_OK, "paging_map failed.", 1);
-    pd[pd_idx].table_addr = pt_paddr >> PHYS_ADDR_OFFSET;
+    pd[pd_idx].table_addr = pt_paddr >> PAGE_SIZE_SHIFT;
 
     for (uint32_t pt_idx = 0; pt_idx < PAGE_SIZE_DWORDS; ++pt_idx) {
       pt[pt_idx] = process_pt[pt_idx];
@@ -191,7 +191,7 @@ uint32_t paging_clone_process_directory(uint32_t *out_cr3, uint32_t process_cr3)
       CHECK_RESTORE(frame_vaddr == 0, "No memory.", ENOMEM);
       res = paging_map(frame_vaddr, frame_paddr, flags);
       CHECK_RESTORE(res != PAGING_OK, "paging_map failed.", 1);
-      pt[pt_idx].frame_addr = frame_paddr >> PHYS_ADDR_OFFSET;
+      pt[pt_idx].frame_addr = frame_paddr >> PAGE_SIZE_SHIFT;
       u_memcpy((uint8_t *)frame_vaddr,
                (uint8_t *)(pd_idx_to_vaddr(pd_idx) | pt_idx_to_vaddr(pt_idx)),
                PAGE_SIZE);
@@ -256,7 +256,7 @@ paging_result_t paging_map(uint32_t virt_addr, uint32_t phys_addr, page_table_en
     pde.user = flags.user;
     pde.pwt = flags.pwt;
     pde.pcd = flags.pcd;
-    pde.table_addr = pt_paddr >> PHYS_ADDR_OFFSET;
+    pde.table_addr = pt_paddr >> PAGE_SIZE_SHIFT;
     pd[pd_idx] = pde;
     u_memset((void *)pt_vaddr, 0b10, PAGE_SIZE); // Clear the new page table.
     pd[pd_idx].rw = flags.rw;
@@ -273,7 +273,7 @@ paging_result_t paging_map(uint32_t virt_addr, uint32_t phys_addr, page_table_en
   pte.user = flags.user;
   pte.pwt = flags.pwt;
   pte.pcd = flags.pcd;
-  pte.frame_addr = phys_addr >> PHYS_ADDR_OFFSET;
+  pte.frame_addr = phys_addr >> PAGE_SIZE_SHIFT;
   pt[pt_idx] = pte;
 
   return PAGING_OK;
@@ -304,7 +304,7 @@ paging_result_t paging_unmap(uint32_t virt_addr)
     ;
 
   if (pt_idx == PAGE_SIZE_DWORDS) { // There aren't any.
-    pmm_free(pde.table_addr << PHYS_ADDR_OFFSET, 1);
+    pmm_free(pde.table_addr << PAGE_SIZE_SHIFT, 1);
     pde.present = 0;
     pd[pd_idx] = pde;
     paging_invalidate_pte((uint32_t)pt);
@@ -319,7 +319,7 @@ uint32_t paging_next_vaddr(uint32_t size, uint32_t base)
 {
   page_directory_t pd = (page_directory_t)PD_VADDR;
   uint32_t max_page_number = PAGE_SIZE_DWORDS * PAGE_SIZE_DWORDS;
-  uint32_t current = base >> PHYS_ADDR_OFFSET, step = 0;
+  uint32_t current = base >> PAGE_SIZE_SHIFT, step = 0;
   if (current == 0)
     ++current; // Skip address 0 so NULL is invalid.
   for (; current < max_page_number; current += step + 1) {
@@ -332,7 +332,7 @@ uint32_t paging_next_vaddr(uint32_t size, uint32_t base)
       if (pde.present == 0) {
         found += PAGE_SIZE_DWORDS - pt_idx;
         if (found >= size)
-          return current << PHYS_ADDR_OFFSET;
+          return current << PAGE_SIZE_SHIFT;
         continue;
       } else if (pde.page_size)
         break;
@@ -342,7 +342,7 @@ uint32_t paging_next_vaddr(uint32_t size, uint32_t base)
       if (pte.present == 0)
         ++found;
       if (found >= size)
-        return current << PHYS_ADDR_OFFSET;
+        return current << PAGE_SIZE_SHIFT;
       if (pte.present)
         break;
     }
@@ -357,7 +357,7 @@ uint32_t paging_prev_vaddr(uint32_t size, uint32_t top)
 {
   page_directory_t pd = (page_directory_t)PD_VADDR;
   uint32_t min_page_number = 1;
-  uint32_t current = (top >> PHYS_ADDR_OFFSET) - 1, step = 0;
+  uint32_t current = (top >> PAGE_SIZE_SHIFT) - 1, step = 0;
   for (; current >= min_page_number; current -= step + 1) {
     uint32_t found = 0;
     for (step = 0; step < size; ++step) {
@@ -368,7 +368,7 @@ uint32_t paging_prev_vaddr(uint32_t size, uint32_t top)
       if (pde.present == 0) {
         found += PAGE_SIZE_DWORDS - pt_idx;
         if (found >= size)
-          return page_number << PHYS_ADDR_OFFSET;
+          return page_number << PAGE_SIZE_SHIFT;
         continue;
       } else if (pde.page_size)
         break;
@@ -378,7 +378,7 @@ uint32_t paging_prev_vaddr(uint32_t size, uint32_t top)
       if (pte.present == 0)
         ++found;
       if (found >= size)
-        return page_number << PHYS_ADDR_OFFSET;
+        return page_number << PAGE_SIZE_SHIFT;
       if (pte.present)
         break;
     }
@@ -395,11 +395,13 @@ uint32_t paging_get_paddr(uint32_t vaddr)
   page_directory_t pd = (page_directory_t)PD_VADDR;
   if (pd[pd_idx].present == 0)
     return 0;
-  if (pd[pd_idx].page_size == 1)
-    return (pd[pd_idx].table_addr << PHYS_ADDR_OFFSET) + (vaddr & 0x3fffff);
+  if (pd[pd_idx].page_size == 1) {
+    const uint32_t table_addr_4mb_aligned = (pd[pd_idx].table_addr >> 10) << (10 + PAGE_SIZE_SHIFT);
+    return table_addr_4mb_aligned + (vaddr & 0x3fffff);
+  }
 
   page_table_t pt = (page_table_t)pd_idx_to_pt_vaddr(pd_idx);
   if (pt[pt_idx].present == 0)
     return 0;
-  return (pt[pt_idx].frame_addr << PHYS_ADDR_OFFSET) + (vaddr & 0xfff);
+  return (pt[pt_idx].frame_addr << PAGE_SIZE_SHIFT) + (vaddr & (PAGE_SIZE - 1));
 }
