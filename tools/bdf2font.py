@@ -14,6 +14,7 @@ def get_options():
 
 
 def shadows(data, w, h):
+    shadow_opacity = 64
     new_data = [0] * ((w + 1) * (h + 1))
     for y in range(h):
         for x in range(w):
@@ -21,9 +22,11 @@ def shadows(data, w, h):
             if data[y * w + x] == 0:
                 continue
 
-            new_data[y * (w + 1) + x + 1] = max(new_data[y * (w + 1) + x + 1], 64)
-            new_data[(y + 1) * (w + 1) + x] = max(new_data[(y + 1) * (w + 1) + x], 64)
-            new_data[(y + 1) * (w + 1) + x + 1] = max(new_data[(y + 1) * (w + 1) + x + 1], 64)
+            new_data[y * (w + 1) + x + 1] = max(new_data[y * (w + 1) + x + 1], shadow_opacity)
+            new_data[(y + 1) * (w + 1) + x] = max(new_data[(y + 1) * (w + 1) + x], shadow_opacity)
+            new_data[(y + 1) * (w + 1) + x + 1] = max(
+                new_data[(y + 1) * (w + 1) + x + 1], shadow_opacity
+            )
 
     return new_data
 
