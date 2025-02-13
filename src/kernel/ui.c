@@ -137,7 +137,7 @@ static inline uint32_t blur(uint32_t *pixel, uint32_t stride)
   uint32_t g =
     G(*pixel) + G(*(pixel + 1)) + G(*(pixel - 1)) + G(*(pixel + stride)) + G(*(pixel - stride));
   uint32_t r =
-    G(*pixel) + R(*(pixel + 1)) + R(*(pixel - 1)) + R(*(pixel + stride)) + R(*(pixel - stride));
+    R(*pixel) + R(*(pixel + 1)) + R(*(pixel - 1)) + R(*(pixel + stride)) + R(*(pixel - stride));
 
   return ((b / 5) & 0xff) | (((g / 5) & 0xff) << 8) | (((r / 5) & 0xff) << 16);
 }
