@@ -22,7 +22,7 @@ typedef struct
   uint32_t current_entry;
 } DIR;
 
-DIR *opendir(char *path);
+DIR *opendir(const char *path);
 int32_t closedir(DIR *d);
 struct dirent *readdir(DIR *d);
 

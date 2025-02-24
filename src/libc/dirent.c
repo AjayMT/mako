@@ -13,7 +13,7 @@
 #include "stdlib.h"
 #include "unistd.h"
 
-DIR *opendir(char *path)
+DIR *opendir(const char *path)
 {
   int32_t res = open(path, O_RDONLY | O_DIRECTORY);
   if (res == -1)
