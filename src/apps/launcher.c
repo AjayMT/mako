@@ -14,12 +14,15 @@
 #include <ui.h>
 #include <unistd.h>
 
-const uint32_t background_color = 0xffffff;
-const uint32_t hover_background_color = 0xeeeeee;
+const uint32_t background_color = 0xd3ccbd;
+const uint32_t button_light_color = 0xe9e6de;
+const uint32_t button_dark_color = 0x9f8e6d;
 const uint32_t text_color = 0;
-const uint32_t icon_h_padding = 16;
-const uint32_t icon_v_padding = 10;
+const uint32_t icon_h_padding = 8;
+const uint32_t icon_v_padding = 4;
 const uint32_t text_height = 16;
+const uint32_t button_width = ICON_WIDTH + 2 * icon_h_padding;
+const uint32_t button_height = ICON_HEIGHT + text_height + icon_v_padding;
 
 static uint32_t *ui_buf = NULL;
 static uint32_t window_w = 0;
@@ -46,10 +49,13 @@ static const struct app apps[] = {
 };
 const unsigned num_apps = 4;
 
-void draw_app_icon(const struct app *app, uint32_t x, uint32_t y)
+void draw_app_icon(unsigned idx)
 {
+  const struct app *app = &apps[idx];
+  const uint32_t x = icon_h_padding + button_width * idx;
+
   for (uint32_t icon_y = 0; icon_y < ICON_HEIGHT; ++icon_y) {
-    uint32_t *bufptr = ui_buf + (y + icon_y + icon_v_padding) * window_w;
+    uint32_t *bufptr = ui_buf + (icon_y + icon_v_padding) * window_w;
     const uint32_t *iconptr = app->icon + icon_y * ICON_WIDTH;
     for (uint32_t icon_x = 0; icon_x < ICON_WIDTH; ++icon_x)
       bufptr[x + icon_x + icon_h_padding] =
@@ -58,14 +64,10 @@ void draw_app_icon(const struct app *app, uint32_t x, uint32_t y)
   uint32_t w, h;
   const size_t name_len = strlen(app->name);
   ui_measure_text(&w, &h, app->name, name_len, UI_FONT_TWINLEAF);
-  uint32_t offset = (ICON_WIDTH + icon_h_padding - w) / 2;
-  uint32_t *bufptr = ui_buf + (y + ICON_HEIGHT + icon_v_padding + text_height - h) * window_w;
-  ui_render_text(bufptr + x + (icon_h_padding / 2) + offset,
-                 window_w,
-                 app->name,
-                 name_len,
-                 UI_FONT_TWINLEAF,
-                 text_color);
+  uint32_t justify_center = (button_width - w) / 2;
+  uint32_t *bufptr = ui_buf + (icon_v_padding + ICON_HEIGHT) * window_w;
+  ui_render_text(
+    bufptr + x + justify_center, window_w, app->name, name_len, UI_FONT_TWINLEAF, text_color);
 }
 
 void launch(const struct app *app)
@@ -92,9 +94,6 @@ void launch_doom(const struct app *app)
 
 void handle_mouse_move(int32_t x, int32_t y)
 {
-  const uint32_t hover_box_width = ICON_WIDTH + icon_h_padding;
-  const uint32_t hover_box_height = ICON_HEIGHT + icon_v_padding + text_height;
-
   bool hovering_on_app = true;
 
   if (x < 0 || y < 0)
@@ -103,44 +102,57 @@ void handle_mouse_move(int32_t x, int32_t y)
     hovering_on_app = false;
   if ((uint32_t)y >= window_h - text_height)
     hovering_on_app = false;
-  if ((uint32_t)x < icon_h_padding / 2 || (uint32_t)x >= window_w - (icon_h_padding / 2))
+  if ((uint32_t)x < icon_h_padding || (uint32_t)x >= window_w - icon_h_padding)
     hovering_on_app = false;
 
   int32_t new_hovered_app = -1;
   if (hovering_on_app)
-    new_hovered_app = (x - (icon_h_padding / 2)) / hover_box_width;
+    new_hovered_app = (x - icon_h_padding) / button_width;
 
   if (hovered_app != -1 && hovered_app != new_hovered_app) {
-    for (uint32_t y = 0; y < hover_box_height; ++y) {
-      uint32_t *bufptr =
-        ui_buf + y * window_w + hover_box_width * hovered_app + (icon_h_padding / 2);
-      for (uint32_t x = 0; x < hover_box_width; ++x)
-        bufptr[x] = background_color;
+    for (uint32_t y = 0; y < button_height; ++y) {
+      uint32_t *bufptr = ui_buf + y * window_w + button_width * hovered_app + icon_h_padding;
+      if (y < 2) {
+        memset32(bufptr, background_color, button_width);
+        continue;
+      }
+      if (y >= button_height - 2) {
+        memset32(bufptr, background_color, button_width);
+        continue;
+      }
+      bufptr[0] = background_color;
+      bufptr[1] = background_color;
+      bufptr[button_width - 2] = background_color;
+      bufptr[button_width - 1] = background_color;
     }
-    draw_app_icon(&apps[hovered_app], hover_box_width * hovered_app, 0);
-    memset32(ui_buf + (hover_box_height + icon_v_padding) * window_w,
-             background_color,
-             text_height * window_w);
+    memset32(ui_buf + button_height * window_w, background_color, text_height * window_w);
   }
 
   if (new_hovered_app != -1 && hovered_app != new_hovered_app) {
-    for (uint32_t y = 0; y < hover_box_height; ++y) {
-      uint32_t *bufptr =
-        ui_buf + y * window_w + hover_box_width * new_hovered_app + (icon_h_padding / 2);
-      for (uint32_t x = 0; x < hover_box_width; ++x)
-        bufptr[x] = hover_background_color;
+    for (uint32_t y = 0; y < button_height; ++y) {
+      uint32_t *bufptr = ui_buf + y * window_w + button_width * new_hovered_app + icon_h_padding;
+      bufptr[button_width - 2] = button_dark_color;
+      bufptr[button_width - 1] = button_dark_color;
+      if (y < 2) {
+        memset32(bufptr, button_light_color, button_width - 2);
+        continue;
+      }
+      if (y >= button_height - 2) {
+        memset32(bufptr, button_dark_color, button_width);
+        continue;
+      }
+      bufptr[0] = button_light_color;
+      bufptr[1] = button_light_color;
     }
 
-    const struct app *app = &apps[new_hovered_app];
-    draw_app_icon(app, hover_box_width * new_hovered_app, 0);
-
-    size_t desc_len = strlen(app->description);
+    char *desc = apps[new_hovered_app].description;
+    size_t desc_len = strlen(desc);
     uint32_t w, h;
-    ui_measure_text(&w, &h, app->description, desc_len, UI_FONT_TWINLEAF);
+    ui_measure_text(&w, &h, desc, desc_len, UI_FONT_TWINLEAF);
     uint32_t offset = (window_w - w) / 2;
-    ui_render_text(ui_buf + (hover_box_height + icon_v_padding) * window_w + offset,
+    ui_render_text(ui_buf + button_height * window_w + offset,
                    window_w,
-                   app->description,
+                   desc,
                    desc_len,
                    UI_FONT_TWINLEAF,
                    text_color);
@@ -154,18 +166,61 @@ void handle_mouse_move(int32_t x, int32_t y)
 
 void handle_mouse_click(int32_t x, int32_t y)
 {
-  handle_mouse_move(x, y);
-  if (hovered_app != -1)
-    apps[hovered_app].handler(&apps[hovered_app]);
+  if (hovered_app == -1)
+    return;
+
+  for (uint32_t y = 0; y < button_height; ++y) {
+    uint32_t *bufptr = ui_buf + y * window_w + button_width * hovered_app + icon_h_padding;
+    bufptr[button_width - 2] = button_light_color;
+    bufptr[button_width - 1] = button_light_color;
+    if (y < 2) {
+      memset32(bufptr, button_dark_color, button_width - 2);
+      continue;
+    }
+    if (y >= button_height - 2) {
+      memset32(bufptr, button_light_color, button_width);
+      continue;
+    }
+    bufptr[0] = button_dark_color;
+    bufptr[1] = button_dark_color;
+  }
+  ui_redraw_rect(button_width * hovered_app + icon_h_padding, 0, button_width, button_height);
+}
+
+void handle_mouse_unclick()
+{
+  if (hovered_app == -1)
+    return;
+
+  for (uint32_t y = 0; y < button_height; ++y) {
+    uint32_t *bufptr = ui_buf + y * window_w + button_width * hovered_app + icon_h_padding;
+    if (y < 2) {
+      memset32(bufptr, background_color, button_width);
+      continue;
+    }
+    if (y >= button_height - 2) {
+      memset32(bufptr, background_color, button_width);
+      continue;
+    }
+    bufptr[0] = background_color;
+    bufptr[1] = background_color;
+    bufptr[button_width - 2] = background_color;
+    bufptr[button_width - 1] = background_color;
+  }
+
+  memset32(ui_buf + button_height * window_w, background_color, text_height * window_w);
+
+  ui_redraw_rect(0, 0, window_w, window_h);
+  apps[hovered_app].handler(&apps[hovered_app]);
+  hovered_app = -1;
 }
 
 int main(int argc, char *argv[])
 {
   priority(1);
 
-  const uint32_t padded_icon_width = ICON_WIDTH + icon_h_padding;
-  window_w = num_apps * padded_icon_width + icon_h_padding;
-  window_h = ICON_HEIGHT + 2 * icon_v_padding + 2 * text_height;
+  window_w = num_apps * button_width + 2 * icon_h_padding;
+  window_h = button_height + text_height;
 
   ui_buf = malloc(window_w * window_h * sizeof(uint32_t));
   if (ui_buf == NULL)
@@ -173,7 +228,7 @@ int main(int argc, char *argv[])
 
   memset32(ui_buf, background_color, window_w * window_h);
   for (unsigned i = 0; i < num_apps; ++i)
-    draw_app_icon(&apps[i], i * padded_icon_width, 0);
+    draw_app_icon(i);
 
   int32_t err = ui_acquire_window(ui_buf, "apps", window_w, window_h);
   if (err < 0)
@@ -194,6 +249,9 @@ int main(int argc, char *argv[])
     switch (ev.type) {
       case UI_EVENT_MOUSE_CLICK:
         handle_mouse_click(ev.x, ev.y);
+        break;
+      case UI_EVENT_MOUSE_UNCLICK:
+        handle_mouse_unclick();
         break;
       case UI_EVENT_MOUSE_MOVE:
         handle_mouse_move(ev.x, ev.y);

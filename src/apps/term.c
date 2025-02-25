@@ -25,6 +25,8 @@ static const uint32_t text_color = 0;
 static const uint32_t cursor_w = 2;
 static const uint32_t cursor_h = 14;
 static const uint32_t line_height = 14;
+static const uint32_t overscroll_w = 20;
+static const uint32_t overscroll_h = 100;
 
 static uint32_t cursor_x = 0;
 static uint32_t cursor_y = 0;
@@ -65,7 +67,9 @@ void print(const char *text)
   uint32_t w, h;
   ui_measure_text(&w, &h, text, text_len, UI_FONT_X_FIXED);
 
-  ui_scrollview_grow(&view, cursor_x + w + cursor_w, cursor_y + h, 20);
+  if (view.content_w < cursor_x + w + cursor_w)
+    ui_scrollview_resize(&view, cursor_x + w + cursor_w + overscroll_w, view.content_h);
+
   ui_render_text(view.content_buf + (cursor_y * view.content_w) + cursor_x,
                  view.content_w,
                  text,
@@ -86,7 +90,16 @@ void print_line(const char *text)
   uint32_t w, h;
   ui_measure_text(&w, &h, text, text_len, UI_FONT_X_FIXED);
 
-  ui_scrollview_grow(&view, cursor_x + w + cursor_w, cursor_y + h + line_height, view.window_h);
+  uint32_t max_w = view.content_w;
+  if (cursor_x + w + cursor_w > max_w)
+    max_w = cursor_x + w + cursor_w + overscroll_w;
+  uint32_t max_h = view.content_h;
+  if (cursor_y + h + line_height > max_h)
+    max_h = cursor_y + h + line_height + overscroll_h;
+
+  if (view.content_h < max_h || view.content_w < max_w)
+    ui_scrollview_resize(&view, max_w, max_h);
+
   ui_render_text(view.content_buf + (cursor_y * view.content_w) + cursor_x,
                  view.content_w,
                  text,
@@ -234,7 +247,7 @@ bool execute_builtin(char *cmd, char **args)
 
   if (strcmp(cmd, "clear") == 0) {
     free(view.content_buf);
-    if (!ui_scrollview_init(&view, view.window_buf, view.window_w, view.window_h))
+    if (!ui_scrollview_init(&view, view.window_buf, view.window_w, view.window_h, background_color))
       exit(1);
     cursor_x = 0;
     cursor_y = 0;
@@ -461,39 +474,39 @@ void resize_request_handler(uint32_t w, uint32_t h)
   }
 
   struct ui_scrollview old_view = view;
-  if (!ui_scrollview_init(&view, new_ui_buf, w, h)) {
-    free(new_ui_buf);
+  view.window_w = w;
+  view.window_h = h;
+  view.window_buf = new_ui_buf;
+
+  uint32_t max_w = cursor_x + cursor_w;
+  if (view.window_w > max_w)
+    max_w = view.window_w;
+  uint32_t max_h = cursor_y + line_height + overscroll_h;
+  if (view.window_h > max_h)
+    max_h = view.window_h;
+
+  if (!ui_scrollview_resize(&view, max_w, max_h)) {
     view = old_view;
+    free(new_ui_buf);
     thread_unlock(&ui_lock);
     return;
   }
 
-  if (!ui_scrollview_grow(&view, old_view.content_w, old_view.content_h, 0)) {
-    free(new_ui_buf);
-    free(view.content_buf);
-    view = old_view;
-    thread_unlock(&ui_lock);
-    return;
-  }
+  if (view.window_x + view.window_w > view.content_w)
+    view.window_x = view.content_w - view.window_w;
+  if (view.window_y + view.window_h > view.content_h)
+    view.window_y = view.content_h - view.window_h;
 
-  memset32(view.content_buf, background_color, view.content_w * view.content_h);
-  for (uint32_t y = 0; y < old_view.content_h; ++y)
-    memcpy32(view.content_buf + y * view.content_w,
-             old_view.content_buf + y * old_view.content_w,
-             old_view.content_w);
+  ui_scrollview_redraw_rect_buffered(&view, 0, 0, view.content_w, view.content_h);
 
   int32_t err = ui_resize_window(new_ui_buf, w, h);
   if (err) {
     free(new_ui_buf);
-    free(view.content_buf);
     view = old_view;
     thread_unlock(&ui_lock);
     return;
   }
 
-  ui_scrollview_redraw_rect(&view, 0, 0, view.content_w, view.content_h);
-
-  free(old_view.content_buf);
   free(ui_buf);
   ui_buf = new_ui_buf;
   thread_unlock(&ui_lock);
@@ -521,7 +534,7 @@ int main(int argc, char *argv[])
   if (err < 0 || ev.type != UI_EVENT_WAKE)
     return 1;
 
-  if (!ui_scrollview_init(&view, ui_buf, ev.width, ev.height))
+  if (!ui_scrollview_init(&view, ui_buf, ev.width, ev.height, background_color))
     return 1;
 
   flip_cursor();

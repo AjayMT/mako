@@ -32,7 +32,7 @@ int32_t movefd(uint32_t from, uint32_t to)
   return res;
 }
 
-int32_t resolve(char *out, char *in, size_t l)
+int32_t resolve(char *out, const char *in, size_t l)
 {
   int32_t res = _syscall3(SYSCALL_RESOLVE, (uint32_t)out, (uint32_t)in, l);
   if (res < 0) {

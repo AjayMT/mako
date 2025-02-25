@@ -30,7 +30,8 @@ int main(int argc, char *argv[])
   FILE *out = stdout;
   if (argc > 2) {
     out = fopen(argv[2], "w");
-    if (out == NULL) return 1;
+    if (out == NULL)
+      return 1;
   }
 
   char text[256];

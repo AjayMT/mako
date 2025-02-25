@@ -49,18 +49,25 @@ struct ui_scrollview
   uint32_t window_h;
   uint32_t window_x;
   uint32_t window_y;
+  uint32_t background_color;
 };
 
 bool ui_scrollview_init(struct ui_scrollview *view,
                         uint32_t *window_buf,
                         uint32_t window_w,
-                        uint32_t window_h);
-bool ui_scrollview_grow(struct ui_scrollview *view, uint32_t dw, uint32_t dh, uint32_t padding);
+                        uint32_t window_h,
+                        uint32_t background_color);
+bool ui_scrollview_resize(struct ui_scrollview *view, uint32_t w, uint32_t h);
 void ui_scrollview_redraw_rect(struct ui_scrollview *view,
                                uint32_t x,
                                uint32_t y,
                                uint32_t w,
                                uint32_t h);
+void ui_scrollview_redraw_rect_buffered(struct ui_scrollview *view,
+                                        uint32_t x,
+                                        uint32_t y,
+                                        uint32_t w,
+                                        uint32_t h);
 void ui_scrollview_scroll(struct ui_scrollview *view, int32_t dx, int32_t dy);
 void ui_scrollview_clear(struct ui_scrollview *view, uint32_t *new_buf, uint32_t w, uint32_t h);
 
