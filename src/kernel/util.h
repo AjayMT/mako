@@ -21,4 +21,7 @@ int32_t u_strncmp(const char *, const char *, size_t);
 size_t u_page_align_up(size_t a);
 size_t u_page_align_down(uint32_t a);
 
+#define min(a, b) ((a) < (b) ? (a) : (b))
+#define max(a, b) ((a) > (b) ? (a) : (b))
+
 #endif /* _UTIL_H_ */

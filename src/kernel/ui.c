@@ -42,9 +42,6 @@
     return (code);                                                                                 \
   }
 
-#define min(a, b) ((a) < (b) ? (a) : (b))
-#define max(a, b) ((a) > (b) ? (a) : (b))
-
 struct point
 {
   int32_t x;
@@ -142,30 +139,6 @@ static inline uint32_t blur(uint32_t *pixel, uint32_t stride)
   return ((b / 5) & 0xff) | (((g / 5) & 0xff) << 8) | (((r / 5) & 0xff) << 16);
 }
 
-static void copy_rect_alpha(struct pixel_buffer dst,
-                            struct point dst_point,
-                            const struct pixel_buffer src,
-                            struct point src_point,
-                            const struct pixel_buffer src_alpha_bg,
-                            struct point src_alpha_bg_point,
-                            const struct dim dim,
-                            uint8_t opacity)
-{
-  for (uint32_t y = 0; y < dim.h; ++y) {
-    const uint32_t dst_offset = (dst_point.y + y) * dst.stride + dst_point.x;
-    const uint32_t src_offset = (src_point.y + y) * src.stride + src_point.x;
-    const uint32_t bg_offset =
-      (src_alpha_bg_point.y + y) * src_alpha_bg.stride + src_alpha_bg_point.x;
-    if (opacity == 0xff)
-      u_memcpy32(dst.buf + dst_offset, src.buf + src_offset, dim.w);
-    else
-      for (uint32_t x = 0; x < dim.w; ++x) {
-        uint32_t bg = blur(&src_alpha_bg.buf[bg_offset + x], src_alpha_bg.stride);
-        dst.buf[dst_offset + x] = blend_alpha(bg, src.buf[src_offset + x], opacity);
-      }
-  }
-}
-
 static void copy_rect(struct pixel_buffer dst,
                       struct point dst_point,
                       const struct pixel_buffer src,
@@ -176,6 +149,65 @@ static void copy_rect(struct pixel_buffer dst,
     const uint32_t dst_offset = (dst_point.y + y) * dst.stride + dst_point.x;
     const uint32_t src_offset = (src_point.y + y) * src.stride + src_point.x;
     u_memcpy32(dst.buf + dst_offset, src.buf + src_offset, dim.w);
+  }
+}
+
+static void copy_rect_alpha(struct pixel_buffer dst,
+                            struct point dst_point,
+                            const struct pixel_buffer src,
+                            struct point src_point,
+                            const struct pixel_buffer src_alpha_bg,
+                            struct point src_alpha_bg_point,
+                            const struct dim dim,
+                            uint8_t opacity)
+{
+  if (opacity == 0xff) {
+    copy_rect(dst, dst_point, src, src_point, dim);
+    return;
+  }
+
+  for (uint32_t y = 0; y < dim.h; ++y) {
+    const uint32_t dst_offset = (dst_point.y + y) * dst.stride + dst_point.x;
+    const uint32_t src_offset = (src_point.y + y) * src.stride + src_point.x;
+    const uint32_t bg_offset =
+      (src_alpha_bg_point.y + y) * src_alpha_bg.stride + src_alpha_bg_point.x;
+    for (uint32_t x = 0; x < dim.w; ++x) {
+      uint32_t bg = blur(&src_alpha_bg.buf[bg_offset + x], src_alpha_bg.stride);
+      dst.buf[dst_offset + x] = blend_alpha(bg, src.buf[src_offset + x], opacity);
+    }
+  }
+}
+
+static void copy_rect_alpha_grayscale(struct pixel_buffer dst,
+                                      struct point dst_point,
+                                      const struct pixel_buffer src,
+                                      struct point src_point,
+                                      const struct pixel_buffer src_alpha_bg,
+                                      struct point src_alpha_bg_point,
+                                      const struct dim dim,
+                                      uint8_t opacity)
+{
+  for (uint32_t y = 0; y < dim.h; ++y) {
+    const uint32_t dst_offset = (dst_point.y + y) * dst.stride + dst_point.x;
+    const uint32_t src_offset = (src_point.y + y) * src.stride + src_point.x;
+    const uint32_t bg_offset =
+      (src_alpha_bg_point.y + y) * src_alpha_bg.stride + src_alpha_bg_point.x;
+    if (opacity == 0xff)
+      for (uint32_t x = 0; x < dim.w; ++x) {
+        uint32_t color =
+          (R(src.buf[src_offset + x]) + G(src.buf[src_offset + x]) + B(src.buf[src_offset + x])) /
+          3;
+        dst.buf[dst_offset + x] = color | (color << 8) | (color << 16);
+      }
+    else
+      for (uint32_t x = 0; x < dim.w; ++x) {
+        uint32_t bg = blur(&src_alpha_bg.buf[bg_offset + x], src_alpha_bg.stride);
+        uint32_t color =
+          (R(src.buf[src_offset + x]) + G(src.buf[src_offset + x]) + B(src.buf[src_offset + x])) /
+          3;
+        uint32_t fg = color | (color << 8) | (color << 16);
+        dst.buf[dst_offset + x] = blend_alpha(bg, fg, opacity);
+      }
   }
 }
 
@@ -298,6 +330,64 @@ static void draw_window_shadows(struct dim window_dim, uint8_t window_opacity)
       const uint8_t opacity = (max_opacity * pixel) / 0xff;
       blitbuf_ptr[x + xoff] = blend_alpha(blitbuf_ptr[x + xoff], window_shadow_color, opacity);
     }
+  }
+
+  // Draw a 1px wide window border.
+  const uint32_t window_border_color = 0x999999;
+
+  if (window_opacity == 0xff) {
+    u_memset32(window_blit_buffer.buf + (WINDOW_SHADOW_SIZE - 1) * window_blit_buffer.stride +
+                 WINDOW_SHADOW_SIZE - 1,
+               window_border_color,
+               TITLE_BAR_WIDTH + 2);
+    u_memset32(window_blit_buffer.buf +
+                 (WINDOW_SHADOW_SIZE + TITLE_BAR_HEIGHT - 1) * window_blit_buffer.stride +
+                 WINDOW_SHADOW_SIZE + TITLE_BAR_WIDTH,
+               window_border_color,
+               window_dim.w - TITLE_BAR_WIDTH + 1);
+    u_memset32(window_blit_buffer.buf +
+                 (WINDOW_SHADOW_SIZE + TITLE_BAR_HEIGHT + window_dim.h) *
+                   window_blit_buffer.stride +
+                 WINDOW_SHADOW_SIZE - 1,
+               window_border_color,
+               window_dim.w + 2);
+  } else {
+    for (uint32_t x = WINDOW_SHADOW_SIZE - 1; x < WINDOW_SHADOW_SIZE + TITLE_BAR_WIDTH + 1; ++x) {
+      uint32_t *blitbuf_ptr =
+        window_blit_buffer.buf + (WINDOW_SHADOW_SIZE - 1) * window_blit_buffer.stride;
+      blitbuf_ptr[x] = blend_alpha(blitbuf_ptr[x], window_border_color, window_opacity);
+    }
+    for (uint32_t x = WINDOW_SHADOW_SIZE + TITLE_BAR_WIDTH;
+         x < WINDOW_SHADOW_SIZE + window_dim.w + 1;
+         ++x) {
+      uint32_t *blitbuf_ptr = window_blit_buffer.buf + (WINDOW_SHADOW_SIZE + TITLE_BAR_HEIGHT - 1) *
+                                                         window_blit_buffer.stride;
+      blitbuf_ptr[x] = blend_alpha(blitbuf_ptr[x], window_border_color, window_opacity);
+    }
+    for (uint32_t x = WINDOW_SHADOW_SIZE - 1; x < WINDOW_SHADOW_SIZE + window_dim.w + 1; ++x) {
+      uint32_t *blitbuf_ptr =
+        window_blit_buffer.buf +
+        (WINDOW_SHADOW_SIZE + TITLE_BAR_HEIGHT + window_dim.h) * window_blit_buffer.stride;
+      blitbuf_ptr[x] = blend_alpha(blitbuf_ptr[x], window_border_color, window_opacity);
+    }
+  }
+
+  for (uint32_t y = WINDOW_SHADOW_SIZE; y < WINDOW_SHADOW_SIZE + TITLE_BAR_HEIGHT; ++y) {
+    uint32_t *blitbuf_ptr = window_blit_buffer.buf + y * window_blit_buffer.stride;
+    blitbuf_ptr[WINDOW_SHADOW_SIZE - 1] =
+      blend_alpha(blitbuf_ptr[WINDOW_SHADOW_SIZE - 1], window_border_color, window_opacity);
+    blitbuf_ptr[WINDOW_SHADOW_SIZE + TITLE_BAR_WIDTH] = blend_alpha(
+      blitbuf_ptr[WINDOW_SHADOW_SIZE + TITLE_BAR_WIDTH], window_border_color, window_opacity);
+  }
+  for (uint32_t y = WINDOW_SHADOW_SIZE + TITLE_BAR_HEIGHT;
+       y < WINDOW_SHADOW_SIZE + TITLE_BAR_HEIGHT + window_dim.h;
+       ++y) {
+    uint32_t *blitbuf_ptr = window_blit_buffer.buf + y * window_blit_buffer.stride;
+    blitbuf_ptr[WINDOW_SHADOW_SIZE - 1] =
+      blend_alpha(blitbuf_ptr[WINDOW_SHADOW_SIZE - 1], window_border_color, window_opacity);
+    blitbuf_ptr[WINDOW_SHADOW_SIZE + window_dim.w] = blend_alpha(
+      blitbuf_ptr[WINDOW_SHADOW_SIZE + window_dim.w], window_border_color, window_opacity);
+    ;
   }
 }
 
@@ -435,14 +525,25 @@ static void blit_window(struct responder *r)
             window_chrome_dim(r->window_dim));
   draw_window_shadows(r->window_dim, r->window_opacity);
   struct point title_bar_dst = { WINDOW_SHADOW_SIZE, WINDOW_SHADOW_SIZE };
-  copy_rect_alpha(window_blit_buffer,
-                  title_bar_dst,
-                  r->title_bar_buf,
-                  (struct point){ 0, 0 },
-                  r->bg_buf,
-                  title_bar_dst,
-                  (struct dim){ TITLE_BAR_WIDTH, TITLE_BAR_HEIGHT },
-                  r->window_opacity);
+  if (r == responders.head->value) {
+    copy_rect_alpha(window_blit_buffer,
+                    title_bar_dst,
+                    r->title_bar_buf,
+                    (struct point){ 0, 0 },
+                    r->bg_buf,
+                    title_bar_dst,
+                    (struct dim){ TITLE_BAR_WIDTH, TITLE_BAR_HEIGHT },
+                    r->window_opacity);
+  } else {
+    copy_rect_alpha_grayscale(window_blit_buffer,
+                              title_bar_dst,
+                              r->title_bar_buf,
+                              (struct point){ 0, 0 },
+                              r->bg_buf,
+                              title_bar_dst,
+                              (struct dim){ TITLE_BAR_WIDTH, TITLE_BAR_HEIGHT },
+                              r->window_opacity);
+  }
   struct point window_dst = window_chrome_content_offset((struct point){ 0, 0 });
   copy_rect_alpha(window_blit_buffer,
                   window_dst,
@@ -486,6 +587,53 @@ static void blit_cursor()
       back_buffer.buf[pixel_offset] = cursor_colors[cursor_pixel];
     }
   }
+}
+
+static void grayscalize_title_bar(struct responder *r, bool grayscale)
+{
+  uint32_t eflags = interrupt_save_disable();
+
+  struct point bg_buf_src = { WINDOW_SHADOW_SIZE, WINDOW_SHADOW_SIZE };
+  struct point title_bar_dst = { r->window_pos.x, r->window_pos.y - TITLE_BAR_HEIGHT };
+  struct dim title_bar_dim = { TITLE_BAR_WIDTH, TITLE_BAR_HEIGHT };
+  if (!clip_rect_on_screen(&title_bar_dst, &bg_buf_src, &title_bar_dim)) {
+    interrupt_restore(eflags);
+    return;
+  }
+
+  copy_rect(back_buffer, title_bar_dst, r->bg_buf, bg_buf_src, title_bar_dim);
+
+  struct point title_bar_src = { 0, 0 };
+  title_bar_dst = (struct point){ r->window_pos.x, r->window_pos.y - TITLE_BAR_HEIGHT };
+  title_bar_dim = (struct dim){ TITLE_BAR_WIDTH, TITLE_BAR_HEIGHT };
+
+  if (!clip_rect_on_screen(&title_bar_dst, &title_bar_src, &title_bar_dim)) {
+    log_error("ui", "Expected title bar to be on screen.\n");
+    interrupt_restore(eflags);
+    return;
+  }
+
+  if (grayscale)
+    copy_rect_alpha_grayscale(back_buffer,
+                              title_bar_dst,
+                              r->title_bar_buf,
+                              title_bar_src,
+                              r->bg_buf,
+                              bg_buf_src,
+                              title_bar_dim,
+                              r->window_opacity);
+  else
+    copy_rect_alpha(back_buffer,
+                    title_bar_dst,
+                    r->title_bar_buf,
+                    title_bar_src,
+                    r->bg_buf,
+                    bg_buf_src,
+                    title_bar_dim,
+                    r->window_opacity);
+
+  copy_rect(frame_buffer, title_bar_dst, back_buffer, title_bar_dst, title_bar_dim);
+  interrupt_restore(eflags);
 }
 
 static void redraw_key_responder(struct point origin, struct dim dim)
@@ -679,6 +827,7 @@ uint32_t ui_init(uint32_t video_vaddr)
 
   struct dirent *wallpaper_dirent = fs_readdir(&wallpaper_dir, 2);
   CHECK(wallpaper_dirent == NULL, "Failed to read entry in /wallpapers", ENOTDIR);
+  fs_close(&wallpaper_dir);
 
   const size_t path_strlen = u_strlen("/wallpapers/");
   const size_t dirent_strlen = u_strlen(wallpaper_dirent->d_name);
@@ -704,7 +853,7 @@ static uint32_t dispatch_window_event(struct responder *r, ui_event_type_t t)
     ev.height = r->window_dim.h;
   }
 
-  uint32_t written = fs_write(&r->event_pipe_write, 0, sizeof(ui_event_t), (uint8_t *)&ev);
+  uint32_t written = fs_write(&r->event_pipe_write, sizeof(ui_event_t), (uint8_t *)&ev);
 
   if (written != sizeof(ui_event_t))
     return -1;
@@ -777,8 +926,7 @@ uint32_t ui_handle_keyboard_event(uint8_t code)
   ev.code = code;
 
   struct responder *key_responder = responders.head->value;
-  uint32_t written =
-    fs_write(&key_responder->event_pipe_write, 0, sizeof(ui_event_t), (uint8_t *)&ev);
+  uint32_t written = fs_write(&key_responder->event_pipe_write, sizeof(ui_event_t), (uint8_t *)&ev);
 
   interrupt_restore(eflags);
   if (written != sizeof(ui_event_t))
@@ -920,7 +1068,7 @@ static void handle_mouse_click()
     ev.x = click_x;
     ev.y = click_y;
     uint32_t written =
-      fs_write(&new_key_responder->event_pipe_write, 0, sizeof(ui_event_t), (uint8_t *)&ev);
+      fs_write(&new_key_responder->event_pipe_write, sizeof(ui_event_t), (uint8_t *)&ev);
     if (written != sizeof(ui_event_t))
       log_error("ui", "Failed to dispatch click event.");
   }
@@ -941,7 +1089,7 @@ static void handle_mouse_scroll(int8_t vscroll, int8_t hscroll)
         ev.vscroll = vscroll;
         ev.hscroll = hscroll;
       }
-      uint32_t written = fs_write(&r->event_pipe_write, 0, sizeof(ui_event_t), (uint8_t *)&ev);
+      uint32_t written = fs_write(&r->event_pipe_write, sizeof(ui_event_t), (uint8_t *)&ev);
       if (written != sizeof(ui_event_t))
         log_error("ui", "Failed to dispatch scroll event.");
       return;
@@ -1038,7 +1186,7 @@ uint32_t ui_handle_mouse_event(int32_t dx,
         ev.x = mouse_pos.x - key_responder->window_pos.x;
         ev.y = mouse_pos.y - key_responder->window_pos.y;
         uint32_t written =
-          fs_write(&key_responder->event_pipe_write, 0, sizeof(ui_event_t), (uint8_t *)&ev);
+          fs_write(&key_responder->event_pipe_write, sizeof(ui_event_t), (uint8_t *)&ev);
         if (written != sizeof(ui_event_t))
           log_error("ui", "Failed to dispatch unclick event.");
       }
@@ -1089,9 +1237,9 @@ uint32_t ui_handle_mouse_event(int32_t dx,
       ev.dx = dx;
       ev.dy = dy;
       uint32_t written =
-        fs_write(&key_responder->event_pipe_write, 0, sizeof(ui_event_t), (uint8_t *)&ev);
+        fs_write(&key_responder->event_pipe_write, sizeof(ui_event_t), (uint8_t *)&ev);
       if (written != sizeof(ui_event_t))
-        log_error("ui", "Failed to dispatch move event.");
+        log_error("ui", "Failed to dispatch move event.\n");
     }
   }
 
@@ -1193,6 +1341,7 @@ uint32_t ui_kill(process_t *p)
 
   list_remove(&responders, r->list_node, 1);
   if (is_head && responders.size) {
+    grayscalize_title_bar(responders.head->value, false);
     uint32_t err = dispatch_window_event(responders.head->value, UI_EVENT_WAKE);
     CHECK_UNLOCK_R(err, "Failed to dispatch wake event.", err);
   }
@@ -1216,6 +1365,9 @@ uint32_t ui_redraw_rect(process_t *p, uint32_t x, uint32_t y, uint32_t w, uint32
       const struct dim dim = { w, h };
       redraw_key_responder(origin, dim);
     } else {
+      if (responders.head->next)
+        grayscalize_title_bar(responders.head->next->value, true);
+
       r->window_drawn = true;
       struct point dst = window_chrome_pos(r->window_pos);
       struct point src = { 0, 0 };
@@ -1283,7 +1435,7 @@ uint32_t ui_next_event(process_t *p, uint32_t buf)
   kunlock(&responders_lock);
 
   uint8_t ev_buf[sizeof(ui_event_t)];
-  uint32_t read_size = fs_read(&r->event_pipe_read, 0, sizeof(ui_event_t), ev_buf);
+  uint32_t read_size = fs_read(&r->event_pipe_read, sizeof(ui_event_t), ev_buf);
   if (read_size < sizeof(ui_event_t))
     return 1;
 
@@ -1315,8 +1467,10 @@ uint32_t ui_set_wallpaper(const char *path)
   uint32_t err = fs_open_node(&wallpaper_node, path, 0);
   CHECK_RESTORE_EFLAGS(err, "Failed to open wallpaper file", err);
 
-  uint32_t n = fs_read(&wallpaper_node, 0, wallpaper_node.size, (uint8_t *)wallpaper);
+  fs_seek(&wallpaper_node, 0);
+  uint32_t n = fs_read(&wallpaper_node, wallpaper_node.size, (uint8_t *)wallpaper);
   CHECK_RESTORE_EFLAGS(n != (frame_size * sizeof(uint32_t)), "Failed to read wallpaper file", n);
+  fs_close(&wallpaper_node);
 
   redraw_all();
   interrupt_restore(eflags);
