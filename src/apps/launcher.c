@@ -14,9 +14,10 @@
 #include <ui.h>
 #include <unistd.h>
 
-const uint32_t background_color = 0xd3ccbd;
-const uint32_t button_light_color = 0xe9e6de;
-const uint32_t button_dark_color = 0x9f8e6d;
+const uint32_t background_color = 0xdedede;
+const uint32_t button_light_color = 0xf0f0f0;
+const uint32_t button_dark_color = 0xd8d8d8;
+const uint32_t button_border_color = 0x999999;
 const uint32_t text_color = 0;
 const uint32_t icon_h_padding = 8;
 const uint32_t icon_v_padding = 4;
@@ -36,6 +37,13 @@ struct app
   const uint32_t *icon;
   char *description;
   void (*handler)(const struct app *app);
+};
+
+enum app_button_state
+{
+  NONE,
+  HOVERED,
+  CLICKED,
 };
 
 void launch(const struct app *app);
@@ -92,6 +100,34 @@ void launch_doom(const struct app *app)
   }
 }
 
+void render_app_button_border(uint32_t idx, enum app_button_state state)
+{
+  const uint32_t border_color = state == NONE ? background_color : button_border_color;
+  uint32_t left_top_color = button_dark_color;
+  uint32_t right_bottom_color = button_light_color;
+  if (state == HOVERED) {
+    left_top_color = button_light_color;
+    right_bottom_color = button_dark_color;
+  } else if (state == NONE) {
+    left_top_color = background_color;
+    right_bottom_color = background_color;
+  }
+
+  uint32_t *bufptr = ui_buf + button_width * idx + icon_h_padding;
+  memset32(bufptr, border_color, button_width);
+  memset32(bufptr + (button_height - 1) * window_w, border_color, button_width);
+  memset32(bufptr + window_w + 1, left_top_color, button_width - 3);
+  memset32(bufptr + (button_height - 2) * window_w + 1, right_bottom_color, button_width - 2);
+
+  for (uint32_t y = 1; y < button_height - 1; ++y) {
+    uint32_t *bufptr = ui_buf + y * window_w + button_width * idx + icon_h_padding;
+    bufptr[0] = border_color;
+    bufptr[button_width - 1] = border_color;
+    bufptr[1] = left_top_color;
+    bufptr[button_width - 2] = right_bottom_color;
+  }
+}
+
 void handle_mouse_move(int32_t x, int32_t y)
 {
   bool hovering_on_app = true;
@@ -110,40 +146,12 @@ void handle_mouse_move(int32_t x, int32_t y)
     new_hovered_app = (x - icon_h_padding) / button_width;
 
   if (hovered_app != -1 && hovered_app != new_hovered_app) {
-    for (uint32_t y = 0; y < button_height; ++y) {
-      uint32_t *bufptr = ui_buf + y * window_w + button_width * hovered_app + icon_h_padding;
-      if (y < 2) {
-        memset32(bufptr, background_color, button_width);
-        continue;
-      }
-      if (y >= button_height - 2) {
-        memset32(bufptr, background_color, button_width);
-        continue;
-      }
-      bufptr[0] = background_color;
-      bufptr[1] = background_color;
-      bufptr[button_width - 2] = background_color;
-      bufptr[button_width - 1] = background_color;
-    }
+    render_app_button_border(hovered_app, NONE);
     memset32(ui_buf + button_height * window_w, background_color, text_height * window_w);
   }
 
   if (new_hovered_app != -1 && hovered_app != new_hovered_app) {
-    for (uint32_t y = 0; y < button_height; ++y) {
-      uint32_t *bufptr = ui_buf + y * window_w + button_width * new_hovered_app + icon_h_padding;
-      bufptr[button_width - 2] = button_dark_color;
-      bufptr[button_width - 1] = button_dark_color;
-      if (y < 2) {
-        memset32(bufptr, button_light_color, button_width - 2);
-        continue;
-      }
-      if (y >= button_height - 2) {
-        memset32(bufptr, button_dark_color, button_width);
-        continue;
-      }
-      bufptr[0] = button_light_color;
-      bufptr[1] = button_light_color;
-    }
+    render_app_button_border(new_hovered_app, HOVERED);
 
     char *desc = apps[new_hovered_app].description;
     size_t desc_len = strlen(desc);
@@ -169,21 +177,7 @@ void handle_mouse_click(int32_t x, int32_t y)
   if (hovered_app == -1)
     return;
 
-  for (uint32_t y = 0; y < button_height; ++y) {
-    uint32_t *bufptr = ui_buf + y * window_w + button_width * hovered_app + icon_h_padding;
-    bufptr[button_width - 2] = button_light_color;
-    bufptr[button_width - 1] = button_light_color;
-    if (y < 2) {
-      memset32(bufptr, button_dark_color, button_width - 2);
-      continue;
-    }
-    if (y >= button_height - 2) {
-      memset32(bufptr, button_light_color, button_width);
-      continue;
-    }
-    bufptr[0] = button_dark_color;
-    bufptr[1] = button_dark_color;
-  }
+  render_app_button_border(hovered_app, CLICKED);
   ui_redraw_rect(button_width * hovered_app + icon_h_padding, 0, button_width, button_height);
 }
 
@@ -192,27 +186,13 @@ void handle_mouse_unclick()
   if (hovered_app == -1)
     return;
 
-  for (uint32_t y = 0; y < button_height; ++y) {
-    uint32_t *bufptr = ui_buf + y * window_w + button_width * hovered_app + icon_h_padding;
-    if (y < 2) {
-      memset32(bufptr, background_color, button_width);
-      continue;
-    }
-    if (y >= button_height - 2) {
-      memset32(bufptr, background_color, button_width);
-      continue;
-    }
-    bufptr[0] = background_color;
-    bufptr[1] = background_color;
-    bufptr[button_width - 2] = background_color;
-    bufptr[button_width - 1] = background_color;
-  }
-
+  render_app_button_border(hovered_app, NONE);
   memset32(ui_buf + button_height * window_w, background_color, text_height * window_w);
 
   ui_redraw_rect(0, 0, window_w, window_h);
-  apps[hovered_app].handler(&apps[hovered_app]);
+  const uint32_t tmp_hovered_app = hovered_app;
   hovered_app = -1;
+  apps[tmp_hovered_app].handler(&apps[tmp_hovered_app]);
 }
 
 int main(int argc, char *argv[])

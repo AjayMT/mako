@@ -24,9 +24,11 @@ static struct ui_scrollview view;
 
 const uint32_t background_color = 0xffffff;
 const uint32_t selected_background_color = 0x2a62d9;
-const uint32_t toolbar_background_color = 0xd3ccbd;
-const uint32_t button_light_color = 0xe9e6de;
-const uint32_t button_dark_color = 0x9f8e6d;
+const uint32_t toolbar_background_color = 0xdedede;
+const uint32_t button_light_color = 0xf0f0f0;
+const uint32_t button_dark_color = 0xd8d8d8;
+const uint32_t button_color_gradient = 0x10101;
+const uint32_t button_border_color = 0x999999;
 const uint32_t text_color = 0;
 const uint32_t item_height = 20;
 const uint32_t button_height = 24;
@@ -184,10 +186,59 @@ void render_item(uint32_t idx, uint32_t color)
                  color);
 }
 
+void render_button_click(uint32_t button_x, uint32_t button_y, uint32_t button_w, bool clicked)
+{
+  const uint32_t left_top_color = clicked ? button_dark_color : button_light_color;
+  const uint32_t right_bottom_color = clicked ? button_light_color : button_dark_color;
+
+  uint32_t *bufp = ui_buf + button_y * view.window_w;
+  memset32(bufp + view.window_w + button_x + 1, left_top_color, button_w - 3);
+  memset32(
+    bufp + (button_height - 2) * view.window_w + button_x + 1, right_bottom_color, button_w - 2);
+
+  for (uint32_t y = 1; y < button_height - 1; ++y) {
+    uint32_t *bufp = ui_buf + (button_y + y) * view.window_w + button_x;
+    bufp[1] = left_top_color;
+    bufp[button_w - 2] = right_bottom_color;
+  }
+
+  ui_redraw_rect(button_x, button_y, button_w, button_height);
+}
+
+void render_button_borders(uint32_t *buf,
+                           uint32_t buf_stride,
+                           uint32_t rect_x,
+                           uint32_t rect_y,
+                           uint32_t rect_w,
+                           uint32_t rect_h,
+                           bool recessed)
+{
+  const uint32_t left_top_color = recessed ? button_dark_color : button_light_color;
+  const uint32_t right_bottom_color = recessed ? button_light_color : button_dark_color;
+
+  uint32_t *bufp = buf + rect_y * buf_stride + rect_x;
+
+  memset32(bufp, button_border_color, rect_w);
+  memset32(bufp + buf_stride + 1, left_top_color, rect_w - 3);
+  memset32(bufp + (rect_h - 2) * buf_stride + 1, right_bottom_color, rect_w - 2);
+  memset32(bufp + (rect_h - 1) * buf_stride, button_border_color, rect_w);
+
+  for (uint32_t y = 0; y < rect_h; ++y) {
+    uint32_t *bufp = buf + (rect_y + y) * buf_stride + rect_x;
+    bufp[rect_w - 1] = button_border_color;
+    bufp[0] = button_border_color;
+    if (y > 0 && y < rect_h - 1) {
+      bufp[1] = left_top_color;
+      bufp[rect_w - 2] = right_bottom_color;
+    }
+  }
+}
+
 void render_toolbar()
 {
   uint32_t *bufptr = ui_buf + view.window_h * view.window_w;
   memset32(bufptr, toolbar_background_color, toolbar_height * view.window_w);
+  memset32(bufptr, button_border_color, view.window_w);
 
   char cur_path[BUFSIZE];
   memset(cur_path, 0, BUFSIZE);
@@ -205,6 +256,19 @@ void render_toolbar()
   for (unsigned i = 0; i < num_buttons; ++i) {
     buttons[i].x = button_x;
 
+    const size_t name_len = strlen(buttons[i].name);
+    uint32_t w, h;
+    ui_measure_text(&w, &h, buttons[i].name, name_len, UI_FONT_TWINLEAF);
+
+    const uint32_t button_width = ICON_WIDTH + w + 12;
+    buttons[i].w = button_width;
+
+    for (uint32_t y = 0, color = button_light_color; y < button_height;
+         ++y, color -= button_color_gradient) {
+      uint32_t *bufp = bufptr + y * view.window_w + button_x;
+      memset32(bufp, color, button_width);
+    }
+
     for (uint32_t y = 0; y < ICON_HEIGHT; ++y) {
       uint32_t *bufp = bufptr + (4 + y) * view.window_w + button_x;
       const uint32_t *iconp = buttons[i].icon + y * ICON_WIDTH;
@@ -212,9 +276,6 @@ void render_toolbar()
         bufp[4 + x] = ui_blend_alpha(bufp[4 + x], iconp[x]);
     }
 
-    const size_t name_len = strlen(buttons[i].name);
-    uint32_t w, h;
-    ui_measure_text(&w, &h, buttons[i].name, name_len, UI_FONT_TWINLEAF);
     ui_render_text(bufptr + 6 * view.window_w + button_x + ICON_WIDTH + 6,
                    view.window_w,
                    buttons[i].name,
@@ -222,25 +283,13 @@ void render_toolbar()
                    UI_FONT_TWINLEAF,
                    text_color);
 
-    const uint32_t button_width = ICON_WIDTH + w + 12;
-    buttons[i].w = button_width;
-
-    for (uint32_t y = 0; y < button_height; ++y) {
-      uint32_t *bufp = bufptr + y * view.window_w + button_x;
-      bufp[button_width - 2] = button_dark_color;
-      bufp[button_width - 1] = button_dark_color;
-      if (y < 2) {
-        memset32(bufp, button_light_color, button_width - 2);
-        continue;
-      }
-      if (y >= button_height - 2) {
-        memset32(bufp, button_dark_color, button_width);
-        continue;
-      }
-      bufp[0] = button_light_color;
-      bufp[1] = button_light_color;
-    }
-
+    render_button_borders(ui_buf,
+                          view.window_w,
+                          button_x,
+                          view.window_h + item_height,
+                          button_width,
+                          button_height,
+                          false);
     button_x += button_width + 4;
   }
 
@@ -384,29 +433,10 @@ void dialog_box_unclick()
   }
 
   dialog_box_clicked_button = -1;
-
-  for (uint32_t y = 0; y < button_height; ++y) {
-    uint32_t *bufptr = ui_buf + (dialog_box_y + dialog_box_button_y + y) * view.window_w +
-                       dialog_box_x + dialog_box_ok_button_x;
-
-    bufptr[dialog_box_button_width - 2] = button_dark_color;
-    bufptr[dialog_box_button_width - 1] = button_dark_color;
-    if (y < 2) {
-      memset32(bufptr, button_light_color, dialog_box_button_width - 2);
-      continue;
-    }
-    if (y >= button_height - 2) {
-      memset32(bufptr, button_dark_color, dialog_box_button_width);
-      continue;
-    }
-    bufptr[0] = button_light_color;
-    bufptr[1] = button_light_color;
-  }
-
-  ui_redraw_rect(dialog_box_x + dialog_box_ok_button_x,
-                 dialog_box_y + dialog_box_button_y,
-                 dialog_box_button_width,
-                 button_height);
+  render_button_click(dialog_box_x + dialog_box_ok_button_x,
+                      dialog_box_y + dialog_box_button_y,
+                      dialog_box_button_width,
+                      false);
 }
 
 void dialog_box_click(int32_t x, int32_t y)
@@ -435,26 +465,8 @@ void dialog_box_click(int32_t x, int32_t y)
 
   const uint32_t bx =
     dialog_box_clicked_button == BUTTON_OK ? dialog_box_ok_button_x : dialog_box_cancel_button_x;
-  for (uint32_t y = 0; y < button_height; ++y) {
-    uint32_t *bufptr =
-      ui_buf + (dialog_box_y + dialog_box_button_y + y) * view.window_w + dialog_box_x + bx;
-
-    bufptr[dialog_box_button_width - 2] = button_light_color;
-    bufptr[dialog_box_button_width - 1] = button_light_color;
-    if (y < 2) {
-      memset32(bufptr, button_dark_color, dialog_box_button_width - 2);
-      continue;
-    }
-    if (y >= button_height - 2) {
-      memset32(bufptr, button_light_color, dialog_box_button_width);
-      continue;
-    }
-    bufptr[0] = button_dark_color;
-    bufptr[1] = button_dark_color;
-  }
-
-  ui_redraw_rect(
-    dialog_box_x + bx, dialog_box_y + dialog_box_button_y, dialog_box_button_width, button_height);
+  render_button_click(
+    dialog_box_x + bx, dialog_box_y + dialog_box_button_y, dialog_box_button_width, true);
 }
 
 void dialog_box(const char *prompt)
@@ -464,47 +476,31 @@ void dialog_box(const char *prompt)
   dialog_box_text_idx = 0;
   dialog_box_clicked_button = -1;
 
-  for (uint32_t y = 0; y < dialog_box_height; ++y) {
-    uint32_t *bufptr = dialog_box_buffer + y * dialog_box_width;
-    memset32(bufptr, toolbar_background_color, dialog_box_width);
+  memset32(dialog_box_buffer, toolbar_background_color, dialog_box_width * dialog_box_height);
+  render_button_borders(
+    dialog_box_buffer, dialog_box_width, 0, 0, dialog_box_width, dialog_box_height, false);
 
-    bufptr[dialog_box_width - 2] = button_dark_color;
-    bufptr[dialog_box_width - 1] = button_dark_color;
-    if (y < 2) {
-      memset32(bufptr, button_light_color, dialog_box_width - 2);
-      continue;
-    }
-    if (y >= dialog_box_height - 2) {
-      memset32(bufptr, button_dark_color, dialog_box_width);
-      continue;
-    }
-    bufptr[0] = button_light_color;
-    bufptr[1] = button_light_color;
-  }
-
-  for (uint32_t y = 0; y < button_height; ++y) {
+  for (uint32_t y = 0, color = button_light_color; y < button_height;
+       ++y, color -= button_color_gradient) {
     uint32_t *bufptr = dialog_box_buffer + (dialog_box_button_y + y) * dialog_box_width;
-
-    bufptr[dialog_box_ok_button_x + dialog_box_button_width - 2] = button_dark_color;
-    bufptr[dialog_box_ok_button_x + dialog_box_button_width - 1] = button_dark_color;
-    bufptr[dialog_box_cancel_button_x + dialog_box_button_width - 2] = button_dark_color;
-    bufptr[dialog_box_cancel_button_x + dialog_box_button_width - 1] = button_dark_color;
-    if (y < 2) {
-      memset32(bufptr + dialog_box_ok_button_x, button_light_color, dialog_box_button_width - 2);
-      memset32(
-        bufptr + dialog_box_cancel_button_x, button_light_color, dialog_box_button_width - 2);
-      continue;
-    }
-    if (y >= button_height - 2) {
-      memset32(bufptr + dialog_box_ok_button_x, button_dark_color, dialog_box_button_width);
-      memset32(bufptr + dialog_box_cancel_button_x, button_dark_color, dialog_box_button_width);
-      continue;
-    }
-    bufptr[dialog_box_ok_button_x] = button_light_color;
-    bufptr[dialog_box_ok_button_x + 1] = button_light_color;
-    bufptr[dialog_box_cancel_button_x] = button_light_color;
-    bufptr[dialog_box_cancel_button_x + 1] = button_light_color;
+    memset32(bufptr + dialog_box_ok_button_x, color, dialog_box_button_width);
+    memset32(bufptr + dialog_box_cancel_button_x, color, dialog_box_button_width);
   }
+
+  render_button_borders(dialog_box_buffer,
+                        dialog_box_width,
+                        dialog_box_ok_button_x,
+                        dialog_box_button_y,
+                        dialog_box_button_width,
+                        button_height,
+                        false);
+  render_button_borders(dialog_box_buffer,
+                        dialog_box_width,
+                        dialog_box_cancel_button_x,
+                        dialog_box_button_y,
+                        dialog_box_button_width,
+                        button_height,
+                        false);
 
   uint32_t w, h;
   ui_measure_text(&w, &h, "OK", 2, UI_FONT_TWINLEAF);
@@ -536,23 +532,16 @@ void dialog_box(const char *prompt)
     uint32_t *bufptr = dialog_box_buffer + (y + dialog_box_text_field_y) * dialog_box_width +
                        dialog_box_text_field_x;
     memset32(bufptr, background_color, dialog_box_text_field_width);
-
-    bufptr[dialog_box_text_field_width - 2] = button_light_color;
-    bufptr[dialog_box_text_field_width - 1] = button_light_color;
-    if (y < 2) {
-      memset32(bufptr, button_dark_color, dialog_box_text_field_width - 2);
-      continue;
-    }
-    if (y >= button_height - 2) {
-      memset32(bufptr, button_light_color, dialog_box_text_field_width);
-      continue;
-    }
-    bufptr[0] = button_dark_color;
-    bufptr[1] = button_dark_color;
-
     if (y >= 3 && y < button_height - 3)
       bufptr[2] = text_color;
   }
+  render_button_borders(dialog_box_buffer,
+                        dialog_box_width,
+                        dialog_box_text_field_x,
+                        dialog_box_text_field_y,
+                        dialog_box_text_field_width,
+                        button_height,
+                        true);
 
   dialog_box_x = (view.window_w - dialog_box_width) / 2;
   dialog_box_y = (view.window_h - dialog_box_height) / 2;
@@ -766,28 +755,8 @@ void handle_mouse_unclick()
   if (clicked_button == -1)
     return;
 
-  for (uint32_t y = 0; y < button_height; ++y) {
-    uint32_t *bufp =
-      ui_buf + (view.window_h + item_height + y) * view.window_w + buttons[clicked_button].x;
-    bufp[buttons[clicked_button].w - 2] = button_dark_color;
-    bufp[buttons[clicked_button].w - 1] = button_dark_color;
-    if (y < 2) {
-      memset32(bufp, button_light_color, buttons[clicked_button].w - 2);
-      continue;
-    }
-    if (y >= button_height - 2) {
-      memset32(bufp, button_dark_color, buttons[clicked_button].w);
-      continue;
-    }
-    bufp[0] = button_light_color;
-    bufp[1] = button_light_color;
-  }
-
-  ui_redraw_rect(buttons[clicked_button].x,
-                 view.window_h + item_height,
-                 buttons[clicked_button].w,
-                 button_height);
-
+  render_button_click(
+    buttons[clicked_button].x, view.window_h + item_height, buttons[clicked_button].w, false);
   buttons[clicked_button].func();
   clicked_button = -1;
 }
@@ -804,23 +773,7 @@ void handle_toolbar_click(uint32_t x, uint32_t y)
 
   for (unsigned i = 0; i < num_buttons; ++i) {
     if (x >= buttons[i].x && x < buttons[i].x + buttons[i].w) {
-      for (uint32_t y = 0; y < button_height; ++y) {
-        uint32_t *bufp = ui_buf + (view.window_h + item_height + y) * view.window_w + buttons[i].x;
-        bufp[buttons[i].w - 2] = button_light_color;
-        bufp[buttons[i].w - 1] = button_light_color;
-        if (y < 2) {
-          memset32(bufp, button_dark_color, buttons[i].w - 2);
-          continue;
-        }
-        if (y >= button_height - 2) {
-          memset32(bufp, button_light_color, buttons[i].w);
-          continue;
-        }
-        bufp[0] = button_dark_color;
-        bufp[1] = button_dark_color;
-      }
-
-      ui_redraw_rect(buttons[i].x, view.window_h + item_height, buttons[i].w, button_height);
+      render_button_click(buttons[i].x, view.window_h + item_height, buttons[i].w, true);
       clicked_button = i;
       return;
     }
